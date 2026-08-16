@@ -1,0 +1,74 @@
+---
+// Before/after. The "before" is deliberately unflattering but fair — this is
+// what provider-direct code actually looks like once retries and a fallback
+// have been bolted on.
+---
+
+<section class="mx-auto max-w-6xl px-6 py-24">
+  <div class="max-w-2xl">
+    <p class="rule-label">03 — The diff</p>
+    <h2
+      class="mt-4 font-display text-3xl leading-tight font-bold tracking-[-0.02em] text-mist-100 sm:text-[2.5rem]"
+    >
+      Same behaviour. One-tenth the surface area.
+    </h2>
+  </div>
+
+  <div class="mt-12 grid gap-6 lg:grid-cols-2">
+    <!-- Before -->
+    <div class="overflow-hidden rounded-xl border border-ink-800 bg-ink-900/70">
+      <div
+        class="flex items-center justify-between border-b border-ink-800 px-5 py-3"
+      >
+        <span class="rule-label">Provider-direct</span>
+        <span class="font-mono text-[11px] text-alert-500">repeated per call site</span>
+      </div>
+      <pre class="overflow-x-auto p-5 font-mono text-[12.5px] leading-[1.75]"><code><span class="text-relay-400">import</span> <span class="text-mist-300">boto3, json, time</span>
+
+<span class="text-mist-200">client</span> <span class="text-mist-500">=</span> <span class="text-mist-300">boto3.client(</span><span class="text-signal-400">"bedrock-runtime"</span><span class="text-mist-300">,</span>
+                      <span class="text-mist-400">region_name</span><span class="text-mist-500">=</span><span class="text-signal-400">"ap-south-1"</span><span class="text-mist-300">)</span>
+
+<span class="text-relay-400">try</span><span class="text-mist-300">:</span>
+    <span class="text-mist-200">out</span> <span class="text-mist-500">=</span> <span class="text-mist-300">client.converse(</span>
+        <span class="text-mist-400">modelId</span><span class="text-mist-500">=</span><span class="text-signal-400">"zai.glm-4.7-flash"</span><span class="text-mist-300">,</span>
+        <span class="text-mist-400">messages</span><span class="text-mist-500">=</span><span class="text-mist-200">msgs</span><span class="text-mist-300">,</span>
+    <span class="text-mist-300">)</span>
+<span class="text-relay-400">except</span> <span class="text-mist-300">(Timeout, ClientError):</span>
+    <span class="text-mist-500"># ...and now the fallback, by hand</span>
+    <span class="text-mist-200">out</span> <span class="text-mist-500">=</span> <span class="text-mist-300">client.converse(</span>
+        <span class="text-mist-400">modelId</span><span class="text-mist-500">=</span><span class="text-signal-400">"minimax.minimax-m2.5"</span><span class="text-mist-300">,</span>
+        <span class="text-mist-400">messages</span><span class="text-mist-500">=</span><span class="text-mist-200">msgs</span><span class="text-mist-300">,</span>
+    <span class="text-mist-300">)</span>
+
+<span class="text-mist-200">body</span> <span class="text-mist-500">=</span> <span class="text-mist-300">json.loads(</span><span class="text-mist-200">out</span><span class="text-mist-300">[</span><span class="text-signal-400">"output"</span><span class="text-mist-300">][...])</span>  <span class="text-mist-500"># may raise</span>
+<span class="text-mist-500"># cost logging: TODO</span></code></pre>
+    </div>
+
+    <!-- After -->
+    <div
+      class="overflow-hidden rounded-xl border border-signal-600/40 bg-ink-900"
+    >
+      <div
+        class="flex items-center justify-between border-b border-ink-800 px-5 py-3"
+      >
+        <span class="rule-label text-signal-500">With Muxaris</span>
+        <span class="font-mono text-[11px] text-relay-400">written once</span>
+      </div>
+      <pre class="overflow-x-auto p-5 font-mono text-[12.5px] leading-[1.75]"><code><span class="text-relay-400">from</span> <span class="text-mist-200">muxaris</span> <span class="text-relay-400">import</span> <span class="text-mist-200">chat</span>
+
+<span class="text-mist-200">body</span> <span class="text-mist-500">=</span> <span class="text-signal-500">chat</span><span class="text-mist-300">(</span><span class="text-signal-400">"structured"</span><span class="text-mist-300">).</span><span class="text-signal-500">json</span><span class="text-mist-300">(</span><span class="text-mist-400">messages</span><span class="text-mist-500">=</span><span class="text-mist-200">msgs</span><span class="text-mist-300">)</span>
+
+<span class="text-mist-500"># Fallback:      from the role</span>
+<span class="text-mist-500"># Timeout:       from the role</span>
+<span class="text-mist-500"># Client reuse:  automatic</span>
+<span class="text-mist-500"># Broken JSON:   repaired, not raised</span>
+<span class="text-mist-500"># Cost + tokens: already in your usage table</span></code></pre>
+      <div class="border-t border-ink-800 px-5 py-4">
+        <p class="text-sm leading-relaxed text-mist-400">
+          Changing provider later means editing the registry row, not this file
+          — or the ninety-seven others that call the same role.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,48 @@
+---
+import Base from './Base.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+
+interface Props {
+  title: string;
+  heading: string;
+  updated: string;
+  summary: string;
+}
+
+const { title, heading, updated, summary } = Astro.props;
+---
+
+<Base title={`${heading} — muxaris`} description={summary}>
+  <Nav />
+
+  <main class="mx-auto max-w-3xl px-6 py-20">
+    <p class="rule-label">Legal</p>
+    <h1
+      class="mt-4 font-display text-4xl leading-tight font-bold tracking-[-0.02em] text-mist-100"
+    >
+      {heading}
+    </h1>
+    <p class="mt-4 font-mono text-xs text-mist-500">
+      Last updated {updated}
+    </p>
+    <p class="mt-6 text-[1.0625rem] leading-relaxed text-mist-400">{summary}</p>
+
+    <div
+      class="mt-12 space-y-10 [&_a]:text-signal-500 [&_a]:underline [&_a]:decoration-ink-600 [&_a]:underline-offset-2 [&_h2]:font-display [&_h2]:text-xl [&_h2]:font-bold [&_h2]:tracking-[-0.01em] [&_h2]:text-mist-100 [&_li]:text-sm [&_li]:leading-relaxed [&_li]:text-mist-400 [&_p]:mt-3 [&_p]:text-sm [&_p]:leading-relaxed [&_p]:text-mist-400 [&_ul]:mt-3 [&_ul]:space-y-2 [&_ul]:pl-5 [&_ul]:marker:text-ink-600 [&_ul]:list-disc"
+    >
+      <slot />
+    </div>
+
+    <div class="mt-14 rounded-lg border border-ink-800 bg-ink-900/50 p-5">
+      <p class="font-mono text-[11px] leading-relaxed text-mist-500">
+        This document is a plain-language template written for a static,
+        no-account website. It is not legal advice. If muxaris later collects
+        personal data, adds accounts, or takes payment, have a lawyer review it
+        before relying on it.
+      </p>
+    </div>
+  </main>
+
+  <Footer />
+</Base>

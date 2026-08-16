@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ *
+ * Muxaris design tokens
+ * Aesthetic: network-operations console. Near-black canvas, hairline
+ * rules, monospace-forward. Amber = the primary route. Teal = the
+ * fallback route. Those two colours carry the entire product idea, so
+ * nothing else in the palette is allowed to compete with them.
+ * ------------------------------------------------------------------ */
+@theme {
+  --font-display: "Bricolage Grotesque", ui-sans-serif, sans-serif;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-ink-950: #08090b;
+  --color-ink-900: #0b0d10;
+  --color-ink-850: #101317;
+  --color-ink-800: #15191e;
+  --color-ink-750: #1b2027;
+  --color-ink-700: #232932;
+  --color-ink-600: #313845;
+
+  --color-mist-500: #6f7887;
+  --color-mist-400: #8b94a3;
+  --color-mist-300: #aeb6c2;
+  --color-mist-200: #d3d9e1;
+  --color-mist-100: #eef1f5;
+
+  --color-signal-600: #d1841c;
+  --color-signal-500: #f0a22e;
+  --color-signal-400: #ffbb55;
+
+  --color-relay-500: #35b5a8;
+  --color-relay-400: #4fd1c5;
+
+  --color-alert-500: #e2574c;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-ink-950);
+    color: var(--color-mist-300);
+    font-family: var(--font-sans);
+  }
+
+  ::selection {
+    background-color: var(--color-signal-500);
+    color: var(--color-ink-950);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-signal-500);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+}
+
+@layer components {
+  /* Faint engineering graph-paper grid. Sits behind everything and fades
+     out toward the bottom so long sections don't feel like a spreadsheet. */
+  .grid-field {
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+
+  /* Film grain. Keeps large flat black areas from banding on OLED. */
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.22;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  }
+
+  .rule-label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-mist-500);
+  }
+
+  /* Staggered page-load reveal. One orchestrated entrance beats a dozen
+     scattered micro-interactions. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    animation: reveal 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes reveal {
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Packet travelling down the primary route in the hero diagram. */
+  @keyframes packet {
+    0% { offset-distance: 0%; opacity: 0; }
+    12% { opacity: 1; }
+    88% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

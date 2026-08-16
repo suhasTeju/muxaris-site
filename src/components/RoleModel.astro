@@ -1,0 +1,106 @@
+---
+// The core concept section. A role is a job to be done; the registry binds
+// that job to a primary model, a fallback, and a latency budget.
+const roles = [
+  {
+    role: 'flagship',
+    job: 'Long-form generation where quality is the whole point',
+    primary: 'kimi-k2.5',
+    fallback: 'minimax-m2.5',
+    budget: 'background',
+  },
+  {
+    role: 'reasoning',
+    job: 'Multi-step planning, tool selection, hard analysis',
+    primary: 'gpt-oss-120b',
+    fallback: 'minimax-m2.5',
+    budget: 'background',
+  },
+  {
+    role: 'structured',
+    job: 'Strict JSON that a parser downstream has to trust',
+    primary: 'glm-4.7-flash',
+    fallback: 'minimax-m2.5',
+    budget: 'background',
+  },
+  {
+    role: 'workhorse',
+    job: 'High-volume classify, extract, label — cheap and fast',
+    primary: 'magistral-small',
+    fallback: 'gpt-oss-20b',
+    budget: '45s',
+  },
+  {
+    role: 'guardrail',
+    job: 'Runs first on every turn, so it can never be the slow one',
+    primary: 'gpt-oss-20b',
+    fallback: 'gpt-oss-120b',
+    budget: '45s',
+  },
+];
+---
+
+<section id="roles" class="mx-auto max-w-6xl scroll-mt-20 px-6 py-24">
+  <div class="max-w-2xl">
+    <p class="rule-label">01 — The routing model</p>
+    <h2
+      class="mt-4 font-display text-3xl leading-tight font-bold tracking-[-0.02em] text-mist-100 sm:text-[2.5rem]"
+    >
+      A role is a job to be done.<br class="hidden sm:block" /> The registry decides
+      who does it.
+    </h2>
+    <p class="mt-5 text-[1.0625rem] leading-relaxed text-mist-400">
+      Every gateway lets you pick a model. Muxaris asks a different question:
+      what is this call <em class="text-mist-200 not-italic">for</em>? Bind that
+      answer once, in one file, and every call site inherits the decision —
+      including the fallback and the latency budget that belong to it.
+    </p>
+  </div>
+
+  <!-- Registry table -->
+  <div
+    class="mt-12 overflow-hidden rounded-xl border border-ink-800 bg-ink-900/50"
+  >
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[720px] text-left">
+        <thead>
+          <tr class="border-b border-ink-800 bg-ink-850/60">
+            <th class="rule-label px-5 py-3 font-normal">Role</th>
+            <th class="rule-label px-5 py-3 font-normal">What it's for</th>
+            <th class="rule-label px-5 py-3 font-normal">Primary</th>
+            <th class="rule-label px-5 py-3 font-normal">Fallback</th>
+            <th class="rule-label px-5 py-3 font-normal">Budget</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            roles.map((r) => (
+              <tr class="border-b border-ink-850 last:border-0 transition-colors hover:bg-ink-850/40">
+                <td class="px-5 py-4">
+                  <span class="font-mono text-[13px] font-medium text-signal-500">
+                    {r.role}
+                  </span>
+                </td>
+                <td class="px-5 py-4 text-sm text-mist-400">{r.job}</td>
+                <td class="px-5 py-4 font-mono text-[13px] text-mist-200">
+                  {r.primary}
+                </td>
+                <td class="px-5 py-4 font-mono text-[13px] text-relay-400">
+                  {r.fallback}
+                </td>
+                <td class="px-5 py-4 font-mono text-[13px] text-mist-500">
+                  {r.budget}
+                </td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="mt-5 max-w-2xl font-mono text-xs leading-relaxed text-mist-500">
+    Swapping a provider is a one-line diff in this table. No call site changes,
+    no redeploy of application logic, no grep for the old model string.
+  </p>
+</section>

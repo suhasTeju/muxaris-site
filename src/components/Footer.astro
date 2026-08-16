@@ -1,0 +1,137 @@
+---
+const year = new Date().getFullYear();
+const repo = 'https://github.com/suhasTeju/muxaris';
+
+const columns = [
+  {
+    heading: 'Product',
+    links: [
+      { label: 'Routing model', href: '#roles' },
+      { label: 'Features', href: '#features' },
+      { label: 'Cost accounting', href: '#cost' },
+      { label: 'Install', href: '#install' },
+    ],
+  },
+  {
+    heading: 'Source',
+    links: [
+      { label: 'Repository', href: repo, external: true },
+      { label: 'Issues', href: `${repo}/issues`, external: true },
+      { label: 'Releases', href: `${repo}/releases`, external: true },
+      { label: 'License', href: `${repo}/blob/main/LICENSE`, external: true },
+    ],
+  },
+  {
+    heading: 'Upstream',
+    links: [
+      { label: 'Langfuse', href: 'https://github.com/langfuse/langfuse', external: true },
+      { label: 'Langfuse docs', href: 'https://langfuse.com/docs', external: true },
+    ],
+  },
+  {
+    heading: 'Legal',
+    links: [
+      { label: 'Privacy Policy', href: '/privacy' },
+      { label: 'Terms & Conditions', href: '/terms' },
+    ],
+  },
+];
+---
+
+<footer class="relative border-t border-ink-850 bg-ink-950">
+  <!-- hairline route motif: primary amber, fallback teal -->
+  <div aria-hidden="true" class="absolute inset-x-0 top-0 flex h-px">
+    <span class="h-px w-24 bg-signal-500/60"></span>
+    <span class="h-px w-12 bg-relay-400/40"></span>
+  </div>
+
+  <div class="mx-auto max-w-6xl px-6 py-16">
+    <div class="grid gap-12 sm:grid-cols-2 md:gap-8 lg:grid-cols-[1.4fr_repeat(4,1fr)]">
+      <!-- Brand -->
+      <div class="max-w-xs">
+        <div class="flex items-center gap-2.5">
+          <svg width="20" height="20" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+            <path
+              d="M2 5h4.2L11 11l4.8-6H20"
+              stroke="var(--color-signal-500)"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"></path>
+            <path
+              d="M2 17h4.2L11 11"
+              stroke="var(--color-relay-400)"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-dasharray="2.6 2.6"></path>
+            <circle cx="11" cy="11" r="2.1" fill="var(--color-signal-500)"></circle>
+          </svg>
+          <span class="font-display text-[15px] font-bold tracking-tight text-mist-100">
+            muxaris
+          </span>
+        </div>
+
+        <p class="mt-4 text-sm leading-relaxed text-mist-500">
+          A gateway that routes by role instead of model name — so swapping a
+          provider is one line in a registry, not a migration across every call
+          site.
+        </p>
+
+        <a
+          href={repo}
+          rel="noopener"
+          class="mt-5 inline-flex items-center gap-2 rounded-md border border-ink-700 px-3 py-1.5 font-mono text-xs text-mist-400 transition-colors hover:border-ink-600 hover:text-mist-100"
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path
+              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+            ></path>
+          </svg>
+          suhasTeju/muxaris
+        </a>
+      </div>
+
+      <!-- Link columns -->
+      {
+        columns.map((col) => (
+          <nav aria-label={col.heading}>
+            <h2 class="rule-label">{col.heading}</h2>
+            <ul class="mt-4 space-y-2.5">
+              {col.links.map((link) => (
+                <li>
+                  <a
+                    href={link.href}
+                    rel={link.external ? 'noopener' : undefined}
+                    class="text-sm text-mist-500 transition-colors hover:text-mist-200"
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        ))
+      }
+    </div>
+
+    <!-- Bottom bar -->
+    <div
+      class="mt-14 flex flex-col gap-4 border-t border-ink-850 pt-6 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <p class="font-mono text-xs text-mist-500">© {year} muxaris</p>
+
+      <div class="flex flex-wrap gap-5">
+        <a
+          href="/privacy"
+          class="font-mono text-xs text-mist-500 transition-colors hover:text-mist-200"
+          >Privacy</a
+        >
+        <a
+          href="/terms"
+          class="font-mono text-xs text-mist-500 transition-colors hover:text-mist-200"
+          >Terms</a
+        >
+      </div>
+    </div>
+  </div>
+</footer>

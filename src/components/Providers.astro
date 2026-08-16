@@ -1,0 +1,31 @@
+---
+const providers = [
+  'Amazon Bedrock',
+  'OpenRouter',
+  'NVIDIA NIM',
+  'Google Gemini',
+  'OpenAI',
+  'Ollama',
+  'Sarvam',
+  'Azure OpenAI',
+];
+---
+
+<section class="border-y border-ink-850 bg-ink-900/40">
+  <div class="mx-auto max-w-6xl px-6 py-10">
+    <p class="rule-label text-center">
+      One registry in front of every provider you already pay for
+    </p>
+    <ul
+      class="mt-6 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 sm:gap-x-12"
+    >
+      {
+        providers.map((name) => (
+          <li class="font-mono text-[13px] text-mist-500 transition-colors hover:text-mist-300">
+            {name}
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
