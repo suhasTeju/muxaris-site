@@ -14,3 +14,4 @@ scripts/spike/out
 .superpowers/
 scripts/spike/node_modules
 scripts/spike/package-lock.json
+.netlify/

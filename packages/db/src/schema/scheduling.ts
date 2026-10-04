@@ -8,7 +8,9 @@ import {
   date,
   pgEnum,
   index,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { clinics } from "./tenancy.js";
 
 export const appointmentStatusEnum = pgEnum("appointment_status", [
@@ -53,7 +55,11 @@ export const workingHours = pgTable(
     startTime: time("start_time").notNull(), // "10:00"
     endTime: time("end_time").notNull(),
   },
-  (t) => [index("working_hours_doctor_idx").on(t.doctorId)],
+  (t) => [
+    index("working_hours_doctor_idx").on(t.doctorId),
+    check("working_hours_weekday_chk", sql`${t.weekday} BETWEEN 0 AND 6`),
+    check("working_hours_range_chk", sql`${t.endTime} > ${t.startTime}`),
+  ],
 );
 
 export const timeOff = pgTable(
@@ -70,7 +76,10 @@ export const timeOff = pgTable(
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
     reason: text("reason"),
   },
-  (t) => [index("time_off_doctor_idx").on(t.doctorId)],
+  (t) => [
+    index("time_off_doctor_idx").on(t.doctorId),
+    check("time_off_range_chk", sql`${t.endsAt} > ${t.startsAt}`),
+  ],
 );
 
 export const clinicHolidays = pgTable(
@@ -147,5 +156,6 @@ export const appointments = pgTable(
     index("appointments_clinic_start_idx").on(t.clinicId, t.startsAt),
     index("appointments_doctor_start_idx").on(t.doctorId, t.startsAt),
     index("appointments_patient_idx").on(t.patientId),
+    check("appointments_range_chk", sql`${t.endsAt} > ${t.startsAt}`),
   ],
 );

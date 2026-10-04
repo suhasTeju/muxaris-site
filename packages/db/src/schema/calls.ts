@@ -1,4 +1,13 @@
-import { pgTable, text, integer, timestamp, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  integer,
+  timestamp,
+  jsonb,
+  pgEnum,
+  index,
+  unique,
+} from "drizzle-orm/pg-core";
 import { clinics } from "./tenancy.js";
 
 export const callChannelEnum = pgEnum("call_channel", ["browser", "phone"]);
@@ -62,7 +71,7 @@ export const callTurns = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index("call_turns_call_seq_idx").on(t.callId, t.seq),
+    unique("call_turns_call_seq_uq").on(t.callId, t.seq),
     index("call_turns_clinic_idx").on(t.clinicId),
   ],
 );
