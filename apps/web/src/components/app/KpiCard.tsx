@@ -11,7 +11,7 @@ export function KpiCard({
   ratio?: number;
 }) {
   return (
-    <div className="border-line bg-surface rounded-2xl border p-5">
+    <div className="border-line bg-surface rounded-card border p-5 shadow-[0_1px_2px_rgb(12_18_32/0.04)]">
       <p className="text-muted text-sm">{label}</p>
       <p className="font-display mt-1 text-4xl tabular-nums">{value}</p>
       {ratio !== undefined && (

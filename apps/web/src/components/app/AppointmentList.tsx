@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { EmptyState } from "./EmptyState";
 import type { Appointment, Doctor, Patient, Service } from "@muxaris/shared";
 import { formatTime, groupByDoctor, maskPhone } from "@/lib/dashboard";
 import { AppointmentStatusBadge } from "./Badge";
@@ -48,7 +49,7 @@ export function AppointmentList({
   emptyText = "No appointments today. Your assistant will book them as calls come in.",
 }: AppointmentListProps) {
   if (appointments.length === 0) {
-    return <p className="text-muted font-display py-6 italic">{emptyText}</p>;
+    return <EmptyState>{emptyText}</EmptyState>;
   }
   const service = new Map(services.map((s) => [s.id, s.name]));
   const patient = new Map(patients.map((p) => [p.id, p]));
@@ -66,7 +67,7 @@ export function AppointmentList({
             {g.doctorName}
             <span className="text-muted font-normal">({g.items.length})</span>
           </h3>
-          <ul className="border-line bg-surface divide-line divide-y rounded-2xl border">
+          <ul className="border-line bg-surface divide-line divide-y rounded-card border">
             {g.items.map((a) => {
               const p = patient.get(a.patientId);
               return (

@@ -15,7 +15,7 @@ export function ToolTimeline({ tools }: { tools: ToolEntry[] }) {
   return (
     <section aria-label="Assistant actions">
       <h2 className="font-display mb-2 text-lg">What the assistant is doing</h2>
-      <ol className="border-line bg-surface divide-line divide-y rounded-2xl border">
+      <ol className="border-line bg-surface divide-line divide-y rounded-card border">
         {tools.map((t, i) => {
           const m = MARK[t.status];
           return (

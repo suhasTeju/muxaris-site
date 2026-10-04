@@ -71,7 +71,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className="bg-surface shadow-card max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl p-6 sm:rounded-2xl"
+        className="bg-surface shadow-card max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl p-6 sm:rounded-card"
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <h2 className="font-display text-2xl">{title}</h2>

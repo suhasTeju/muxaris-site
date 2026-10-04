@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Nav } from "./Nav";
 
 vi.mock("next/image", () => ({
-  // eslint-disable-next-line @next/next/no-img-element
   default: (p: { src: string; alt: string }) => <img src={p.src} alt={p.alt} />,
 }));
 

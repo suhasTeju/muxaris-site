@@ -14,15 +14,11 @@ export function AuthShell({
   footer?: React.ReactNode;
 }) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-6 py-16">
-      <Link
-        href="/"
-        aria-label="Muxaris home"
-        className="focus-visible:ring-accent-soft mb-10 rounded outline-none focus-visible:ring-4"
-      >
+    <main className="flex min-h-screen flex-col items-center justify-center bg-[radial-gradient(60%_40%_at_50%_0%,rgb(21_128_61/0.07),transparent_70%)] px-4 py-16 sm:px-6">
+      <Link href="/" aria-label="Muxaris home" className="mb-10 flex min-h-11 items-center rounded">
         <Image src="/brand/muxaris-wordmark.svg" alt="Muxaris" width={140} height={37} priority />
       </Link>
-      <section className="border-line bg-surface shadow-card w-full max-w-md rounded-2xl border p-8 sm:p-10">
+      <section className="border-line bg-surface shadow-card w-full max-w-md rounded-card border p-7 sm:p-10">
         <h1 className="font-display text-3xl leading-tight">{title}</h1>
         {aside ? <p className="font-display text-muted mt-2 italic">{aside}</p> : null}
         <div className="mt-8">
@@ -53,7 +49,7 @@ export function Field({
       <span className="text-ink text-sm font-medium">{label}</span>
       <input
         {...props}
-        className="border-line bg-paper text-ink placeholder:text-muted focus:border-accent focus:ring-accent-soft mt-1.5 w-full rounded-lg border px-3.5 py-2.5 text-base outline-none focus:ring-4"
+        className="border-line bg-paper text-ink placeholder:text-muted focus:border-accent focus:ring-accent-soft mt-1.5 min-h-12 w-full rounded-xl border px-4 text-base outline-none focus:ring-4"
       />
     </label>
   );
@@ -68,7 +64,7 @@ export function PrimaryButton({
     <button
       {...props}
       disabled={busy || props.disabled}
-      className="bg-accent hover:bg-accent-deep focus-visible:ring-accent-soft w-full rounded-lg px-4 py-3 font-medium text-on-accent transition-colors outline-none focus-visible:ring-4 disabled:opacity-60"
+      className="mx-btn mx-btn-primary w-full disabled:opacity-60"
     >
       {busy ? "One moment…" : children}
     </button>
@@ -79,7 +75,7 @@ export function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElem
   return (
     <button
       {...props}
-      className="border-line text-ink hover:bg-paper bg-surface focus-visible:ring-accent-soft w-full rounded-lg border px-4 py-3 font-medium transition-colors outline-none focus-visible:ring-4 disabled:opacity-60"
+      className="mx-btn border-line text-ink hover:bg-paper bg-surface w-full border disabled:opacity-60"
     />
   );
 }
@@ -87,7 +83,7 @@ export function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElem
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p role="alert" className="bg-danger-soft text-danger rounded-lg px-3.5 py-2.5 text-sm">
+    <p role="alert" className="bg-danger-soft text-danger rounded-xl px-4 py-2.5 text-sm">
       {message}
     </p>
   );
@@ -96,7 +92,7 @@ export function FormError({ message }: { message: string | null }) {
 export function FormNotice({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p role="status" className="bg-accent-soft text-ink rounded-lg px-3.5 py-2.5 text-sm">
+    <p role="status" className="bg-accent-soft text-ink rounded-xl px-4 py-2.5 text-sm">
       {message}
     </p>
   );

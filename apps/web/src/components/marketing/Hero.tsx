@@ -30,7 +30,8 @@ export function Hero() {
               alt="A quiet dental clinic reception in morning light, the phone handset slightly lifted as if a call is coming in"
               fill
               priority
-              sizes="(min-width: 1024px) 540px, 100vw"
+              sizes="(min-width: 1024px) 540px, calc(100vw - 32px)"
+              fetchPriority="high"
               className="object-cover"
             />
           </div>

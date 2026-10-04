@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="border-line bg-surface rounded-2xl border p-5">
+    <section className="border-line bg-surface rounded-card border p-5">
       <h2 className="font-display mb-3 text-xl">{title}</h2>
       {children}
     </section>

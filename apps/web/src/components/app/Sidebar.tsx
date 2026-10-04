@@ -36,9 +36,9 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                 href={item.href}
                 onClick={onNavigate}
                 aria-current={active ? "page" : undefined}
-                className={`flex min-h-11 items-center rounded-xl px-3 text-[15px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] ${
+                className={`relative flex min-h-11 items-center rounded-xl px-3.5 text-[15px] transition-colors ${
                   active
-                    ? "bg-accent-soft text-accent-deep font-medium"
+                    ? "bg-accent-soft text-accent-deep before:bg-accent font-medium before:absolute before:inset-y-2.5 before:left-0 before:w-[3px] before:rounded-full"
                     : "text-muted hover:bg-[color-mix(in_srgb,var(--color-ink)_5%,white)] hover:text-[var(--color-ink)]"
                 }`}
               >

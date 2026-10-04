@@ -15,7 +15,7 @@ export function TranscriptPane({ lines, live }: { lines: TranscriptLine[]; live:
   return (
     <section
       aria-label="Transcript"
-      className="border-line bg-surface flex min-h-64 flex-col gap-2 overflow-y-auto rounded-2xl border p-4 lg:max-h-[28rem]"
+      className="border-line bg-surface flex min-h-64 flex-col gap-2 overflow-y-auto rounded-card border p-4 lg:max-h-[28rem]"
     >
       {lines.length === 0 ? (
         <p className="text-muted font-display m-auto text-center italic">
