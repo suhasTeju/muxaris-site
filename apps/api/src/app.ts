@@ -48,8 +48,15 @@ export function createApp(deps: AppDeps) {
         err.status,
       );
     }
-    // Never log the request body: it can contain patient data.
-    console.error(`unhandled error on ${c.req.method} ${c.req.path}:`, err);
+    // Log only non-sensitive fields: never the request body or the Drizzle query/params
+    // (both can contain patient data).
+    console.error("unhandled error", {
+      method: c.req.method,
+      route: c.req.routePath,
+      name: err.name,
+      message: err.message.split("\n")[0]?.slice(0, 200),
+      code: (err as { cause?: { code?: string } }).cause?.code,
+    });
     return c.json({ error: { code: "internal", message: "internal error" } }, 500);
   });
   return app;

@@ -81,12 +81,15 @@ export async function setWorkingHours(
     }
     try {
       assertTimeString(h.startTime);
-      assertTimeString(h.endTime);
+      assertTimeString(h.endTime, true);
     } catch (e) {
       if (e instanceof RangeError) throw new CoreError("validation", e.message);
       throw e;
     }
-    if (h.endTime <= h.startTime) {
+    // Mirrors the shared schema: an end of 00:00/24:00 means end of day (00:00-00:00 is empty).
+    const endsAtMidnight =
+      h.endTime === "24:00" || (h.endTime === "00:00" && h.startTime !== "00:00");
+    if (!endsAtMidnight && h.endTime <= h.startTime) {
       throw new CoreError("validation", "working hours end must be after start");
     }
   }
@@ -110,7 +113,8 @@ export async function setWorkingHours(
           doctorId,
           weekday: h.weekday,
           startTime: h.startTime,
-          endTime: h.endTime,
+          // the DB constraint needs end > start, so an end of 00:00 is stored as 24:00
+          endTime: h.endTime === "00:00" ? "24:00" : h.endTime,
         })),
       )
       .returning();

@@ -1,6 +1,12 @@
 import { createMiddleware } from "hono/factory";
 import type { Db } from "@muxaris/db";
-import { CoreError, getMembership, upsertUser, type TokenVerifier } from "@muxaris/core";
+import {
+  AuthUnavailableError,
+  CoreError,
+  getMembership,
+  upsertUser,
+  type TokenVerifier,
+} from "@muxaris/core";
 import type { AppEnv, ClinicRole } from "../deps.js";
 
 const unauthenticated = (message: string) => ({ error: { code: "unauthenticated", message } });
@@ -12,14 +18,21 @@ export function requireUser(db: Db, verifier: TokenVerifier) {
     let verified;
     try {
       verified = await verifier.verify(m[1]!);
-    } catch {
+    } catch (e) {
+      if (e instanceof AuthUnavailableError) {
+        return c.json(
+          { error: { code: "auth_unavailable", message: "authentication service unavailable" } },
+          503,
+        );
+      }
       return c.json(unauthenticated("invalid token"), 401);
     }
     let user;
     try {
       user = await upsertUser(db, { cognitoSub: verified.sub, email: verified.email });
     } catch (e) {
-      if (e instanceof CoreError) return c.json(unauthenticated("verified email required"), 401);
+      if (e instanceof CoreError && e.code === "validation")
+        return c.json(unauthenticated("verified email required"), 401);
       throw e;
     }
     c.set("user", { id: user.id, email: user.email, cognitoSub: user.cognitoSub });

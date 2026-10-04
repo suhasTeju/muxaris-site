@@ -548,4 +548,24 @@ const at = (date: string, hhmm: string) => atLocal(date, hhmm, "Asia/Kolkata");
       ]),
     ).rejects.toMatchObject({ code: "validation" });
   });
+
+  it("accepts end-of-day hours (24:00 and 00:00) and rejects empty ranges", async () => {
+    const doc = aDocs[0]!;
+    const set = (startTime: string, endTime: string) =>
+      setWorkingHours(db, a.clinic.id, doc.id, [{ weekday: 1, startTime, endTime }]);
+    await expect(set("09:00", "24:00")).resolves.toHaveLength(1);
+    await expect(set("22:00", "00:00")).resolves.toHaveLength(1);
+    await expect(set("10:00", "10:00")).rejects.toMatchObject({ code: "validation" });
+    await expect(set("00:00", "00:00")).rejects.toMatchObject({ code: "validation" });
+    // 22:00-00:00 yields slots on a Monday
+    await set("22:00", "00:00");
+    const slots = await findAvailableSlots(db, {
+      clinicId: a.clinic.id,
+      date: nextWeekday(1),
+      serviceId: aSvc.id,
+      doctorId: doc.id,
+      now: new Date(),
+    });
+    expect(slots.length).toBeGreaterThan(0);
+  });
 });

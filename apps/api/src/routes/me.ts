@@ -36,20 +36,10 @@ export function meRoutes(db: Db) {
       city: body.city,
       specialty: body.specialty ?? "dental",
       ...(body.languages ? { languages: body.languages } : {}),
+      ...(body.address ? { address: body.address } : {}),
+      ...(body.phone ? { phone: body.phone } : {}),
     });
-    let out = clinic;
-    if (body.address !== undefined || body.phone !== undefined) {
-      const [row] = await db
-        .update(schema.clinics)
-        .set({
-          ...(body.address !== undefined ? { address: body.address } : {}),
-          ...(body.phone !== undefined ? { phone: body.phone } : {}),
-        })
-        .where(eq(schema.clinics.id, clinic.id))
-        .returning();
-      out = row ?? clinic;
-    }
-    return c.json({ clinic: out, membership }, 201);
+    return c.json({ clinic, membership }, 201);
   });
 
   r.get("/clinics/:id", async (c) => {

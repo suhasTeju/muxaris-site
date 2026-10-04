@@ -35,6 +35,8 @@ export interface CreateClinicInput {
   city: string;
   timezone?: string;
   languages?: string[];
+  address?: string;
+  phone?: string;
 }
 
 export async function createClinicForUser(db: Db, input: CreateClinicInput) {
@@ -66,6 +68,8 @@ export async function createClinicForUser(db: Db, input: CreateClinicInput) {
               slug,
               specialty: input.specialty,
               city: input.city.trim(),
+              ...(input.address ? { address: input.address } : {}),
+              ...(input.phone ? { phone: input.phone } : {}),
               ...(input.timezone ? { timezone: input.timezone } : {}),
               ...(input.languages?.length ? { languages: input.languages } : {}),
             })
@@ -113,20 +117,29 @@ export async function upsertUser(
     }
     return existing;
   }
-  const [row] = await db
-    .insert(users)
-    .values({
-      id: newId("usr"),
-      cognitoSub: input.cognitoSub,
-      email: input.email,
-      name: input.name ?? null,
-    })
-    .onConflictDoUpdate({
-      target: users.cognitoSub,
-      set: { email: input.email, ...(input.name ? { name: input.name } : {}) },
-    })
-    .returning();
-  return row!;
+  try {
+    const [row] = await db
+      .insert(users)
+      .values({
+        id: newId("usr"),
+        cognitoSub: input.cognitoSub,
+        email: input.email,
+        name: input.name ?? null,
+      })
+      .onConflictDoUpdate({
+        target: users.cognitoSub,
+        set: { email: input.email, ...(input.name ? { name: input.name } : {}) },
+      })
+      .returning();
+    return row!;
+  } catch (e) {
+    if (isUniqueViolation(e))
+      throw new CoreError(
+        "conflict",
+        "this email is already registered with a different sign-in method",
+      );
+    throw e;
+  }
 }
 
 export async function listMemberships(db: Db, userId: string) {

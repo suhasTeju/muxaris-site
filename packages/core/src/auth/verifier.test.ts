@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCognitoVerifier, createDevVerifier } from "./verifier.js";
+import { AuthUnavailableError, createCognitoVerifier, createDevVerifier } from "./verifier.js";
 
 describe("createDevVerifier", () => {
   const v = createDevVerifier();
@@ -73,5 +73,31 @@ describe("createCognitoVerifier", () => {
     }
     const missing = await make(clientWith([{ Name: "email", Value: "a@x.in" }])).verify("t");
     expect(missing.email).toBeUndefined();
+  });
+  it("maps transient GetUser failures to AuthUnavailableError, but rejections stay as-is", async () => {
+    const mk = (err: Error) =>
+      createCognitoVerifier({
+        userPoolId: "ap-south-1_abc",
+        clientId: "c",
+        jwtVerifier: { verify: async () => ({ sub: "s1", username: "u" }) },
+        fetchEmail: async () => Promise.reject(err),
+      });
+    await expect(mk(new Error("ECONNRESET")).verify("t")).rejects.toBeInstanceOf(
+      AuthUnavailableError,
+    );
+    const na = Object.assign(new Error("nope"), { name: "NotAuthorizedException" });
+    await expect(mk(na).verify("t")).rejects.not.toBeInstanceOf(AuthUnavailableError);
+  });
+  it("does not cache an unverified (undefined) email", async () => {
+    const fetchEmail = vi.fn(async () => undefined);
+    const v = createCognitoVerifier({
+      userPoolId: "ap-south-1_abc",
+      clientId: "c",
+      jwtVerifier: { verify: async () => ({ sub: "s1", username: "u" }) },
+      fetchEmail,
+    });
+    await v.verify("t");
+    await v.verify("t");
+    expect(fetchEmail).toHaveBeenCalledTimes(2);
   });
 });

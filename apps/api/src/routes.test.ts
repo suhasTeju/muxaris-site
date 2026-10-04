@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { and, eq, inArray } from "drizzle-orm";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { eq, inArray } from "drizzle-orm";
 import pg from "pg";
-import { createDb, schema, newId, seedDemoClinic } from "@muxaris/db";
-import { createDevVerifier } from "@muxaris/core";
+import { createDb, schema, newId } from "@muxaris/db";
+import { AuthUnavailableError, appendTurn, createCall, createDevVerifier } from "@muxaris/core";
 import { createApp } from "./app.js";
 
 const url = process.env.DATABASE_URL ?? "postgres://muxaris:muxaris@localhost:5433/muxaris";
@@ -88,9 +88,6 @@ afterAll(async () => {
 
 (reachable ? describe : describe.skip)("api v1", () => {
   let ownClinic = "";
-  beforeAll(async () => {
-    await seedDemoClinic(db);
-  });
 
   it("401 without or with a bad token", async () => {
     expect((await call("GET", "/me")).status).toBe(401);
@@ -191,53 +188,232 @@ afterAll(async () => {
     expect(svcs.services.length).toBeGreaterThan(0);
   });
 
-  it("validates date query, slots, booking and conflicts on the demo clinic", async () => {
-    const user = (
-      await db.select().from(schema.users).where(eq(schema.users.cognitoSub, subA))
-    )[0]!;
-    await db
-      .insert(schema.memberships)
-      .values({ id: newId("mem"), userId: user.id, clinicId: "cl_demo_sunrise", role: "owner" });
-    const c = "cl_demo_sunrise";
-    const bad = await call("GET", "/slots?date=2026-02-30&serviceId=svc_demo_consult", {
+  it("validates date query, slots, booking, conflicts, reschedule and cancel", async () => {
+    const c = ownClinic;
+    const svcs = (await (await call("GET", "/services", { token: tokA, clinic: c })).json()) as J;
+    const svc = svcs.services.find((x: J) => x.name === "Consultation") ?? svcs.services[0];
+    const bad = await call("GET", `/slots?date=2026-02-30&serviceId=${svc.id}`, {
       token: tokA,
       clinic: c,
     });
     expect(bad.status).toBe(400);
     const date = nextTuesday();
-    const res = await call("GET", `/slots?date=${date}&serviceId=svc_demo_consult`, {
+    const res = await call("GET", `/slots?date=${date}&serviceId=${svc.id}`, {
       token: tokA,
       clinic: c,
     });
     expect(res.status).toBe(200);
     const { slots } = (await res.json()) as J;
-    expect(slots.length).toBeGreaterThan(0);
+    expect(slots.length).toBeGreaterThan(2);
     const slot = slots[slots.length - 1];
     const payload = {
       patient: { phone: "9876543210", name: "Test Patient" },
       doctorId: slot.doctorId,
-      serviceId: "svc_demo_consult",
+      serviceId: svc.id,
       startsAt: slot.startsAt,
     };
     const ok = await call("POST", "/appointments", { token: tokA, clinic: c, body: payload });
     expect(ok.status).toBe(201);
     const apt = ((await ok.json()) as J).appointment;
-    try {
-      const again = await call("POST", "/appointments", { token: tokA, clinic: c, body: payload });
-      expect(again.status).toBe(409);
-      expect(((await again.json()) as J).error.code).toBe("conflict");
-    } finally {
-      const cancel = await call("POST", `/appointments/${apt.id}/cancel`, {
+    const again = await call("POST", "/appointments", { token: tokA, clinic: c, body: payload });
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as J).error.code).toBe("conflict");
+
+    // cross-tenant: another clinic cannot see or touch this appointment
+    const other = (await (
+      await call("POST", "/clinics", { token: tokB, body: { name: `Other ${run}`, city: "Pune" } })
+    ).json()) as J;
+    clinicIds.push(other.clinic.id);
+    const x = other.clinic.id;
+    expect(
+      (await call("POST", `/appointments/${apt.id}/cancel`, { token: tokB, clinic: x })).status,
+    ).toBe(404);
+    expect(
+      (
+        await call("PATCH", `/appointments/${apt.id}/reschedule`, {
+          token: tokB,
+          clinic: x,
+          body: { startsAt: slots[0].startsAt },
+        })
+      ).status,
+    ).toBe(404);
+
+    // reschedule: changing doctor/service is a 400, a new start works
+    const wrongDoc = await call("PATCH", `/appointments/${apt.id}/reschedule`, {
+      token: tokA,
+      clinic: c,
+      body: { startsAt: slots[0].startsAt, doctorId: "doc_nope" },
+    });
+    expect(wrongDoc.status).toBe(400);
+    const moved = await call("PATCH", `/appointments/${apt.id}/reschedule`, {
+      token: tokA,
+      clinic: c,
+      body: { startsAt: slots[0].startsAt, doctorId: apt.doctorId },
+    });
+    expect(moved.status).toBe(200);
+    const m = ((await moved.json()) as J).appointment;
+    expect(m.status).toBe("rescheduled");
+    expect(new Date(m.startsAt).toISOString()).toBe(new Date(slots[0].startsAt).toISOString());
+
+    // list range validation and defaults
+    const from = "2030-01-02T00:00:00Z";
+    expect(
+      (
+        await call("GET", `/appointments?from=${from}&to=2030-01-01T00:00:00Z`, {
+          token: tokA,
+          clinic: c,
+        })
+      ).status,
+    ).toBe(400);
+    const list = (await (
+      await call("GET", `/appointments?from=${date}T00:00:00Z&to=${date}T23:59:59Z`, {
         token: tokA,
         clinic: c,
+      })
+    ).json()) as J;
+    expect(list.appointments.map((q: J) => q.id)).toContain(apt.id);
+    expect((await call("GET", "/appointments", { token: tokA, clinic: c })).status).toBe(200);
+
+    // cancel: malformed body 400, reason too long 400, valid cancel 200
+    const raw = (body: string) =>
+      app.request(`/v1/appointments/${apt.id}/cancel`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${tokA}`,
+          "X-Clinic-Id": c,
+          "Content-Type": "application/json",
+        },
+        body,
       });
-      expect(cancel.status).toBe(200);
-      await db.delete(schema.appointments).where(eq(schema.appointments.id, apt.id));
-      await db.delete(schema.patients).where(eq(schema.patients.id, apt.patientId));
-      await db
-        .delete(schema.memberships)
-        .where(and(eq(schema.memberships.userId, user.id), eq(schema.memberships.clinicId, c)));
-    }
+    expect((await raw("{not json")).status).toBe(400);
+    expect((await raw(JSON.stringify({ reason: "x".repeat(301) }))).status).toBe(400);
+    expect((await raw(JSON.stringify({ reason: "patient asked" }))).status).toBe(200);
+    expect(
+      (await call("POST", `/appointments/${apt.id}/cancel`, { token: tokA, clinic: c })).status,
+    ).toBe(200);
+  });
+
+  it("paginates patients and calls and validates limits", async () => {
+    const c = ownClinic;
+    expect((await call("GET", "/patients?limit=0", { token: tokA, clinic: c })).status).toBe(400);
+    expect((await call("GET", "/patients?limit=201", { token: tokA, clinic: c })).status).toBe(400);
+    const p = (await (
+      await call("GET", "/patients?limit=1&offset=0", { token: tokA, clinic: c })
+    ).json()) as J;
+    expect(p.patients).toHaveLength(1);
+    expect((await call("GET", "/calls?offset=-1", { token: tokA, clinic: c })).status).toBe(400);
+  });
+
+  it("GET /calls/:id returns the call with its turns, scoped to the clinic", async () => {
+    const c = await createCall(db, { clinicId: ownClinic, channel: "browser" });
+    await appendTurn(db, { callId: c.id, clinicId: ownClinic, seq: 1, role: "user", text: "hi" });
+    await appendTurn(db, {
+      callId: c.id,
+      clinicId: ownClinic,
+      seq: 2,
+      role: "assistant",
+      text: "hello",
+    });
+    const res = await call("GET", `/calls/${c.id}`, { token: tokA, clinic: ownClinic });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as J;
+    expect(body.call.id).toBe(c.id);
+    expect(body.turns.map((t: J) => t.seq)).toEqual([1, 2]);
+    const list = (await (
+      await call("GET", "/calls", { token: tokA, clinic: ownClinic })
+    ).json()) as J;
+    expect(list.calls.map((x: J) => x.id)).toContain(c.id);
+    expect(
+      (await call("GET", `/calls/${c.id}`, { token: tokB, clinic: clinicIds[1] })).status,
+    ).toBe(404);
+  });
+
+  it("PUT /slot-rules updates and persists", async () => {
+    const put = await call("PUT", "/slot-rules", {
+      token: tokA,
+      clinic: ownClinic,
+      body: { slotGrainMin: 30, maxPerSlot: 2 },
+    });
+    expect(put.status).toBe(200);
+    const got = (await (
+      await call("GET", "/slot-rules", { token: tokA, clinic: ownClinic })
+    ).json()) as J;
+    expect(got.slotRules).toMatchObject({ slotGrainMin: 30, maxPerSlot: 2 });
+    const bad = await call("PUT", "/slot-rules", {
+      token: tokA,
+      clinic: ownClinic,
+      body: { slotGrainMin: 1 },
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  it("accepts end-of-day hours (24:00) through the API", async () => {
+    const docs = (await (
+      await call("GET", "/doctors", { token: tokA, clinic: ownClinic })
+    ).json()) as J;
+    const res = await call("PUT", `/doctors/${docs.doctors[0].id}/hours`, {
+      token: tokA,
+      clinic: ownClinic,
+      body: { hours: [{ weekday: 1, startTime: "09:00", endTime: "24:00" }] },
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as J).hours[0].endTime).toBe("24:00");
+    const empty = await call("PUT", `/doctors/${docs.doctors[0].id}/hours`, {
+      token: tokA,
+      clinic: ownClinic,
+      body: { hours: [{ weekday: 1, startTime: "00:00", endTime: "00:00" }] },
+    });
+    expect(empty.status).toBe(400);
+  });
+
+  it("accepts a lowercase bearer scheme", async () => {
+    const res = await app.request("/v1/me", { headers: { Authorization: `bearer ${tokA}` } });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 409 when another sign-in already owns the email", async () => {
+    const res = await call("GET", "/me", { token: `dev:other-${run}:${emailA.toUpperCase()}` });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as J;
+    expect(body.error.code).toBe("conflict");
+    expect(JSON.stringify(body)).not.toContain(run);
+  });
+
+  it("returns 503 auth_unavailable when the verifier is transiently down", async () => {
+    const down = createApp({
+      version: "t",
+      db,
+      verifier: {
+        verify: async () => {
+          throw new AuthUnavailableError();
+        },
+      },
+    });
+    const res = await down.request("/v1/me", { headers: { Authorization: "Bearer x" } });
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as J).error.code).toBe("auth_unavailable");
+  });
+
+  it("honours the CORS allowlist", async () => {
+    const cors = createApp({
+      version: "t",
+      db,
+      verifier: createDevVerifier(),
+      corsOrigins: ["https://app.example"],
+    });
+    const ok = await cors.request("/healthz", { headers: { Origin: "https://app.example" } });
+    expect(ok.headers.get("access-control-allow-origin")).toBe("https://app.example");
+    const bad = await cors.request("/healthz", { headers: { Origin: "https://evil.example" } });
+    expect(bad.headers.get("access-control-allow-origin")).toBeNull();
+    const pre = await cors.request("/v1/me", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://app.example",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "x-clinic-id,authorization",
+      },
+    });
+    expect(pre.headers.get("access-control-allow-headers")).toMatch(/X-Clinic-Id/i);
   });
 
   it("returns 500 (logged, without body) for RangeError from stored data", async () => {

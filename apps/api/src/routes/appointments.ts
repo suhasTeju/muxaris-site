@@ -15,15 +15,25 @@ import { requireClinic } from "../auth/middleware.js";
 import { isoOffset, v } from "../validate.js";
 
 const DAY = 86_400_000;
+const page = {
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+};
 const listQuery = z.object({
   from: isoOffset.optional(),
   to: isoOffset.optional(),
   doctorId: z.string().min(1).optional(),
   status: z.enum(schema.appointmentStatusEnum.enumValues).optional(),
 });
-const cancelBody = z.object({ reason: z.string().trim().min(1).max(500).optional() });
-const patientsQuery = z.object({ q: z.string().trim().min(1).max(100).optional() });
-const callsQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).optional() });
+const cancelBody = z.object({ reason: z.string().trim().min(1).max(300).optional() });
+const patientsQuery = z.object({ q: z.string().trim().min(1).max(100).optional(), ...page });
+const callsQuery = z.object({ ...page });
+
+function startOfToday() {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
 
 export function appointmentRoutes(db: Db) {
   const r = new Hono<AppEnv>();
@@ -31,8 +41,9 @@ export function appointmentRoutes(db: Db) {
 
   r.get("/appointments", member, v("query", listQuery), async (c) => {
     const q = c.req.valid("query");
-    const from = q.from ? new Date(q.from) : new Date(Date.now() - DAY);
-    const to = q.to ? new Date(q.to) : new Date(from.getTime() + 31 * DAY);
+    const from = q.from ? new Date(q.from) : startOfToday();
+    const to = q.to ? new Date(q.to) : new Date(from.getTime() + 7 * DAY);
+    if (to <= from) throw new CoreError("validation", "`to` must be after `from`");
     const appointments = await listAppointments(db, {
       clinicId: c.get("clinic").id,
       from,
@@ -94,22 +105,17 @@ export function appointmentRoutes(db: Db) {
     return c.json({ appointment });
   });
 
-  r.post("/appointments/:id/cancel", member, async (c) => {
-    const raw = await c.req.json().catch(() => ({}));
-    const parsed = cancelBody.safeParse(raw ?? {});
-    if (!parsed.success) {
-      return c.json({ error: { code: "validation", issues: parsed.error.issues } }, 400);
-    }
+  r.post("/appointments/:id/cancel", member, v("json", cancelBody), async (c) => {
     const appointment = await cancelAppointment(db, {
       clinicId: c.get("clinic").id,
       appointmentId: c.req.param("id"),
-      ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
+      ...(c.req.valid("json").reason ? { reason: c.req.valid("json").reason! } : {}),
     });
     return c.json({ appointment });
   });
 
   r.get("/patients", member, v("query", patientsQuery), async (c) => {
-    const { q } = c.req.valid("query");
+    const { q, limit, offset } = c.req.valid("query");
     const like = q ? `%${q.replace(/[\\%_]/g, "\\$&")}%` : null;
     const patients = await db
       .select()
@@ -122,8 +128,9 @@ export function appointmentRoutes(db: Db) {
             : undefined,
         ),
       )
-      .orderBy(desc(schema.patients.createdAt))
-      .limit(200);
+      .orderBy(desc(schema.patients.createdAt), desc(schema.patients.id))
+      .limit(limit)
+      .offset(offset);
     return c.json({ patients });
   });
 
@@ -132,8 +139,9 @@ export function appointmentRoutes(db: Db) {
       .select()
       .from(schema.calls)
       .where(eq(schema.calls.clinicId, c.get("clinic").id))
-      .orderBy(desc(schema.calls.startedAt))
-      .limit(c.req.valid("query").limit ?? 50);
+      .orderBy(desc(schema.calls.startedAt), desc(schema.calls.id))
+      .limit(c.req.valid("query").limit)
+      .offset(c.req.valid("query").offset);
     return c.json({ calls });
   });
   r.get("/calls/:id", member, async (c) => {

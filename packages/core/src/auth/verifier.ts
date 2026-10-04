@@ -4,6 +4,14 @@ import {
   GetUserCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
+/** Cognito could not be reached to complete verification (network/5xx): retryable, not a bad token. */
+export class AuthUnavailableError extends Error {
+  constructor(options?: { cause?: unknown }) {
+    super("authentication service unavailable", options);
+    this.name = "AuthUnavailableError";
+  }
+}
+
 export interface VerifiedToken {
   sub: string;
   email?: string;
@@ -65,10 +73,21 @@ export function createCognitoVerifier(opts: CognitoVerifierOptions): TokenVerifi
       const username = String(payload.username ?? sub);
       let hit = cache.get(sub);
       if (!hit || hit.expires <= now()) {
-        const email = await fetchEmail(token);
-        if (cache.size >= MAX_CACHE) cache.clear();
+        let email: string | undefined;
+        try {
+          email = await fetchEmail(token);
+        } catch (e) {
+          const name = (e as { name?: string })?.name ?? "";
+          // A rejected/expired token is the caller's problem; anything else is transient.
+          if (name === "NotAuthorizedException" || name === "InvalidParameterException") throw e;
+          throw new AuthUnavailableError({ cause: e });
+        }
         hit = { email, expires: now() + EMAIL_TTL_MS };
-        cache.set(sub, hit);
+        // Only verified emails are cached, so a user who verifies mid-session is picked up.
+        if (email) {
+          if (cache.size >= MAX_CACHE) cache.clear();
+          cache.set(sub, hit);
+        }
       }
       return hit.email ? { sub, email: hit.email, username } : { sub, username };
     },
