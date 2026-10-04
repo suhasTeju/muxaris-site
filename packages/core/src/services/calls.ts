@@ -279,6 +279,22 @@ export async function updateCallAnalysis(
   return { applied: rows.length > 0 };
 }
 
+/** Marks a call analysed without a summary (e.g. no caller speech) so it is not retried. */
+export async function markCallAnalysed(
+  db: Db,
+  input: { clinicId: string; callId: string; reason: "no_turns"; model: string },
+): Promise<{ applied: boolean }> {
+  const rows = await db
+    .update(calls)
+    .set({
+      analysedAt: new Date(),
+      analysis: { entities: {}, needsCallback: false, model: input.model, skipped: input.reason },
+    })
+    .where(and(eq(calls.id, input.callId), eq(calls.clinicId, input.clinicId)))
+    .returning({ id: calls.id });
+  return { applied: rows.length > 0 };
+}
+
 export async function setCallOutcomeByStaff(
   db: Db,
   input: { clinicId: string; callId: string; outcome: CallOutcome; actorUserId: string },

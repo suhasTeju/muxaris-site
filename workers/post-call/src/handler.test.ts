@@ -164,7 +164,47 @@ describe.skipIf(!reachable)("post-call handler", () => {
     expect(n).toBe(1);
     expect(calls.n).toBe(0);
     expect(q.deleted).toHaveLength(1);
-    expect((await getCall(db, clinicId, call.id)).call.analysedAt).not.toBeNull();
+    const after = (await getCall(db, clinicId, call.id)).call;
+    expect(after.analysedAt).not.toBeNull();
+    expect(after.summary).toBeNull();
+    expect(await processMessage({ db, analyser: stub(), log }, msg(call.id))).toBe(
+      "skipped_already",
+    );
+  });
+
+  it("a failure before the analysis write is retried and still creates exactly one callback", async () => {
+    const [patient] = await db
+      .insert(schema.patients)
+      .values({ id: newId("pat"), clinicId, name: "Retry Patient", phone: "+919822233344" })
+      .returning();
+    const call = await makeCall();
+    await db
+      .update(schema.calls)
+      .set({ patientId: patient!.id })
+      .where(and(eq(schema.calls.id, call.id), eq(schema.calls.clinicId, clinicId)));
+    let thrown = false;
+    const flaky = new Proxy(db, {
+      get(target, prop, recv) {
+        if (prop === "select") {
+          return (...args: unknown[]) => {
+            if (!thrown && (args[0] as { phone?: unknown } | undefined)?.phone) {
+              thrown = true;
+              throw new Error("transient");
+            }
+            return (target.select as (...a: unknown[]) => unknown).apply(target, args);
+          };
+        }
+        return Reflect.get(target, prop, recv);
+      },
+    });
+    expect(await processMessage({ db: flaky, analyser: stub(), log }, msg(call.id))).toBe("failed");
+    expect((await getCall(db, clinicId, call.id)).call.analysedAt).toBeNull();
+    expect(await processMessage({ db: flaky, analyser: stub(), log }, msg(call.id))).toBe(
+      "analysed",
+    );
+    const got = await getCall(db, clinicId, call.id);
+    expect(got.callbacks).toHaveLength(1);
+    expect(got.call.summary).not.toBeNull();
   });
 
   it("failed analysis leaves the message in flight", async () => {

@@ -1,6 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
-import { createCallback, getCall, listCallbacks, updateCallAnalysis } from "@muxaris/core";
+import {
+  createCallback,
+  getCall,
+  listCallbacks,
+  markCallAnalysed,
+  updateCallAnalysis,
+} from "@muxaris/core";
 import type { PostCallMessage } from "@muxaris/shared";
 import type { JobQueue } from "@muxaris/storage";
 import type { Analyser } from "./analyse.js";
@@ -35,12 +41,10 @@ export async function processMessage(
     }
     if (!turns.some((t) => t.role === "user")) {
       // Mark analysed so the call is not picked up again.
-      await updateCallAnalysis(db, {
+      await markCallAnalysed(db, {
         clinicId: msg.clinicId,
         callId: msg.callId,
-        summary: "No caller speech was recorded.",
-        sentiment: "neutral",
-        analysis: { entities: {}, needsCallback: false, model: "none" },
+        reason: "no_turns",
         model: "none",
       });
       log("info", "post-call skipped", { callId: msg.callId, result: "skipped_no_turns" });
@@ -55,21 +59,6 @@ export async function processMessage(
       })),
       language: call.languageDetected ?? "unknown",
       gatewayOutcome: call.outcome ?? null,
-    });
-
-    await updateCallAnalysis(db, {
-      clinicId: msg.clinicId,
-      callId: msg.callId,
-      summary: analysis.summary,
-      sentiment: analysis.sentiment,
-      analysis: {
-        entities: analysis.entities,
-        needsCallback: analysis.needsCallback,
-        model: modelId,
-        ...(analysis.callbackReason ? { callbackReason: analysis.callbackReason } : {}),
-      },
-      outcome: analysis.outcome,
-      model: modelId,
     });
 
     let callbackCreated = false;
@@ -104,6 +93,22 @@ export async function processMessage(
         }
       }
     }
+    // Analysis (and analysedAt) is written last so a failure above is retried, not skipped.
+    await updateCallAnalysis(db, {
+      clinicId: msg.clinicId,
+      callId: msg.callId,
+      summary: analysis.summary,
+      sentiment: analysis.sentiment,
+      analysis: {
+        entities: analysis.entities,
+        needsCallback: analysis.needsCallback,
+        model: modelId,
+        ...(analysis.callbackReason ? { callbackReason: analysis.callbackReason } : {}),
+      },
+      outcome: analysis.outcome,
+      model: modelId,
+    });
+
     log("info", "post-call analysed", {
       callId: msg.callId,
       outcome: analysis.outcome,

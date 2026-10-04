@@ -17,7 +17,7 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): WorkerEnv {
   return {
     databaseUrl,
     queueUrl: src.POST_CALL_QUEUE_URL?.trim() ?? "",
-    // Amazon Nova only (no Anthropic models on Bedrock)
+    // Amazon Nova only
     modelId: src.POST_CALL_MODEL_ID?.trim() || "apac.amazon.nova-pro-v1:0",
     awsRegion: src.AWS_REGION?.trim() || "ap-south-1",
   };

@@ -16,15 +16,18 @@ export const analysisSchema = z.object({
     "unknown",
   ]),
   needsCallback: z.boolean(),
-  callbackReason: z.string().trim().max(200).optional(),
-  entities: z.object({
-    patientName: z.string().max(80).optional(),
-    requestedService: z.string().max(80).optional(),
-    requestedDate: z.string().max(40).optional(),
-    language: z.string().max(10).optional(),
-  }),
+  callbackReason: z.string().trim().max(200).nullable().optional(),
+  entities: z
+    .object({
+      patientName: z.string().max(80).optional(),
+      requestedService: z.string().max(80).optional(),
+      requestedDate: z.string().max(40).optional(),
+      language: z.string().max(10).optional(),
+    })
+    .default({}),
 });
-export type Analysis = z.infer<typeof analysisSchema>;
+type RawAnalysis = z.infer<typeof analysisSchema>;
+export type Analysis = Omit<RawAnalysis, "callbackReason"> & { callbackReason?: string };
 
 export interface Analyser {
   analyse(input: {
@@ -54,7 +57,7 @@ export function stripNumbers(s: string): string {
   return s.replace(/\d(?:[ -]?\d){7,}/g, "[number]");
 }
 
-function parseModelJson(raw: string): Analysis {
+function parseModelJson(raw: string): RawAnalysis {
   const cleaned = raw
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -98,7 +101,7 @@ export function createNovaAnalyser(opts: {
   return {
     async analyse(input) {
       const userText = buildUserMessage(input);
-      let parsed: Analysis | null = null;
+      let parsed: RawAnalysis | null = null;
       for (const text of [userText, `${userText}\n\n${RETRY_SUFFIX}`]) {
         try {
           parsed = parseModelJson(await ask(text));
@@ -112,7 +115,13 @@ export function createNovaAnalyser(opts: {
         input.gatewayOutcome && LOCKED_OUTCOMES.has(input.gatewayOutcome)
           ? (input.gatewayOutcome as Analysis["outcome"])
           : parsed.outcome;
-      return { ...parsed, summary: stripNumbers(parsed.summary), outcome };
+      const { callbackReason, ...rest } = parsed;
+      return {
+        ...rest,
+        summary: stripNumbers(parsed.summary),
+        ...(callbackReason ? { callbackReason: stripNumbers(callbackReason) } : {}),
+        outcome,
+      };
     },
   };
 }

@@ -11,6 +11,7 @@ import {
   getOverviewStats,
   listCallbacks,
   listCalls,
+  markCallAnalysed,
   setCallOutcomeByStaff,
   setCallRecording,
   sweepStaleCalls,
@@ -130,6 +131,22 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
     await expect(
       setCallRecording(db, { clinicId: b.clinic.id, callId: c.id, status: "failed" }),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("markCallAnalysed sets analysedAt and leaves summary and sentiment null", async () => {
+    const id = await finished(a.clinic.id);
+    const r = await markCallAnalysed(db, {
+      clinicId: a.clinic.id,
+      callId: id,
+      reason: "no_turns",
+      model: "none",
+    });
+    expect(r.applied).toBe(true);
+    const { call } = await getCall(db, a.clinic.id, id);
+    expect(call.summary).toBeNull();
+    expect(call.sentiment).toBeNull();
+    expect(call.analysedAt).not.toBeNull();
+    expect(call.analysis?.skipped).toBe("no_turns");
   });
 
   it("updateCallAnalysis refines only gateway outcomes", async () => {

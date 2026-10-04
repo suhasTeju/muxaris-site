@@ -50,6 +50,16 @@ describe("createNovaAnalyser", () => {
     expect(a.summary.split(/\s+/)).toHaveLength(60);
   });
 
+  it("accepts null callbackReason and missing entities without retrying", async () => {
+    const noEntities: Record<string, unknown> = { ...base };
+    delete noEntities["entities"];
+    const f = fake([JSON.stringify({ ...noEntities, callbackReason: null })]);
+    const a = await make(f).analyse(input);
+    expect(a.entities).toEqual({});
+    expect(a.callbackReason).toBeUndefined();
+    expect(f.calls).toHaveLength(1);
+  });
+
   it("retries once on invalid JSON then throws", async () => {
     const f = fake(["not json", "still not json"]);
     await expect(make(f).analyse(input)).rejects.toBeInstanceOf(AnalysisError);

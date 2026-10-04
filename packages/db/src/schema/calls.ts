@@ -61,6 +61,7 @@ export const calls = pgTable(
       needsCallback: boolean;
       callbackReason?: string;
       model: string;
+      skipped?: string;
     }>(),
     analysedAt: timestamp("analysed_at", { withTimezone: true }),
   },
