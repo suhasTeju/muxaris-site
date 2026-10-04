@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, lt, or } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
 import {
   bookAppointment,
@@ -27,7 +27,7 @@ const listQuery = z.object({
 });
 const cancelBody = z.object({ reason: z.string().trim().min(1).max(300).optional() });
 const patientsQuery = z.object({ q: z.string().trim().min(1).max(100).optional(), ...page });
-const callsQuery = z.object({ ...page });
+const callsQuery = z.object({ from: isoOffset.optional(), to: isoOffset.optional(), ...page });
 
 function startOfToday() {
   const d = new Date();
@@ -135,13 +135,20 @@ export function appointmentRoutes(db: Db) {
   });
 
   r.get("/calls", member, v("query", callsQuery), async (c) => {
+    const q = c.req.valid("query");
     const calls = await db
       .select()
       .from(schema.calls)
-      .where(eq(schema.calls.clinicId, c.get("clinic").id))
+      .where(
+        and(
+          eq(schema.calls.clinicId, c.get("clinic").id),
+          q.from ? gte(schema.calls.startedAt, new Date(q.from)) : undefined,
+          q.to ? lt(schema.calls.startedAt, new Date(q.to)) : undefined,
+        ),
+      )
       .orderBy(desc(schema.calls.startedAt), desc(schema.calls.id))
-      .limit(c.req.valid("query").limit)
-      .offset(c.req.valid("query").offset);
+      .limit(q.limit)
+      .offset(q.offset);
     return c.json({ calls });
   });
   r.get("/calls/:id", member, async (c) => {

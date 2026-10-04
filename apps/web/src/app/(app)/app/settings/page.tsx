@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { AssistantProfile, Clinic, Doctor, Service, SlotRules } from "@muxaris/shared";
 import { LANGUAGES } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
-import { getActiveClinic, serverApi } from "@/lib/api-server";
+import { requireActiveClinic, serverApi } from "@/lib/api-server";
 
 export const dynamic = "force-dynamic";
 
@@ -25,13 +25,13 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 }
 
 export default async function SettingsPage() {
-  const active = await getActiveClinic();
+  const active = await requireActiveClinic();
   const assistantReq = serverApi<{ assistant: AssistantProfile }>("/v1/assistant").catch((e) => {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
   });
   const [{ clinic }, doctors, services, rules, assistant] = await Promise.all([
-    serverApi<{ clinic: Clinic }>(`/v1/clinics/${active!.clinicId}`),
+    serverApi<{ clinic: Clinic }>(`/v1/clinics/${active.clinicId}`),
     serverApi<{ doctors: Doctor[] }>("/v1/doctors"),
     serverApi<{ services: Service[] }>("/v1/services"),
     serverApi<{ slotRules: SlotRules }>("/v1/slot-rules"),

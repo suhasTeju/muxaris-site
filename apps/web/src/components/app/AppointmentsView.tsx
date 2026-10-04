@@ -1,22 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Appointment, Doctor, Patient, Service } from "@muxaris/shared";
 import { useApi } from "@/lib/api-client";
 import { addDays, dayRange, localDateKey } from "@/lib/dashboard";
 import { AppointmentList } from "./AppointmentList";
 import { CancelDialog, NewAppointmentDialog, RescheduleDialog } from "./AppointmentDialogs";
 import { DayCalendar } from "./DayCalendar";
+import { useClinic } from "./clinic-context";
 import { ghostBtn, primaryBtn } from "./Modal";
 import { useClinicProfile } from "./use-clinic-profile";
 
 type Mode = "day" | "week";
 
+/** Keyed by clinic so nothing from the previous clinic survives a switch. */
 export function AppointmentsView() {
+  const { activeClinic } = useClinic();
+  return <AppointmentsInner key={activeClinic.id} />;
+}
+
+function AppointmentsInner() {
   const api = useApi();
-  const { tz } = useClinicProfile();
+  const { clinic, tz } = useClinicProfile();
+  const ready = clinic !== null;
   const [mode, setMode] = useState<Mode>("day");
-  const [date, setDate] = useState(() => localDateKey(new Date(), "Asia/Kolkata"));
+  // null means "today in the clinic's timezone".
+  const [picked, setPicked] = useState<string | null>(null);
+  const date = picked ?? localDateKey(new Date(), tz);
   const [data, setData] = useState<{
     appointments: Appointment[];
     doctors: Doctor[];
@@ -24,41 +34,41 @@ export function AppointmentsView() {
     patients: Patient[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
   const [creating, setCreating] = useState(false);
   const [cancelling, setCancelling] = useState<Appointment | null>(null);
   const [rescheduling, setRescheduling] = useState<Appointment | null>(null);
 
-  // Re-anchor "today" once the clinic's real timezone arrives.
+  // Only the latest request may write state; wait for the clinic profile (timezone) first.
   useEffect(() => {
-    setDate(localDateKey(new Date(), tz));
-  }, [tz]);
-
-  const load = useCallback(async () => {
+    if (!ready) return;
+    let live = true;
     setError(null);
     const { from, to } = dayRange(date, mode === "day" ? 1 : 7, tz);
-    try {
-      const [a, d, s, p] = await Promise.all([
-        api<{ appointments: Appointment[] }>(
-          `/v1/appointments?${new URLSearchParams({ from, to })}`,
-        ),
-        api<{ doctors: Doctor[] }>("/v1/doctors"),
-        api<{ services: Service[] }>("/v1/services"),
-        api<{ patients: Patient[] }>("/v1/patients?limit=200"),
-      ]);
-      setData({
-        appointments: a.appointments,
-        doctors: d.doctors,
-        services: s.services,
-        patients: p.patients,
+    Promise.all([
+      api<{ appointments: Appointment[] }>(`/v1/appointments?${new URLSearchParams({ from, to })}`),
+      api<{ doctors: Doctor[] }>("/v1/doctors"),
+      api<{ services: Service[] }>("/v1/services"),
+      api<{ patients: Patient[] }>("/v1/patients?limit=200"),
+    ])
+      .then(([a, d, s, p]) => {
+        if (!live) return;
+        setData({
+          appointments: a.appointments,
+          doctors: d.doctors,
+          services: s.services,
+          patients: p.patients,
+        });
+      })
+      .catch((e: unknown) => {
+        if (live) setError(e instanceof Error ? e.message : "Could not load appointments");
       });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load appointments");
-    }
-  }, [api, date, mode, tz]);
+    return () => {
+      live = false;
+    };
+  }, [api, date, mode, tz, ready, nonce]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const reload = () => setNonce((n) => n + 1);
 
   const step = mode === "day" ? 1 : 7;
   const days = Array.from({ length: mode === "day" ? 1 : 7 }, (_, i) => addDays(date, i));
@@ -75,7 +85,7 @@ export function AppointmentsView() {
     setCreating(false);
     setCancelling(null);
     setRescheduling(null);
-    void load();
+    reload();
   };
 
   return (
@@ -115,7 +125,7 @@ export function AppointmentsView() {
         <button
           type="button"
           className={ghostBtn}
-          onClick={() => setDate(addDays(date, -step))}
+          onClick={() => setPicked(addDays(date, -step))}
           aria-label="Previous"
         >
           ←
@@ -124,22 +134,18 @@ export function AppointmentsView() {
           type="date"
           aria-label="Date"
           value={date}
-          onChange={(e) => e.target.value && setDate(e.target.value)}
+          onChange={(e) => e.target.value && setPicked(e.target.value)}
           className="border-line bg-surface min-h-11 rounded-xl border px-3"
         />
         <button
           type="button"
           className={ghostBtn}
-          onClick={() => setDate(addDays(date, step))}
+          onClick={() => setPicked(addDays(date, step))}
           aria-label="Next"
         >
           →
         </button>
-        <button
-          type="button"
-          className={ghostBtn}
-          onClick={() => setDate(localDateKey(new Date(), tz))}
-        >
+        <button type="button" className={ghostBtn} onClick={() => setPicked(null)}>
           Today
         </button>
       </div>
@@ -147,11 +153,11 @@ export function AppointmentsView() {
       {error ? (
         <p role="alert" className="text-danger">
           {error}{" "}
-          <button type="button" className="underline" onClick={() => void load()}>
+          <button type="button" className="underline" onClick={reload}>
             Retry
           </button>
         </p>
-      ) : !common ? (
+      ) : !common || !ready ? (
         <p className="text-muted">Loading appointments…</p>
       ) : mode === "day" ? (
         <AppointmentList {...common} />

@@ -1,6 +1,7 @@
 import type { Appointment, Call, Doctor } from "@muxaris/shared";
 
 export const DEFAULT_TZ = "Asia/Kolkata";
+export const CALLS_PAGE_SIZE = 50;
 
 function safeTz(tz: string | undefined): string {
   const zone = tz || DEFAULT_TZ;
@@ -99,6 +100,13 @@ export function formatDuration(seconds: number | null | undefined): string {
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   return m > 0 ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`;
+}
+
+/** One independently-loaded dashboard section: data, or "couldn't load". */
+export type Section<T> = { ok: true; data: T } | { ok: false };
+
+export function toSection<T>(r: PromiseSettledResult<T>): Section<T> {
+  return r.status === "fulfilled" ? { ok: true, data: r.value } : { ok: false };
 }
 
 export interface Usage {

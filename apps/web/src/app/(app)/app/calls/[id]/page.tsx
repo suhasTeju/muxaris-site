@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Call, CallTurn, Clinic } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
-import { getActiveClinic, serverApi } from "@/lib/api-server";
+import { requireActiveClinic, serverApi } from "@/lib/api-server";
 import { formatDateTime, formatDuration } from "@/lib/dashboard";
 import { CallStatusBadge, OutcomeBadge } from "@/components/app/Badge";
 import { languageLabel } from "@/components/app/CallList";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CallDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const active = await getActiveClinic();
+  const active = await requireActiveClinic();
   let data: { call: Call; turns: CallTurn[] };
   try {
     data = await serverApi<{ call: Call; turns: CallTurn[] }>(
@@ -21,7 +21,7 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
-  const { clinic } = await serverApi<{ clinic: Clinic }>(`/v1/clinics/${active!.clinicId}`);
+  const { clinic } = await serverApi<{ clinic: Clinic }>(`/v1/clinics/${active.clinicId}`);
   const { call, turns } = data;
   return (
     <div className="max-w-3xl px-4 py-8 sm:px-8">

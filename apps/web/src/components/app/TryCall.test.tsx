@@ -124,4 +124,40 @@ describe("TryCall", () => {
     render(<TryCall />);
     expect(within(screen.getByRole("alert")).getByText(title)).toBeTruthy();
   });
+
+  it("starts once when Start is double-clicked during the token fetch", async () => {
+    let resolve!: (t: string) => void;
+    getAccessToken.mockImplementationOnce(() => new Promise<string>((r) => (resolve = r)));
+    render(<TryCall />);
+    const btn = screen.getByRole("button", { name: "Start call" });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    resolve("tok-fresh");
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+    expect(getAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a network failure fetching the token separately from an expired session", async () => {
+    getAccessToken.mockRejectedValueOnce(new Error("offline"));
+    render(<TryCall />);
+    fireEvent.click(screen.getByRole("button", { name: "Start call" }));
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText("Could not reach the sign-in service")).toBeTruthy();
+    expect(screen.queryByText("Your session expired")).toBeNull();
+    expect(start).not.toHaveBeenCalled();
+    // The button is usable again.
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Start call" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+  });
+
+  it("reports a missing session as expired", async () => {
+    getAccessToken.mockResolvedValueOnce(undefined as unknown as string);
+    render(<TryCall />);
+    fireEvent.click(screen.getByRole("button", { name: "Start call" }));
+    expect(await screen.findByText("Your session expired")).toBeTruthy();
+  });
 });

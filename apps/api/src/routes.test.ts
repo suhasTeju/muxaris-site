@@ -304,6 +304,22 @@ afterAll(async () => {
     expect((await call("GET", "/calls?offset=-1", { token: tokA, clinic: c })).status).toBe(400);
   });
 
+  it("GET /calls filters by from/to on startedAt and validates them", async () => {
+    const c = await createCall(db, { clinicId: ownClinic, channel: "browser" });
+    const ids = async (qs: string) =>
+      (
+        (await (await call("GET", `/calls?${qs}`, { token: tokA, clinic: ownClinic })).json()) as J
+      ).calls.map((x: J) => x.id);
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    expect(await ids(new URLSearchParams({ from: past, to: future }).toString())).toContain(c.id);
+    expect(await ids(new URLSearchParams({ from: future }).toString())).not.toContain(c.id);
+    expect(await ids(new URLSearchParams({ to: past }).toString())).not.toContain(c.id);
+    expect(
+      (await call("GET", "/calls?from=yesterday", { token: tokA, clinic: ownClinic })).status,
+    ).toBe(400);
+  });
+
   it("GET /calls/:id returns the call with its turns, scoped to the clinic", async () => {
     const c = await createCall(db, { clinicId: ownClinic, channel: "browser" });
     await appendTurn(db, { callId: c.id, clinicId: ownClinic, seq: 1, role: "user", text: "hi" });

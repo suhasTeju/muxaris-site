@@ -24,12 +24,12 @@ function PhoneCell({ phone }: { phone: string }) {
   return (
     <button
       type="button"
-      onMouseEnter={() => setShown(true)}
-      onMouseLeave={() => setShown(false)}
-      onFocus={() => setShown(true)}
-      onBlur={() => setShown(false)}
       onClick={() => setShown((s) => !s)}
-      aria-label={shown ? `Phone ${phone}` : `Phone ending ${maskPhone(phone)}. Show full number`}
+      aria-label={
+        shown
+          ? `Phone ${phone}. Hide full number`
+          : `Phone ending ${maskPhone(phone)}. Show full number`
+      }
       className="text-muted min-h-8 rounded px-1 text-sm tabular-nums hover:text-[var(--color-ink)] focus-visible:outline-2 focus-visible:outline-[var(--color-accent)]"
     >
       {shown ? phone : maskPhone(phone)}

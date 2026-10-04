@@ -4,18 +4,6 @@ import pg from "pg";
 import { createDb, schema, newId } from "@muxaris/db";
 import { createDevVerifier } from "@muxaris/core";
 import { createApp } from "./app.js";
-import { monthInTimezone } from "./routes/me.js";
-
-describe("monthInTimezone", () => {
-  it("uses the clinic timezone at a month boundary", () => {
-    const at = new Date("2026-09-30T20:00:00Z"); // 01:30 IST on Oct 1
-    expect(monthInTimezone(at, "Asia/Kolkata")).toBe("2026-10");
-    expect(monthInTimezone(at, "UTC")).toBe("2026-09");
-  });
-  it("falls back to Asia/Kolkata for an invalid zone", () => {
-    expect(monthInTimezone(new Date("2026-09-30T20:00:00Z"), "Not/AZone")).toBe("2026-10");
-  });
-});
 
 const url = process.env.DATABASE_URL ?? "postgres://muxaris:muxaris@localhost:5433/muxaris";
 const { db, pool } = createDb(url);

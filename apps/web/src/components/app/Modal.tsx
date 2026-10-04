@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 export function Modal({
   title,
   onClose,
@@ -12,18 +14,55 @@ export function Modal({
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    const prev = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>("input,select,button")?.focus();
+    onCloseRef.current = onClose;
+  });
+
+  // Mount-only: focus the first field, trap Tab, lock page scroll, restore focus on close.
+  useEffect(() => {
+    const trigger = document.activeElement as HTMLElement | null;
+    const body = bodyRef.current;
+    const first =
+      body?.querySelector<HTMLElement>("[autofocus], input, select, textarea") ??
+      body?.querySelector<HTMLElement>("button:not([disabled])") ??
+      ref.current;
+    first?.focus();
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !ref.current) return;
+      const items = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (el) => !el.hasAttribute("disabled"),
+      );
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const firstEl = items[0]!;
+      const lastEl = items[items.length - 1]!;
+      const active = document.activeElement;
+      if (e.shiftKey && (active === firstEl || !ref.current.contains(active))) {
+        e.preventDefault();
+        lastEl.focus();
+      } else if (!e.shiftKey && (active === lastEl || !ref.current.contains(active))) {
+        e.preventDefault();
+        firstEl.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      prev?.focus();
+      document.body.style.overflow = prevOverflow;
+      trigger?.focus();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-[color-mix(in_srgb,var(--color-ink)_45%,transparent)] p-0 sm:items-center sm:p-4">
       <div
@@ -31,6 +70,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         className="bg-surface shadow-card max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl p-6 sm:rounded-2xl"
       >
         <div className="mb-4 flex items-start justify-between gap-4">
@@ -44,7 +84,7 @@ export function Modal({
             ×
           </button>
         </div>
-        {children}
+        <div ref={bodyRef}>{children}</div>
       </div>
     </div>
   );

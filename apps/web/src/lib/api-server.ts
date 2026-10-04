@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { fetchAuthSession } from "aws-amplify/auth/server";
 import { runWithAmplifyServerContext } from "./amplify-server";
 import { apiFetch, type ApiInit, type MeResponse } from "./api";
@@ -31,6 +32,13 @@ export async function getActiveClinic() {
   const me = await getServerMe();
   const saved = (await cookies()).get(CLINIC_COOKIE)?.value;
   return resolveActiveClinic(me.memberships, saved);
+}
+
+/** The active clinic, or a redirect to onboarding when the user has none (pages render in parallel with the layout). */
+export async function requireActiveClinic() {
+  const active = await getActiveClinic();
+  if (!active) redirect("/onboarding");
+  return active;
 }
 
 export async function serverApi<T>(path: string, init: ApiInit = {}): Promise<T> {

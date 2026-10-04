@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LANGUAGES, type LanguageCode } from "@muxaris/shared";
 import { useVoiceCall, type CallState } from "@muxaris/voice-sdk";
 import { getAccessToken } from "@/lib/api-client";
@@ -40,6 +40,7 @@ export function TryCall() {
   const [language, setLanguage] = useState<LanguageCode>("en-IN");
   const [token, setToken] = useState("");
   const [pending, setPending] = useState(false);
+  const startingRef = useRef(false);
   const [startError, setStartError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,6 +59,7 @@ export function TryCall() {
   // Start only after the freshly fetched token has been rendered into the hook's options.
   useEffect(() => {
     if (pending && token) {
+      startingRef.current = false;
       setPending(false);
       void start();
     }
@@ -69,24 +71,40 @@ export function TryCall() {
   }, [phase]);
 
   async function onStart() {
+    if (startingRef.current) return;
+    startingRef.current = true;
     setStartError(null);
+    setPending(true);
+    let t: string | undefined;
     try {
-      const t = await getAccessToken();
-      if (!t) {
-        setStartError("auth");
-        return;
-      }
-      setToken(t);
-      setPending(true);
+      t = await getAccessToken();
     } catch {
-      setStartError("auth");
+      startingRef.current = false;
+      setPending(false);
+      setStartError("network");
+      return;
     }
+    if (!t) {
+      startingRef.current = false;
+      setPending(false);
+      setStartError("auth");
+      return;
+    }
+    setToken(t);
   }
 
   const active = phase === "connecting" || phase === "live";
   const failure =
     startError === "auth" ? "invalid or expired token" : phase === "error" ? error : null;
-  const errorCopy = failure !== null ? CALL_ERROR_COPY[classifyCallError(failure)] : null;
+  const errorCopy =
+    startError === "network"
+      ? {
+          title: "Could not reach the sign-in service",
+          body: "Check your connection and try again.",
+        }
+      : failure !== null
+        ? CALL_ERROR_COPY[classifyCallError(failure)]
+        : null;
 
   return (
     <div className="px-4 py-8 sm:px-8">
@@ -169,11 +187,13 @@ export function TryCall() {
             <div role="alert" className="bg-danger-soft text-danger rounded-2xl p-4">
               <p className="font-medium">{errorCopy.title}</p>
               <p className="mt-1 text-sm">{errorCopy.body}</p>
-              {classifyCallError(failure) === "auth_failed" && (
-                <a href="/sign-in?next=/app/assistant/try" className={`${ghostBtn} mt-3`}>
-                  Sign in again
-                </a>
-              )}
+              {startError !== "network" &&
+                failure !== null &&
+                classifyCallError(failure) === "auth_failed" && (
+                  <a href="/sign-in?next=/app/assistant/try" className={`${ghostBtn} mt-3`}>
+                    Sign in again
+                  </a>
+                )}
             </div>
           ) : null}
 

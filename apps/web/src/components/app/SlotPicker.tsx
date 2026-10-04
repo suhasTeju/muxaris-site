@@ -53,8 +53,18 @@ export function SlotPicker({
         {error}
       </p>
     );
-  if (!slots) return <p className="text-muted text-sm">Loading free slots…</p>;
-  if (slots.length === 0) return <p className="text-muted text-sm">No free slots on this day.</p>;
+  if (!slots)
+    return (
+      <p role="status" className="text-muted text-sm">
+        Loading free slots…
+      </p>
+    );
+  if (slots.length === 0)
+    return (
+      <p role="status" className="text-muted text-sm">
+        No free slots on this day.
+      </p>
+    );
   return (
     <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-label="Available slots">
       {slots.map((s) => {
