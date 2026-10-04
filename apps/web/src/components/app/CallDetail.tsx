@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import type { Call, CallTurn, Callback } from "@muxaris/shared";
 import { formatDateTime, formatDuration, maskPhone } from "@/lib/dashboard";
 import { Badge, CallStatusBadge, OutcomeBadge } from "./Badge";
-import { AnalysisCard } from "./AnalysisCard";
+import { AnalysisCard, PURGED_NOTE } from "./AnalysisCard";
 import { languageLabel } from "./CallList";
 import { CallPlayer } from "./CallPlayer";
 import { OutcomeEditor } from "./OutcomeEditor";
@@ -74,15 +74,20 @@ export function CallDetail({
           <h2 id="transcript-h" className="font-display mb-3 text-xl">
             Transcript
           </h2>
-          <SyncedTranscript
-            turns={turns}
-            callStartedAt={call.startedAt}
-            currentTimeMs={currentMs}
-            onSeek={seek}
-          />
+          {call.metrics?.["purgedAt"] !== undefined ? (
+            <p className="text-muted font-display italic">{PURGED_NOTE}</p>
+          ) : (
+            <SyncedTranscript
+              turns={turns}
+              callStartedAt={call.startedAt}
+              recorderT0Ms={call.metrics?.["recorderT0Ms"] ?? 0}
+              currentTimeMs={currentMs}
+              onSeek={seek}
+            />
+          )}
         </section>
         <div className="flex flex-col gap-6">
-          <AnalysisCard call={call} onCall={onCall} />
+          <AnalysisCard call={call} callbackCount={callbacks.length} onCall={onCall} />
           <OutcomeEditor call={call} onSaved={onCall} />
           {callbacks.length > 0 ? (
             <section

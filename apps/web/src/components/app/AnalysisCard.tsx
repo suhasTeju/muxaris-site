@@ -5,6 +5,8 @@ import type { Call } from "@muxaris/shared";
 import { useApi } from "@/lib/api-client";
 import { Badge } from "./Badge";
 
+export const PURGED_NOTE = "This call's transcript and summary were deleted after 90 days.";
+
 const POLL_MS = 10_000;
 const POLL_MAX_MS = 120_000;
 const RECENT_MS = 5 * 60_000;
@@ -24,12 +26,24 @@ function entityRows(entities: Record<string, unknown> | undefined): Array<[strin
 }
 
 /** Post-call summary. While the worker has not run yet, a recent call is polled for up to 2 min. */
-export function AnalysisCard({ call, onCall }: { call: Call; onCall: (call: Call) => void }) {
+export function AnalysisCard({
+  call,
+  callbackCount,
+  onCall,
+}: {
+  call: Call;
+  /** Callbacks linked to this call; a requested callback with none means no number was given. */
+  callbackCount: number;
+  onCall: (call: Call) => void;
+}) {
   const api = useApi();
   const [mountedAt] = useState(() => Date.now());
   const [gaveUp, setGaveUp] = useState(false);
   const recent = call.endedAt !== null && mountedAt - Date.parse(call.endedAt) < RECENT_MS;
-  const pending = call.analysedAt === null && recent && !gaveUp;
+  const purged = call.metrics?.["purgedAt"] !== undefined;
+  // The gateway writes metrics.userTurns when the call ends; zero means nobody spoke.
+  const noSpeech = call.metrics?.["userTurns"] === 0;
+  const pending = call.analysedAt === null && recent && !gaveUp && !noSpeech && !purged;
 
   useEffect(() => {
     if (!pending) return;
@@ -56,9 +70,11 @@ export function AnalysisCard({ call, onCall }: { call: Call; onCall: (call: Call
 
   const rows = entityRows(call.analysis?.entities);
   let body: React.ReactNode;
-  if (call.summary) {
+  if (purged) {
+    body = <p className="text-muted">{PURGED_NOTE}</p>;
+  } else if (call.summary) {
     body = <p className="text-[15px]">{call.summary}</p>;
-  } else if (call.analysedAt && call.analysis?.skipped === "no_turns") {
+  } else if (noSpeech || (call.analysedAt && call.analysis?.skipped === "no_turns")) {
     // The worker marked this call as having no caller speech: say so rather than guess.
     body = <p className="text-muted">No caller speech to summarise.</p>;
   } else if (pending) {
@@ -85,13 +101,17 @@ export function AnalysisCard({ call, onCall }: { call: Call; onCall: (call: Call
         ) : null}
       </div>
       {body}
-      {call.analysis?.needsCallback ? (
-        <p className="mt-3 text-sm">
-          <span className="font-medium">Callback requested</span>
-          {call.analysis.callbackReason ? (
-            <span className="text-muted">: {call.analysis.callbackReason}</span>
-          ) : null}
-        </p>
+      {call.analysis?.needsCallback && !purged ? (
+        callbackCount === 0 ? (
+          <p className="mt-3 text-sm">Caller asked for a callback but left no number.</p>
+        ) : (
+          <p className="mt-3 text-sm">
+            <span className="font-medium">Callback requested</span>
+            {call.analysis.callbackReason ? (
+              <span className="text-muted">: {call.analysis.callbackReason}</span>
+            ) : null}
+          </p>
+        )
       ) : null}
       {rows.length > 0 ? (
         <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">

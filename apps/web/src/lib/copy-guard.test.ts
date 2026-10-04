@@ -26,7 +26,15 @@ describe("marketing copy guard", () => {
     for (const f of ["lib/content.ts", "app/privacy/page.tsx"]) {
       const text = readFileSync(join(root, f), "utf8");
       expect(text).not.toMatch(/arrive with the call-centre release/);
-      expect(text).toMatch(/90 days/);
+      const flat = text.replace(/\s+/g, " ");
+      expect(flat).toMatch(/recordings are stored encrypted in AWS Mumbai/i);
+      expect(flat).toMatch(
+        /recordings, transcripts and call summaries are deleted 90 days after the call/i,
+      );
+      expect(flat).toMatch(/turn recording off in Settings/i);
+      expect(flat).toMatch(/transcribed but no audio is kept/i);
+      // Only recordings are encrypted; never claim the transcripts are.
+      expect(flat).not.toMatch(/transcripts[^.]{0,40}(stored )?encrypted/i);
     }
   });
 });

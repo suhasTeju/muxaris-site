@@ -259,7 +259,7 @@ export const FAQS = [
   },
   {
     q: "Where is our data stored?",
-    a: "Your clinic’s data is stored in India (AWS Mumbai). Speech recognition and synthesis run with Sarvam AI in India. The conversation model runs on Amazon Bedrock and may be processed in other AWS regions. Call recordings and transcripts are stored encrypted in AWS Mumbai and kept for 90 days by default, after which they are deleted automatically. Clinics can turn recording off in Settings, and then calls are transcribed but no audio is kept. Patient data belongs to your clinic, and we never sell it.",
+    a: "Your clinic’s data is stored in India (AWS Mumbai). Speech recognition and synthesis run with Sarvam AI in India. The conversation model runs on Amazon Bedrock and may be processed in other AWS regions. Call recordings are stored encrypted in AWS Mumbai. Recordings, transcripts and call summaries are deleted 90 days after the call by default. Clinics can turn recording off in Settings, and then calls are transcribed but no audio is kept. Patient data belongs to your clinic, and we never sell it.",
   },
   {
     q: "How does booking work with our calendar?",

@@ -98,6 +98,54 @@ describe("SyncedTranscript", () => {
     expect(onSeek).toHaveBeenCalledWith(0);
   });
 
+  it("subtracts recorderT0Ms so turns line up with the recording", () => {
+    const onSeek = vi.fn();
+    render(
+      <SyncedTranscript
+        turns={turns}
+        callStartedAt={START}
+        recorderT0Ms={1500}
+        currentTimeMs={2500}
+        onSeek={onSeek}
+      />,
+    );
+    // Turn 2 starts 4000 ms after the call, i.e. 2500 ms into the recording.
+    expect(screen.getByRole("button", { current: true }).textContent).toContain(
+      "I need a cleaning",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Booked for Tuesday/ }));
+    expect(onSeek).toHaveBeenCalledWith(7500);
+  });
+
+  it("keeps offsets monotonic in seq even if a later turn is stamped earlier", () => {
+    const onSeek = vi.fn();
+    render(
+      <SyncedTranscript
+        turns={[turn(1, "user", "First", 5000), turn(2, "assistant", "Second", 3000)]}
+        callStartedAt={START}
+        currentTimeMs={null}
+        onSeek={onSeek}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Second/ }));
+    expect(onSeek).toHaveBeenCalledWith(5000);
+  });
+
+  it("shows whether a tool call succeeded", () => {
+    const t = (seq: number, toolStatus: "ok" | "error") =>
+      ({ ...turn(seq, "tool", null, seq * 1000), toolStatus }) as CallTurn;
+    render(
+      <SyncedTranscript
+        turns={[t(1, "ok"), t(2, "error")]}
+        callStartedAt={START}
+        currentTimeMs={null}
+        onSeek={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("done")).toBeTruthy();
+    expect(screen.getByText("failed")).toBeTruthy();
+  });
+
   it("says so when there is no transcript", () => {
     render(
       <SyncedTranscript turns={[]} callStartedAt={START} currentTimeMs={null} onSeek={vi.fn()} />,

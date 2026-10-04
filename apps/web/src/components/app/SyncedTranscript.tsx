@@ -21,20 +21,28 @@ function clock(ms: number): string {
 export function SyncedTranscript({
   turns,
   callStartedAt,
+  recorderT0Ms = 0,
   currentTimeMs,
   onSeek,
 }: {
   turns: CallTurn[];
   callStartedAt: string;
+  /** Offset of the recording's start from the call's start (turn times are on the call clock). */
+  recorderT0Ms?: number;
   currentTimeMs: number | null;
   onSeek: (ms: number) => void;
 }) {
   const rows = useMemo<Row[]>(() => {
-    const base = Date.parse(callStartedAt);
+    const base = Date.parse(callStartedAt) + recorderT0Ms;
+    let prev = 0;
     return [...turns]
       .sort((a, b) => a.seq - b.seq)
-      .map((turn) => ({ turn, offsetMs: Math.max(0, Date.parse(turn.startedAt) - base || 0) }));
-  }, [turns, callStartedAt]);
+      .map((turn) => ({
+        turn,
+        // Never negative, never going backwards in seq order.
+        offsetMs: (prev = Math.max(prev, Date.parse(turn.startedAt) - base || 0)),
+      }));
+  }, [turns, callStartedAt, recorderT0Ms]);
 
   // The current turn is the last spoken turn that has started: offsetMs <= t < next offsetMs.
   let currentId: string | null = null;
@@ -67,6 +75,13 @@ export function SyncedTranscript({
             <li key={turn.id} data-kind="tool" className="text-muted self-center text-xs">
               <span className="border-line bg-surface inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1">
                 Assistant used <code>{turn.toolName}</code>
+                {turn.toolStatus ? (
+                  <span
+                    className={turn.toolStatus === "error" ? "text-danger" : "text-accent-deep"}
+                  >
+                    {turn.toolStatus === "error" ? "failed" : "done"}
+                  </span>
+                ) : null}
               </span>
             </li>
           );

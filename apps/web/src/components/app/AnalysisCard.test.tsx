@@ -35,6 +35,7 @@ describe("AnalysisCard", () => {
           analysedAt: new Date().toISOString(),
           analysis: { entities: { service: "Cleaning", day: "Tuesday" }, needsCallback: false },
         })}
+        callbackCount={0}
         onCall={vi.fn()}
       />,
     );
@@ -47,6 +48,7 @@ describe("AnalysisCard", () => {
     render(
       <AnalysisCard
         call={call({ analysedAt: new Date().toISOString(), analysis: { skipped: "no_turns" } })}
+        callbackCount={0}
         onCall={vi.fn()}
       />,
     );
@@ -54,7 +56,13 @@ describe("AnalysisCard", () => {
   });
 
   it("falls back to No summary available when analysed without a skipped marker", () => {
-    render(<AnalysisCard call={call({ analysedAt: new Date().toISOString() })} onCall={vi.fn()} />);
+    render(
+      <AnalysisCard
+        call={call({ analysedAt: new Date().toISOString() })}
+        callbackCount={0}
+        onCall={vi.fn()}
+      />,
+    );
     expect(screen.getByText("No summary available")).toBeTruthy();
     expect(screen.queryByText("No caller speech to summarise.")).toBeNull();
   });
@@ -65,7 +73,7 @@ describe("AnalysisCard", () => {
     api.mockResolvedValue({
       call: call({ summary: "Done.", analysedAt: new Date().toISOString() }),
     });
-    render(<AnalysisCard call={call()} onCall={onCall} />);
+    render(<AnalysisCard call={call()} callbackCount={0} onCall={onCall} />);
     expect(screen.getByText("Summary pending")).toBeTruthy();
     expect(api).not.toHaveBeenCalled();
     await act(async () => {
@@ -78,7 +86,7 @@ describe("AnalysisCard", () => {
   it("stops polling after two minutes", async () => {
     vi.useFakeTimers();
     api.mockResolvedValue({ call: call() });
-    render(<AnalysisCard call={call()} onCall={vi.fn()} />);
+    render(<AnalysisCard call={call()} callbackCount={0} onCall={vi.fn()} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(120_000);
     });
@@ -94,10 +102,61 @@ describe("AnalysisCard", () => {
     render(
       <AnalysisCard
         call={call({ endedAt: new Date(Date.now() - 3_600_000).toISOString() })}
+        callbackCount={0}
         onCall={vi.fn()}
       />,
     );
     expect(screen.getByText("No summary available")).toBeTruthy();
     expect(api).not.toHaveBeenCalled();
+  });
+
+  it("does not claim a callback was queued when the caller left no number", () => {
+    const analysed = {
+      analysedAt: new Date().toISOString(),
+      summary: "Wants a call.",
+      analysis: { entities: {}, needsCallback: true, callbackReason: "pain" },
+    };
+    const { rerender } = render(
+      <AnalysisCard call={call(analysed)} callbackCount={0} onCall={vi.fn()} />,
+    );
+    expect(screen.getByText("Caller asked for a callback but left no number.")).toBeTruthy();
+    expect(screen.queryByText("Callback requested")).toBeNull();
+    rerender(<AnalysisCard call={call(analysed)} callbackCount={1} onCall={vi.fn()} />);
+    expect(screen.getByText("Callback requested")).toBeTruthy();
+  });
+
+  it("treats a call with zero caller turns as no speech, without polling", async () => {
+    vi.useFakeTimers();
+    render(
+      <AnalysisCard
+        call={call({ metrics: { userTurns: 0 } } as Partial<Call>)}
+        callbackCount={0}
+        onCall={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("No caller speech to summarise.")).toBeTruthy();
+    expect(screen.queryByText("Summary pending")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("says the transcript and summary were deleted once the call is purged", () => {
+    render(
+      <AnalysisCard
+        call={call({
+          metrics: { userTurns: 3, purgedAt: Date.now() },
+          analysedAt: new Date().toISOString(),
+          analysis: { entities: {}, needsCallback: true, model: "m", purged: true },
+        } as Partial<Call>)}
+        callbackCount={0}
+        onCall={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("This call's transcript and summary were deleted after 90 days."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/left no number/)).toBeNull();
   });
 });

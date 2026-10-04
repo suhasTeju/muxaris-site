@@ -87,8 +87,8 @@ export default function PrivacyPage() {
 
         <h2>Retention</h2>
         <p>
-          Call recordings and transcripts are stored encrypted in AWS Mumbai (ap-south-1) and kept
-          for 90 days by default, after which they are deleted automatically. Clinics can turn
+          Call recordings are stored encrypted in AWS Mumbai (ap-south-1). Recordings, transcripts
+          and call summaries are deleted 90 days after the call by default. Clinics can turn
           recording off in Settings; calls are then transcribed but no audio is kept. Bookings and
           patient records are kept while the clinic’s account is active, and deleted or returned
           after it ends, unless the law requires us to keep something longer.

@@ -24,4 +24,22 @@ describe("CallList", () => {
     expect(screen.getByText("+91 •••• ••3210")).toBeTruthy();
     expect(container.textContent).not.toContain("9876543210");
   });
+
+  it("labels a swept call as Abandoned rather than In progress", () => {
+    const calls = [
+      {
+        id: "c2",
+        startedAt: "2026-10-06T04:00:00Z",
+        channel: "phone",
+        callerPhone: null,
+        durationS: 1200,
+        languageDetected: null,
+        outcome: "info",
+        status: "abandoned",
+      },
+    ] as unknown as Call[];
+    render(<CallList calls={calls} tz="Asia/Kolkata" />);
+    expect(screen.getByText("Abandoned", { selector: "span" })).toBeTruthy();
+    expect(screen.queryByText("In progress")).toBeNull();
+  });
 });

@@ -52,6 +52,8 @@ export function CallStatusBadge({ status }: { status: Call["status"] }) {
     <Badge tone="good">Completed</Badge>
   ) : status === "failed" ? (
     <Badge tone="bad">Failed</Badge>
+  ) : status === "abandoned" ? (
+    <Badge tone="muted">Abandoned</Badge>
   ) : (
     <Badge tone="warn">In progress</Badge>
   );
