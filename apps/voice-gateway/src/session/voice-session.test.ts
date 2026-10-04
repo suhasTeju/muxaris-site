@@ -45,11 +45,15 @@ afterAll(async () => {
     secondsRemaining?: number;
     timers?: SessionTimers;
     now?: () => Date;
+    callId?: string;
+    callerPhone?: string;
+    channel?: "browser" | "phone";
+    waitListening?: boolean;
   }) {
     const transport = new TestTransport();
     const stt = new FakeStt();
     const tts = opts.tts ?? new FakeTts({ chunks: 2, delayMs: 1 });
-    const callId = await demo.newCall();
+    const callId = opts.callId ?? (await demo.newCall());
     const session = new VoiceSession({
       transport,
       stt,
@@ -65,14 +69,18 @@ afterAll(async () => {
         now: opts.now ?? (() => new Date()),
         maxDurationS: opts.maxDurationS ?? 600,
         secondsRemaining: opts.secondsRemaining ?? 3600,
+        ...(opts.callerPhone ? { callerPhone: opts.callerPhone } : {}),
+        ...(opts.channel ? { channel: opts.channel } : {}),
       },
     });
     await session.start();
-    await waitFor(
-      () => transport.ofType("state").some((s) => s.state === "listening"),
-      4000,
-      "listening",
-    );
+    if (opts.waitListening !== false) {
+      await waitFor(
+        () => transport.ofType("state").some((s) => s.state === "listening"),
+        4000,
+        "listening",
+      );
+    }
     const say = (text: string, language = "en-IN") => {
       stt.push({ type: "speech_start" });
       stt.push({ type: "speech_end" });
@@ -142,7 +150,7 @@ afterAll(async () => {
     say("tell me about the clinic");
     await waitFor(() => transport.audioCount() > base + 2, 4000, "audio");
     stt.push({ type: "speech_start" });
-    const flushIdx = transport.log.findIndex(
+    const flushIdx = transport.log.findLastIndex(
       (l) => l.kind === "event" && l.event.type === "flush_playback",
     );
     expect(flushIdx).toBeGreaterThan(-1);
@@ -244,5 +252,197 @@ afterAll(async () => {
     await advance(10_000);
     await waitFor(() => transport.ofType("ended").length === 1, 3000, "ended");
     expect(transport.ofType("ended")[0]!.reason).toBe("cap");
+  });
+
+  const userTexts = (m: any[]) =>
+    m.flatMap((x) =>
+      (x.content ?? []).flatMap((b: any) => (b.text && x.role === "user" ? [b.text] : [])),
+    );
+  const pairing = (m: any[]) => {
+    const uses = m.flatMap((x) =>
+      (x.content ?? []).flatMap((b: any) => (b.toolUse ? [b.toolUse.toolUseId] : [])),
+    );
+    const res = m.flatMap((x) =>
+      (x.content ?? []).flatMap((b: any) => (b.toolResult ? [b.toolResult.toolUseId] : [])),
+    );
+    return { uses, res, alternates: m.every((x, i) => i === 0 || x.role !== m[i - 1].role) };
+  };
+
+  it("late barge-in: flushes buffered client audio shortly after the last chunk, not 10 s later", async () => {
+    for (const [gapMs, expectFlush] of [
+      [500, true],
+      [10_000, false],
+    ] as const) {
+      let clock = Date.now();
+      const { transport, stt, session } = await setup({
+        llm: new FakeLlm(),
+        now: () => new Date(clock),
+      });
+      expect(transport.ofType("flush_playback")).toHaveLength(0);
+      clock += gapMs;
+      stt.push({ type: "speech_start" });
+      expect(transport.ofType("flush_playback")).toHaveLength(expectFlush ? 1 : 0);
+      await session.end("caller");
+    }
+  });
+
+  it("barge-in during tool execution: no extra LLM call, tool pairing kept, end_call cancelled", async () => {
+    const llm = new ScriptedLlm([
+      () => [call("c1", "end_call", { summary: "bye" })],
+      () => [{ type: "text", text: "Sure, still here." }],
+    ]);
+    const { transport, stt, say, session } = await setup({ llm });
+    transport.hook = (e) => {
+      if (e.type === "tool" && e.status === "started") {
+        transport.hook = undefined;
+        stt.push({ type: "speech_start" }); // barge-in lands while the tool is about to run
+      }
+    };
+    const requests: any[][] = [];
+    const orig = llm.stream.bind(llm);
+    llm.stream = (req: any) => {
+      requests.push(structuredClone(req.messages));
+      return orig(req);
+    };
+    say("goodbye");
+    await waitFor(() => transport.ofType("flush_playback").length === 1, 4000, "flush");
+    await sleep(100);
+    expect(llm.calls).toBe(1);
+    expect(transport.ofType("ended")).toHaveLength(0); // end_call did not hang up
+    say("actually one more thing");
+    await waitFor(() => llm.calls === 2, 4000, "second llm call");
+    await sleep(150);
+    expect(transport.ofType("ended")).toHaveLength(0);
+    const p = pairing(requests[1]!);
+    expect(p.uses).toEqual(p.res); // every toolUse has its toolResult
+    expect(p.alternates).toBe(true);
+    await session.end("caller");
+  });
+
+  it("tool-loop cap: speaks a fallback and hands off", async () => {
+    let n = 0;
+    const llm = {
+      async *stream() {
+        n++;
+        yield call(`loop${n}`, "get_clinic_info", {});
+        yield { type: "done" as const, stopReason: "tool_use" };
+      },
+    };
+    const tts = new FakeTts({ chunks: 1, delayMs: 1 });
+    const { transport, say, callId } = await setup({ llm, tts });
+    say("hello");
+    await waitFor(() => transport.ofType("ended").length === 1, 8000, "ended");
+    expect(n).toBe(6);
+    expect(transport.ofType("ended")[0]).toMatchObject({ reason: "assistant", outcome: "handoff" });
+    expect(tts.spoken.at(-1)!.text).toContain("connect you to our staff");
+    const [row] = await db.select().from(schema.calls).where(eq(schema.calls.id, callId));
+    expect(row!.outcome).toBe("handoff");
+  });
+
+  it("LLM stream error: speaks the fallback then ends with reason error", async () => {
+    const llm = {
+      // eslint-disable-next-line require-yield
+      async *stream() {
+        throw new Error("boom");
+      },
+    };
+    const tts = new FakeTts({ chunks: 1, delayMs: 1 });
+    const { transport, say, callId } = await setup({ llm, tts });
+    say("hello");
+    await waitFor(() => transport.ofType("ended").length === 1, 4000, "ended");
+    expect(tts.spoken.at(-1)!.text).toContain("connect you to our staff");
+    expect(transport.ofType("error")[0]!.code).toBe("provider");
+    expect(transport.ofType("ended")[0]!.reason).toBe("error");
+    const [row] = await db.select().from(schema.calls).where(eq(schema.calls.id, callId));
+    expect(row!.status).toBe("failed");
+  });
+
+  it("two quick transcripts: one LLM call at a time, both utterances kept", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const seen: any[][] = [];
+    const llm = {
+      async *stream(req: any) {
+        active++;
+        maxActive = Math.max(maxActive, active);
+        seen.push(structuredClone(req.messages));
+        try {
+          await sleep(30);
+          yield { type: "text" as const, text: "Okay." };
+          yield { type: "done" as const, stopReason: "end_turn" };
+        } finally {
+          active--;
+        }
+      },
+    };
+    const { transport, stt, session, callId } = await setup({ llm });
+    stt.push({ type: "transcript", text: "first thing" });
+    stt.push({ type: "transcript", text: "second thing" });
+    await waitFor(
+      () => transport.ofType("state").at(-1)?.state === "listening" && seen.length >= 1,
+      4000,
+      "settled",
+    );
+    await sleep(100);
+    expect(maxActive).toBe(1);
+    expect(seen).toHaveLength(1); // the superseded utterance is answered together with the newer one
+    expect(userTexts(seen[0]!).join(" ")).toContain("first thing");
+    expect(userTexts(seen[0]!).join(" ")).toContain("second thing");
+    await session.end("caller");
+    const turns = await db
+      .select()
+      .from(schema.callTurns)
+      .where(eq(schema.callTurns.callId, callId));
+    expect(
+      turns
+        .sort((a, b) => a.seq - b.seq)
+        .filter((t) => t.role === "user")
+        .map((t) => t.text),
+    ).toEqual(["first thing", "second thing"]);
+  });
+
+  it("finishes the call exactly once however it is ended", async () => {
+    const { transport, session } = await setup({ llm: new FakeLlm(), maxDurationS: 0.05 });
+    await Promise.all([session.end("caller"), session.end("cap"), session.end("error")]);
+    await sleep(120); // the max-duration timer must not fire a second end
+    expect(transport.ofType("ended")).toHaveLength(1);
+    expect(transport.ofType("ended")[0]!.reason).toBe("caller");
+  });
+
+  it("an appendTurn failure does not end the call", async () => {
+    const llm = new FakeLlm();
+    const { transport, say, session } = await setup({ llm, callId: "call_does_not_exist" });
+    say("hello there");
+    await waitFor(() => llm.requests.length === 1, 4000, "llm");
+    await waitFor(() => transport.ofType("state").at(-1)?.state === "listening", 4000, "listening");
+    say("and again");
+    await waitFor(() => llm.requests.length === 2, 4000, "llm 2");
+    expect(transport.ofType("ended")).toHaveLength(0);
+    expect(transport.closed).toBe(false);
+    await session.end("caller");
+  });
+
+  it("phone call with an unparseable caller id fails closed", async () => {
+    const llm = new ScriptedLlm([
+      () => [call("l1", "lookup_patient", { patient_phone: "+919876500011" })],
+      () => [{ type: "text", text: "Let me transfer you." }],
+    ]);
+    const { transport, say, session } = await setup({ llm, callerPhone: "abc", channel: "phone" });
+    say("what appointments do I have");
+    await waitFor(() => llm.calls === 2, 4000, "second llm call");
+    await waitFor(() => transport.ofType("tool").some((e) => e.status === "failed"), 4000, "tool");
+    expect(transport.ofType("tool").at(-1)!.summary).toBe("verification_required");
+    await session.end("caller");
+  });
+
+  it("browser call without caller id can claim a phone", async () => {
+    const llm = new ScriptedLlm([
+      () => [call("l1", "lookup_patient", { patient_phone: "+919876500011" })],
+      () => [{ type: "text", text: "You have none." }],
+    ]);
+    const { transport, say, session } = await setup({ llm, channel: "browser" });
+    say("what appointments do I have");
+    await waitFor(() => transport.ofType("tool").some((e) => e.status === "done"), 4000, "tool");
+    await session.end("caller");
   });
 });

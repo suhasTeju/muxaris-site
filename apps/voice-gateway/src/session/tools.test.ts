@@ -134,4 +134,57 @@ const PHONE_B = "+919876500022";
     const out = await executeTool(db, ctx, "cancel_appointment", { appointment_id: aptId });
     expect(out.result).toMatchObject({ cancelled: true });
   });
+
+  it("book_appointment for a phone other than the bound one is refused", async () => {
+    const ctx = ctxFor();
+    await executeTool(db, ctx, "lookup_patient", { patient_phone: PHONE_A });
+    const slot = day.slots[2] ?? day.slots[1]!;
+    const base = {
+      patient_name: "Z",
+      doctor_id: slot.doctorId,
+      service_id: day.service.id,
+      starts_at: slot.startsAt.toISOString(),
+    };
+    const other = await executeTool(db, ctx, "book_appointment", {
+      ...base,
+      patient_phone: PHONE_B,
+    });
+    expect((other.result as { error: string }).error).toBe("verification_required");
+    expect(other.event).toBeUndefined();
+    const own = await executeTool(db, ctx, "book_appointment", { ...base, patient_phone: PHONE_A });
+    expect(own.result).toMatchObject({ booked: true });
+    expect(own.event?.type).toBe("booking");
+  });
+
+  it("verifiedPhone takes precedence and caller id formats are normalised", async () => {
+    const ctx = ctxFor({ callerPhone: "919876500022", verifiedPhone: "+919876500011" });
+    const mismatch = await executeTool(db, ctx, "lookup_patient", { patient_phone: PHONE_B });
+    expect((mismatch.result as { error: string }).error).toBe("verification_required");
+    const ok = await executeTool(db, ctx, "lookup_patient", { patient_phone: PHONE_A });
+    expect((ok.result as { found: boolean }).found).toBe(true);
+    const caller = ctxFor({ callerPhone: "919876500011" });
+    const viaCaller = await executeTool(db, caller, "lookup_patient", { patient_phone: PHONE_A });
+    expect((viaCaller.result as { found: boolean }).found).toBe(true);
+  });
+
+  it("identityUnverifiable refuses lookup, book and cancel", async () => {
+    const ctx = ctxFor({ identityUnverifiable: true });
+    for (const [name, input] of [
+      ["lookup_patient", { patient_phone: PHONE_A }],
+      ["cancel_appointment", { appointment_id: aptId }],
+    ] as const) {
+      const out = await executeTool(db, ctx, name, input);
+      expect((out.result as { error: string }).error).toBe("verification_required");
+    }
+    const slot = day.slots[1]!;
+    const b = await executeTool(db, ctx, "book_appointment", {
+      patient_name: "Q",
+      patient_phone: PHONE_B,
+      doctor_id: slot.doctorId,
+      service_id: day.service.id,
+      starts_at: slot.startsAt.toISOString(),
+    });
+    expect((b.result as { error: string }).error).toBe("verification_required");
+    expect(ctx.claimedPhone).toBeUndefined();
+  });
 });

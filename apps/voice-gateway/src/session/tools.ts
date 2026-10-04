@@ -12,6 +12,7 @@ import {
 import { schema, type Db } from "@muxaris/db";
 import { and, eq } from "drizzle-orm";
 import {
+  indianPhone,
   toolInputSchemas,
   type GatewayEvent,
   type LanguageCode,
@@ -20,13 +21,32 @@ import {
 import { addDays, formatLocal, toLocalIso } from "./local-time.js";
 import { openingHours, type ClinicContext } from "./prompt.js";
 
+/*
+ * Caller identity and patient-data binding.
+ *
+ * Appointments are bound to a phone number. The number is resolved in this order:
+ *   verifiedPhone (OTP; Phase 3 hook) ?? callerPhone (telephony caller ID) ?? claimedPhone.
+ * On the browser channel neither verifiedPhone nor callerPhone exists, so identity is
+ * SELF-ASSERTED: the first phone the caller supplies (lookup_patient / book_appointment) becomes
+ * claimedPhone ("first claim wins") and later, different phones are refused. This is acceptable in
+ * Phase 1 only because the browser caller is an authenticated clinic member (a demo/test call by
+ * clinic staff), and lookup output is PII-minimal. OTP verification sets verifiedPhone and takes
+ * precedence over any claim; it must be in place before public/phone callers are served.
+ */
 export interface ToolContext {
   clinic: ClinicContext;
   callId: string;
   language: LanguageCode;
   now: () => Date;
-  /** Verified caller ID (phone channel); undefined for browser calls. */
+  /** Phone verified by OTP (Phase 3). Highest precedence. */
+  verifiedPhone?: string | undefined;
+  /** Telephony caller ID (phone channel); undefined for browser calls. */
   callerPhone?: string | undefined;
+  /**
+   * A caller ID / verified phone was supplied but could not be parsed. Fail closed: no patient
+   * data is bound, disclosed or changed; the model should offer a transfer to staff.
+   */
+  identityUnverifiable?: boolean | undefined;
   /** Phone number the caller first claimed in this call; set by executeTool. */
   claimedPhone?: string | undefined;
 }
@@ -131,8 +151,8 @@ async function alternativesFor(
 }
 
 export function normalizePhone(p: string): string {
-  const d = p.replace(/[^\d+]/g, "");
-  return /^\d{10}$/.test(d) ? `+91${d}` : d;
+  const r = indianPhone.safeParse(p);
+  return r.success ? r.data : p;
 }
 
 const VERIFICATION_MISMATCH: ToolOutcome = {
@@ -142,14 +162,23 @@ const VERIFICATION_MISMATCH: ToolOutcome = {
   },
 };
 
+const VERIFICATION_UNVERIFIABLE: ToolOutcome = {
+  result: {
+    error: "verification_required",
+    message: "caller identity could not be verified; offer to transfer to staff",
+  },
+};
+
 /** Applies the caller-id / claimed-phone binding. Returns a refusal, or undefined when allowed. */
 function bindPhone(
   ctx: ToolContext,
   phone: string,
   opts: { checkClaimed: boolean },
 ): ToolOutcome | undefined {
+  if (ctx.identityUnverifiable) return VERIFICATION_UNVERIFIABLE;
   const norm = normalizePhone(phone);
-  if (ctx.callerPhone && normalizePhone(ctx.callerPhone) !== norm) return VERIFICATION_MISMATCH;
+  const strong = ctx.verifiedPhone ?? ctx.callerPhone;
+  if (strong && normalizePhone(strong) !== norm) return VERIFICATION_MISMATCH;
   if (!ctx.claimedPhone) ctx.claimedPhone = norm;
   else if (opts.checkClaimed && ctx.claimedPhone !== norm) return VERIFICATION_MISMATCH;
   return undefined;
@@ -161,7 +190,8 @@ async function ownedAppointment(
   ctx: ToolContext,
   appointmentId: string,
 ): Promise<{ refusal: ToolOutcome } | { ok: true }> {
-  const bound = ctx.callerPhone ?? ctx.claimedPhone;
+  if (ctx.identityUnverifiable) return { refusal: VERIFICATION_UNVERIFIABLE };
+  const bound = ctx.verifiedPhone ?? ctx.callerPhone ?? ctx.claimedPhone;
   if (!bound) {
     return {
       refusal: {
@@ -225,7 +255,7 @@ async function run(db: Db, ctx: ToolContext, name: ToolName, input: unknown): Pr
 
     case "book_appointment": {
       const a = toolInputSchemas.book_appointment.parse(input);
-      const refused = bindPhone(ctx, a.patient_phone, { checkClaimed: false });
+      const refused = bindPhone(ctx, a.patient_phone, { checkClaimed: true });
       if (refused) return refused;
       const startsAt = new Date(a.starts_at);
       const date = localDateString(startsAt, tz);

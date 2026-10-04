@@ -2,6 +2,7 @@ import { appendTurn, finishCall } from "@muxaris/core";
 import type { Db } from "@muxaris/db";
 import {
   ASSISTANT_TOOLS,
+  indianPhone,
   LANGUAGES,
   LANGUAGE_CODES,
   type ClientEvent,
@@ -34,7 +35,15 @@ export interface SessionContext {
   maxDurationS: number;
   /** Seconds left in the clinic's plan; the call ends with reason "cap" when it reaches zero. */
   secondsRemaining: number;
-  /** Verified caller ID on phone calls; undefined for browser calls. */
+  /**
+   * "browser" (default) callers are authenticated clinic members whose phone is self-asserted.
+   * Task 7 always passes `callerPhone` for "phone" calls; a phone call without one falls back to
+   * claim-based binding, while a caller ID that is present but invalid fails closed.
+   */
+  channel?: "browser" | "phone";
+  /** Phone verified by OTP (Phase 3 hook). Highest precedence when binding patient data. */
+  verifiedPhone?: string | undefined;
+  /** Telephony caller ID on phone calls; undefined for browser calls (self-asserted identity). */
   callerPhone?: string | undefined;
   /** Number first claimed by the caller in this call (managed by executeTool). */
   claimedPhone?: string | undefined;
@@ -81,6 +90,18 @@ const MAX_MESSAGES = 30;
 const MAX_TOOL_ROUNDS = 6;
 const USAGE_INTERVAL_MS = 30_000;
 const TOOLS = toBedrockTools(ASSISTANT_TOOLS);
+/** PCM16 mono 24 kHz */
+const BYTES_PER_MS = 48;
+/** A barge-in this soon after the last audio is sent still hits audio the client is playing. */
+const LATE_BARGE_IN_MS = 3000;
+
+const FALLBACK: Record<LanguageCode, string> = {
+  "en-IN": "I'm having trouble with that, let me connect you to our staff.",
+  "hi-IN": "मुझे इसमें दिक्कत आ रही है, मैं आपको हमारे स्टाफ से जोड़ती हूँ।",
+  "kn-IN": "ಇದರಲ್ಲಿ ತೊಂದರೆಯಾಗುತ್ತಿದೆ, ನಾನು ನಿಮ್ಮನ್ನು ನಮ್ಮ ಸಿಬ್ಬಂದಿಗೆ ಸಂಪರ್ಕಿಸುತ್ತೇನೆ.",
+  "ta-IN": "இதில் சிக்கல் உள்ளது, உங்களை எங்கள் ஊழியர்களுடன் இணைக்கிறேன்.",
+  "te-IN": "దీనిలో సమస్య ఉంది, మిమ్మల్ని మా సిబ్బందికి కలుపుతాను.",
+};
 
 const isLanguageCode = (s: string | undefined): s is LanguageCode =>
   s !== undefined && (LANGUAGE_CODES as readonly string[]).includes(s);
@@ -117,6 +138,8 @@ class TextQueue implements AsyncIterable<string> {
 interface SpeechItem {
   text: string;
   epoch: number;
+  /** Shared per-round counter of sentences whose audio actually started. */
+  spoken?: { started: number } | undefined;
 }
 
 interface TurnInfo {
@@ -150,6 +173,9 @@ export class VoiceSession {
   private turn: TurnInfo | null = null;
   private speechEndAt: number | null = null;
   private endRequested = false;
+  private turnsPending = 0;
+  private lastAudioSentAt = 0;
+  private playbackEndsAt = 0;
 
   private speechQueue: SpeechItem[] = [];
   private pumpActive = false;
@@ -166,6 +192,8 @@ export class VoiceSession {
   private used = new Set<"booked" | "rescheduled" | "cancelled" | "callback" | "handoff">();
 
   private readonly tctx: ToolContext;
+  private readonly callerPhone: string | undefined;
+  private readonly verifiedPhone: string | undefined;
   private maxTimer: unknown;
   private capTimer: unknown;
   private usageTimer: unknown;
@@ -180,12 +208,27 @@ export class VoiceSession {
     this.log = deps.log;
     this.timers = deps.timers ?? defaultTimers;
     this.language = deps.ctx.language;
+    let unverifiable = false;
+    const norm = (label: string, v: string | undefined) => {
+      if (v === undefined) return undefined;
+      const r = indianPhone.safeParse(v);
+      if (!r.success) {
+        // Fail closed: an unparseable caller ID must not downgrade to a self-asserted claim.
+        unverifiable = true;
+        this.log.warn("invalid phone in session context; identity unverifiable", { field: label });
+      }
+      return r.success ? r.data : undefined;
+    };
+    this.callerPhone = norm("callerPhone", deps.ctx.callerPhone);
+    this.verifiedPhone = norm("verifiedPhone", deps.ctx.verifiedPhone);
     this.tctx = {
       clinic: deps.ctx.clinic,
       callId: deps.ctx.callId,
       language: deps.ctx.language,
       now: deps.ctx.now,
-      callerPhone: deps.ctx.callerPhone,
+      callerPhone: this.callerPhone,
+      verifiedPhone: this.verifiedPhone,
+      identityUnverifiable: unverifiable,
       claimedPhone: deps.ctx.claimedPhone,
     };
   }
@@ -376,9 +419,9 @@ export class VoiceSession {
     );
   }
 
-  private enqueueSpeech(text: string, epoch: number): void {
+  private enqueueSpeech(text: string, epoch: number, spoken?: { started: number }): void {
     if (this.ended || epoch !== this.epoch || !text.trim()) return;
-    this.speechQueue.push({ text, epoch });
+    this.speechQueue.push({ text, epoch, ...(spoken ? { spoken } : {}) });
     if (!this.pumpActive) {
       this.pumpActive = true;
       this.pumpPromise = this.pump();
@@ -407,6 +450,11 @@ export class VoiceSession {
           if (this.turn && this.turn.epoch === item.epoch && this.turn.firstAudioAt === undefined) {
             this.turn.firstAudioAt = this.ctx.now().getTime();
           }
+          if (item.spoken) {
+            item.spoken.started++;
+            item.spoken = undefined; // count each sentence once
+          }
+          this.noteAudioSent(chunk.length);
           this.transport.sendAudio(chunk);
         }
       } catch {
@@ -415,6 +463,12 @@ export class VoiceSession {
         if (this.currentUtt === utt) this.currentUtt = null;
       }
     }
+  }
+
+  private noteAudioSent(bytes: number): void {
+    const now = this.ctx.now().getTime();
+    this.lastAudioSentAt = now;
+    this.playbackEndsAt = Math.max(this.playbackEndsAt, now) + bytes / BYTES_PER_MS;
   }
 
   private async drain(): Promise<void> {
@@ -440,11 +494,28 @@ export class VoiceSession {
 
   private onSpeechStart(): void {
     if (this.ended) return;
-    if (this.state === "thinking" || this.state === "speaking") this.interrupt();
+    if (this.state === "thinking" || this.state === "speaking") {
+      this.interrupt();
+      return;
+    }
+    // Listening, but the server sends faster than realtime: the client may still be playing
+    // buffered audio. Flush it (idempotent on the client).
+    const now = this.ctx.now().getTime();
+    if (
+      this.lastAudioSentAt > 0 &&
+      (now - this.lastAudioSentAt < LATE_BARGE_IN_MS || now < this.playbackEndsAt)
+    ) {
+      this.lastAudioSentAt = 0;
+      this.playbackEndsAt = 0;
+      this.transport.sendEvent({ type: "flush_playback" });
+    }
   }
 
   private interrupt(): void {
     this.epoch++;
+    this.endRequested = false; // barge-in during the closing sentence cancels the hang-up
+    this.lastAudioSentAt = 0;
+    this.playbackEndsAt = 0;
     this.turnAbort?.abort();
     this.speechQueue.length = 0;
     this.currentUtt?.cancel();
@@ -466,16 +537,21 @@ export class VoiceSession {
       this.language = t.language;
       this.detectedLanguage = t.language;
     }
-    if (this.state !== "listening") this.interrupt();
+    // A turn that is queued or running counts as busy even before it flips the state.
+    if (this.state !== "listening" || this.turnsPending > 0) this.interrupt();
     const now = this.ctx.now().getTime();
     const epoch = this.epoch;
     const ac = new AbortController();
     this.turnAbort = ac;
     const speechEndAt = this.speechEndAt ?? now;
     this.speechEndAt = null;
+    this.turnsPending++;
     this.turnChain = this.turnChain
       .then(() => this.runTurn(text, t.language, epoch, speechEndAt, ac))
-      .catch(() => this.providerError("turn"));
+      .catch(() => this.providerError("turn"))
+      .finally(() => {
+        this.turnsPending--;
+      });
   }
 
   private pushUser(blocks: NonNullable<ConverseMessage["content"]>): void {
@@ -503,7 +579,22 @@ export class VoiceSession {
     speechEndAt: number,
     ac: AbortController,
   ): Promise<void> {
-    if (this.ended || epoch !== this.epoch) return;
+    if (this.ended) return;
+    if (epoch !== this.epoch) {
+      // Superseded by a newer utterance before it started: keep the context (history, transcript,
+      // persistence) but do not call the LLM; the newer turn answers both.
+      this.userTurns++;
+      this.persist({ seq: this.seq++, role: "user", text: userText });
+      this.transport.sendEvent({
+        type: "transcript",
+        role: "user",
+        text: userText,
+        ...(language ? { language } : {}),
+        final: true,
+      });
+      this.pushUser([{ text: userText }]);
+      return;
+    }
     const turn: TurnInfo = { epoch, speechEndAt };
     this.turn = turn;
     const live = () => !this.ended && epoch === this.epoch && !ac.signal.aborted;
@@ -521,11 +612,17 @@ export class VoiceSession {
     this.pushUser([{ text: userText }]);
 
     const assistantSeqs: Array<{ seq: number; text: string }> = [];
+    let toolRoundsDone = 0;
     try {
       for (let round = 0; round < MAX_TOOL_ROUNDS && live(); round++) {
         const queue = new TextQueue();
+        const sentences: string[] = [];
+        const spoken = { started: 0 };
         const speaking = (async () => {
-          for await (const sentence of chunkSentences(queue)) this.enqueueSpeech(sentence, epoch);
+          for await (const sentence of chunkSentences(queue)) {
+            sentences.push(sentence);
+            this.enqueueSpeech(sentence, epoch, spoken);
+          }
         })();
 
         let text = "";
@@ -552,6 +649,10 @@ export class VoiceSession {
             this.log.error("llm error", { code: errCode(e) });
             queue.close();
             await speaking;
+            // Say something rather than cutting off silently, then end as a provider failure.
+            const fb = FALLBACK[this.language];
+            this.enqueueSpeech(fb, epoch);
+            await this.drain();
             this.providerError("llm");
             return;
           }
@@ -560,6 +661,12 @@ export class VoiceSession {
         await speaking;
 
         text = text.trim();
+        // After a barge-in only the sentences whose audio actually started count as said.
+        const interrupted = !live();
+        if (interrupted && text) {
+          text = sentences.slice(0, spoken.started).join(" ").trim();
+          if (text) text += "…";
+        }
         const assistantBlocks: NonNullable<ConverseMessage["content"]> = [];
         if (text) assistantBlocks.push({ text });
         // After a barge-in the pending tool calls are dropped (not executed, not recorded) so toolUse stays paired.
@@ -581,6 +688,7 @@ export class VoiceSession {
           }
         }
         if (calls.length === 0 || !live()) break;
+        toolRoundsDone++;
 
         const results: NonNullable<ConverseMessage["content"]> = [];
         for (const c of calls) {
@@ -594,7 +702,7 @@ export class VoiceSession {
             status: failed ? "failed" : "done",
             summary: summarizeResult(c.name, out.result),
           });
-          if (!failed) this.noteToolSuccess(c.name);
+          if (!failed) this.noteToolSuccess(c.name, live());
           if (out.event) this.transport.sendEvent(out.event);
           this.persist({
             seq: this.seq++,
@@ -614,6 +722,30 @@ export class VoiceSession {
         this.pushUser(results);
         // end_call alongside spoken text already contains the goodbye; otherwise let the model say it.
         if (this.endRequested && text) break;
+      }
+      if (toolRoundsDone >= MAX_TOOL_ROUNDS && live() && !this.endRequested) {
+        // The model is looping on tools: hand over to staff instead of going silent.
+        this.log.warn("tool round cap reached", { rounds: toolRoundsDone });
+        const fb = FALLBACK[this.language];
+        this.transport.sendEvent({
+          type: "tool",
+          name: "transfer_to_staff",
+          status: "done",
+          summary: "ok",
+        });
+        this.used.add("handoff");
+        this.persist({
+          seq: this.seq++,
+          role: "tool",
+          toolName: "transfer_to_staff",
+          toolArgs: { reason: "not_understood" },
+          toolResult: { transferred: true, automatic: true },
+        });
+        this.assistantTurns++;
+        assistantSeqs.push({ seq: this.seq++, text: fb });
+        this.transport.sendEvent({ type: "transcript", role: "assistant", text: fb, final: true });
+        this.endRequested = true;
+        this.enqueueSpeech(fb, epoch);
       }
     } finally {
       await this.drain();
@@ -640,13 +772,13 @@ export class VoiceSession {
     if (!ac.signal.aborted) this.setState("listening");
   }
 
-  private noteToolSuccess(name: ToolName): void {
+  private noteToolSuccess(name: ToolName, live: boolean): void {
     if (name === "book_appointment") this.used.add("booked");
     else if (name === "reschedule_appointment") this.used.add("rescheduled");
     else if (name === "cancel_appointment") this.used.add("cancelled");
     else if (name === "request_callback") this.used.add("callback");
     else if (name === "transfer_to_staff") this.used.add("handoff");
-    else if (name === "end_call") this.endRequested = true;
+    else if (name === "end_call" && live) this.endRequested = true;
   }
 
   private toolCtx(): ToolContext {

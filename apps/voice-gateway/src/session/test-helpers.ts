@@ -92,8 +92,11 @@ export class TestTransport implements MediaTransport {
   sendAudio(b: Buffer) {
     this.log.push({ kind: "audio", bytes: b.length });
   }
+  /** Synchronous observer, e.g. to fire a barge-in at an exact moment. */
+  hook: ((e: GatewayEvent) => void) | undefined;
   sendEvent(e: GatewayEvent) {
     this.log.push({ kind: "event", event: e });
+    this.hook?.(e);
   }
   onClientEvent(cb: (e: ClientEvent) => void) {
     this.clientCbs.push(cb);
