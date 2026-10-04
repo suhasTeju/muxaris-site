@@ -8,6 +8,7 @@
     "test": "vitest run",
     "synth": "bash scripts/cdk.sh synth",
     "deploy:auth": "bash scripts/cdk.sh deploy MuxarisAuth --require-approval never",
+    "deploy:storage": "bash scripts/cdk.sh deploy MuxarisStorage --require-approval never",
     "cdk": "bash scripts/cdk.sh"
   },
   "dependencies": {
