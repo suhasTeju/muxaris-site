@@ -1,0 +1,13 @@
+{
+  "name": "muxaris-spike",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1146.0",
+    "@types/ws": "^8.18.2",
+    "sarvamai": "^1.1.10",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.0"
+  }
+}
