@@ -2,6 +2,8 @@ import type { SttProvider, SttStream } from "./types.js";
 import {
   defaultWsFactory,
   sarvamHeaders,
+  sarvamProtocols,
+  serverErrorDetail,
   toError,
   type WsFactory,
   type WsLike,
@@ -11,6 +13,7 @@ export const STT_URL =
   "wss://api.sarvam.ai/speech-to-text/ws?model=saaras:v4&language-code=unknown&mode=codemix&sample_rate=16000&input_audio_codec=pcm_s16le&vad_signals=true";
 /** 100 ms of PCM16 mono at 16 kHz. */
 export const STT_FRAME_BYTES = 3200;
+const CONNECT_TIMEOUT_MS = 5000;
 
 export interface SarvamSttOptions {
   apiKey: string;
@@ -33,24 +36,38 @@ export class SarvamStt implements SttProvider {
     return new Promise<SttStream>((resolve, reject) => {
       let ws: WsLike;
       try {
-        ws = this.wsFactory(this.url, sarvamHeaders(this.apiKey));
+        ws = this.wsFactory(this.url, sarvamHeaders(this.apiKey), sarvamProtocols(this.apiKey));
       } catch (e) {
         reject(toError(e));
         return;
       }
       let opened = false;
       const stream = new SarvamSttStream(ws);
+      const timer = setTimeout(() => {
+        if (opened) return;
+        reject(new Error("Sarvam STT connect timed out"));
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+      }, CONNECT_TIMEOUT_MS);
       ws.on("open", () => {
         opened = true;
+        clearTimeout(timer);
         resolve(stream);
       });
       ws.on("error", (e: unknown) => {
-        if (!opened) reject(toError(e));
-        else stream.fail(toError(e));
+        if (!opened) {
+          clearTimeout(timer);
+          reject(toError(e));
+        } else stream.fail(toError(e));
       });
       ws.on("close", () => {
-        if (!opened) reject(new Error("Sarvam STT socket closed before open"));
-        else stream.handleClose();
+        if (!opened) {
+          clearTimeout(timer);
+          reject(new Error("Sarvam STT socket closed before open"));
+        } else stream.handleClose();
       });
       ws.on("message", (data: unknown) => stream.handleMessage(String(data)));
     });
@@ -68,6 +85,7 @@ class SarvamSttStream implements SttStream {
   private pending: Buffer = Buffer.alloc(0);
   private ended = false;
   private closed = false;
+  private gotTranscript = false;
   private listeners: Listeners = { speech_start: [], speech_end: [], transcript: [], error: [] };
 
   constructor(private readonly ws: WsLike) {}
@@ -115,11 +133,12 @@ class SarvamSttStream implements SttStream {
   }
 
   handleMessage(raw: string): void {
+    if (this.closed) return;
     let msg: unknown;
     try {
       msg = JSON.parse(raw);
     } catch {
-      this.emitError(new Error(`Sarvam STT sent non-JSON message: ${raw.slice(0, 200)}`));
+      this.emitError(new Error(`Sarvam STT sent a non-JSON message (${raw.length} chars)`));
       return;
     }
     if (typeof msg !== "object" || msg === null) {
@@ -137,10 +156,10 @@ class SarvamSttStream implements SttStream {
       const language = data["language_code"];
       const t: { text: string; language?: string } = { text };
       if (typeof language === "string") t.language = language;
+      this.gotTranscript = true;
       this.listeners.transcript.forEach((cb) => cb(t));
     } else if (m.type === "error") {
-      const detail = typeof data["message"] === "string" ? data["message"] : JSON.stringify(data);
-      this.emitError(new Error(`Sarvam STT error: ${detail}`));
+      this.emitError(new Error(`Sarvam STT error: ${serverErrorDetail(data)}`));
     }
   }
 
@@ -148,6 +167,11 @@ class SarvamSttStream implements SttStream {
     if (this.closed) return;
     this.closed = true;
     if (!this.ended) this.emitError(new Error("Sarvam STT socket closed before end()"));
+    else if (!this.gotTranscript) {
+      // Closed after end() with nothing heard: release anyone waiting for a transcript.
+      this.gotTranscript = true;
+      this.listeners.transcript.forEach((cb) => cb({ text: "" }));
+    }
   }
 
   fail(e: Error): void {

@@ -4,7 +4,7 @@ import {
   type ConverseStreamCommandInput,
   type ConverseStreamOutput,
 } from "@aws-sdk/client-bedrock-runtime";
-import type { ASSISTANT_TOOLS, ToolName } from "@muxaris/shared";
+import { toolInputSchemas, type ASSISTANT_TOOLS, type ToolName } from "@muxaris/shared";
 import type { LlmDelta, LlmProvider, ToolDefinition } from "./types.js";
 
 /** Maps shared `ASSISTANT_TOOLS` to Bedrock Converse tool specs. */
@@ -38,7 +38,6 @@ function partialSuffix(s: string, tag: string): number {
 export class ThinkingStripper {
   private buf = "";
   private inThink = false;
-  private skipWs = false;
 
   push(chunk: string): string {
     this.buf += chunk;
@@ -49,16 +48,10 @@ export class ThinkingStripper {
         if (i >= 0) {
           this.buf = this.buf.slice(i + CLOSE_TAG.length);
           this.inThink = false;
-          this.skipWs = true;
           continue;
         }
         this.buf = this.buf.slice(this.buf.length - partialSuffix(this.buf, CLOSE_TAG));
         return out;
-      }
-      if (this.skipWs) {
-        this.buf = this.buf.replace(/^\s+/, "");
-        if (this.buf.length === 0) return out;
-        this.skipWs = false;
       }
       const i = this.buf.indexOf(OPEN_TAG);
       if (i >= 0) {
@@ -79,7 +72,6 @@ export class ThinkingStripper {
     const rest = this.inThink ? "" : this.buf;
     this.buf = "";
     this.inThink = false;
-    this.skipWs = false;
     return rest;
   }
 }
@@ -161,10 +153,16 @@ export class BedrockLlm implements LlmProvider {
               try {
                 parsed = JSON.parse(t.json);
               } catch {
-                console.warn(`Bedrock tool input for ${t.name} was not valid JSON: ${t.json}`);
+                console.warn(
+                  `Bedrock tool input for ${t.name} was not valid JSON (${t.json.length} chars)`,
+                );
               }
             }
-            yield { type: "tool_call", id: t.id, name: t.name as ToolName, input: parsed };
+            if (Object.hasOwn(toolInputSchemas, t.name)) {
+              yield { type: "tool_call", id: t.id, name: t.name as ToolName, input: parsed };
+            } else {
+              console.warn(`Bedrock requested unknown tool ${t.name.slice(0, 60)}; skipped`);
+            }
           } else {
             const text = stripper.flush();
             if (text) yield { type: "text", text };
@@ -192,6 +190,7 @@ export class BedrockLlm implements LlmProvider {
       throw err;
     } finally {
       req.signal.removeEventListener("abort", onAbort);
+      abort.abort();
     }
   }
 }

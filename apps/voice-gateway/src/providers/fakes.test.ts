@@ -66,6 +66,17 @@ describe("FakeTts", () => {
     await done;
     expect(n).toBe(1);
     expect(tts.cancelCalls).toBe(1);
+    u.cancel();
+    expect(tts.cancelCalls).toBe(1);
+  });
+
+  it("cancel before first next ends immediately", async () => {
+    const tts = new FakeTts({ chunks: 3, delayMs: 1000 });
+    const u = tts.speak("hi", { language: "en-IN", speaker: "shubh" });
+    u.cancel();
+    const got: Buffer[] = [];
+    for await (const c of u.audio) got.push(c);
+    expect(got).toHaveLength(0);
   });
 });
 
@@ -87,6 +98,59 @@ describe("FakeLlm", () => {
       { type: "done", stopReason: "tool_use" },
     ]);
     expect(llm.requests).toHaveLength(1);
+  });
+
+  it("consumes per-turn scripts in order, so a toolResult turn differs from the user turn", async () => {
+    const llm = new FakeLlm({}, "x", 0, [
+      [{ type: "tool_call", id: "1", name: "find_slots", input: {} }],
+      [
+        { type: "text", text: "Tomorrow at 4." },
+        { type: "done", stopReason: "end_turn" },
+      ],
+    ]);
+    const signal = new AbortController().signal;
+    const collect = async (messages: Parameters<typeof llm.stream>[0]["messages"]) => {
+      const out: LlmDelta[] = [];
+      for await (const d of llm.stream({ system: "s", messages, tools: [], signal })) out.push(d);
+      return out;
+    };
+    const userTurn = { role: "user" as const, content: [{ text: "book" }] };
+    const first = await collect([userTurn]);
+    expect(first[0]).toMatchObject({ type: "tool_call" });
+    const second = await collect([
+      userTurn,
+      {
+        role: "assistant",
+        content: [{ toolUse: { toolUseId: "1", name: "find_slots", input: {} } }],
+      },
+      {
+        role: "user",
+        content: [{ toolResult: { toolUseId: "1", content: [{ json: { slots: [] } }] } }],
+      },
+    ]);
+    expect(second).toEqual([
+      { type: "text", text: "Tomorrow at 4." },
+      { type: "done", stopReason: "end_turn" },
+    ]);
+  });
+
+  it("wakes the delay on abort", async () => {
+    const ac = new AbortController();
+    const llm = new FakeLlm({}, "Sure.", 10_000);
+    const done = (async () => {
+      const out: LlmDelta[] = [];
+      for await (const d of llm.stream({
+        system: "s",
+        messages: [user("a")],
+        tools: [],
+        signal: ac.signal,
+      }))
+        out.push(d);
+      return out;
+    })();
+    await vi.advanceTimersByTimeAsync(5);
+    ac.abort();
+    expect(await done).toEqual([]);
   });
 
   it("falls back to the default reply", async () => {

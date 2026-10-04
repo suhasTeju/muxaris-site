@@ -22,7 +22,11 @@ export interface TtsUtterance {
   cancel(): void;
 }
 export interface TtsProvider {
-  speak(text: string, opts: { language: LanguageCode; speaker: string }): TtsUtterance;
+  /** `warm` is reserved for a future pre-connected socket; currently ignored. */
+  speak(
+    text: string,
+    opts: { language: LanguageCode; speaker: string; warm?: boolean },
+  ): TtsUtterance;
 }
 
 export type LlmDelta =

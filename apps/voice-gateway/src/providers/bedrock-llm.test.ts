@@ -60,7 +60,7 @@ describe("ThinkingStripper", () => {
     expect(s.push("Hello there. ")).toBe("Hello there. ");
   });
   it("strips a block split across arbitrary delta boundaries", () => {
-    const full = "<thinking> I need to check </thinking>\nSure, one moment.";
+    const full = "<thinking> I need to check </thinking>Sure, one moment.";
     for (let cut1 = 1; cut1 < full.length; cut1 += 3) {
       for (let cut2 = cut1 + 1; cut2 < full.length; cut2 += 5) {
         expect(run([full.slice(0, cut1), full.slice(cut1, cut2), full.slice(cut2)])).toBe(
@@ -70,7 +70,10 @@ describe("ThinkingStripper", () => {
     }
   });
   it("matches the Nova Pro token stream", () => {
-    expect(run(["<thinking", ">", " I", " need", "</thinking", ">\n"])).toBe("");
+    expect(run(["<thinking", ">", " I", " need", "</thinking", ">\n"])).toBe("\n");
+  });
+  it("preserves whitespace after the closing tag", () => {
+    expect(run(["Hi<thinking>x</thinking>", " there"])).toBe("Hi there");
   });
   it("never emits text inside an unclosed tag", () => {
     expect(run(["Hi <thinking>secret", " more"])).toBe("Hi ");
@@ -171,17 +174,67 @@ describe("BedrockLlm", () => {
     ]);
   });
 
+  it("skips unknown tool names and still yields done", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { llm } = makeLlm([
+      {
+        contentBlockStart: {
+          start: { toolUse: { toolUseId: "t", name: "rm_rf" } },
+          contentBlockIndex: 0,
+        },
+      },
+      {
+        contentBlockDelta: {
+          delta: { toolUse: { input: '{"x":"SECRET"}' } },
+          contentBlockIndex: 0,
+        },
+      },
+      { contentBlockStop: { contentBlockIndex: 0 } },
+      { messageStop: { stopReason: "tool_use" } },
+    ]);
+    expect(await collect(llm.stream(req()))).toEqual([{ type: "done", stopReason: "tool_use" }]);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("SECRET");
+    warn.mockRestore();
+  });
+
+  it("does not log tool input on malformed JSON", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { llm } = makeLlm([
+      {
+        contentBlockStart: {
+          start: { toolUse: { toolUseId: "t", name: "end_call" } },
+          contentBlockIndex: 0,
+        },
+      },
+      {
+        contentBlockDelta: {
+          delta: { toolUse: { input: '{"name":"SECRET' } },
+          contentBlockIndex: 0,
+        },
+      },
+      { contentBlockStop: { contentBlockIndex: 0 } },
+    ]);
+    await collect(llm.stream(req()));
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("SECRET");
+    warn.mockRestore();
+  });
+
   it("stops iterating when the signal aborts", async () => {
     const ac = new AbortController();
     let aborted = false;
+    let returned = false;
     const send = vi.fn(async (_cmd: unknown, o?: { abortSignal?: AbortSignal }) => {
       o?.abortSignal?.addEventListener("abort", () => (aborted = true));
       return {
         stream: (async function* () {
-          yield text("one ");
-          ac.abort();
-          yield text("two ");
-          yield meta;
+          try {
+            yield text("one ");
+            ac.abort();
+            yield text("two ");
+            yield meta;
+          } finally {
+            returned = true;
+          }
         })(),
       };
     });
@@ -189,6 +242,7 @@ describe("BedrockLlm", () => {
     const out = await collect(llm.stream(req(ac.signal)));
     expect(out).toEqual([{ type: "text", text: "one " }]);
     expect(aborted).toBe(true);
+    expect(returned).toBe(true);
   });
 
   it("propagates non-abort errors", async () => {

@@ -23,6 +23,7 @@ describe("SarvamStt", () => {
     expect(factory).toHaveBeenCalledWith(
       expect.stringContaining("speech-to-text/ws?model=saaras:v4"),
       { "Api-Subscription-Key": "k" },
+      ["api-subscription-key.k"],
     );
   });
 
@@ -103,6 +104,52 @@ describe("SarvamStt", () => {
     b.stream.end();
     b.ws.emit("close");
     expect(errs2).toHaveLength(0);
+  });
+
+  it("never leaks payload text into errors", async () => {
+    const { ws, stream } = await setup();
+    const errs: Error[] = [];
+    stream.on("error", (e) => errs.push(e));
+    ws.emit("message", Buffer.from("SECRET not json"));
+    ws.emit(
+      "message",
+      Buffer.from(JSON.stringify({ type: "error", data: { transcript: "SECRET" } })),
+    );
+    expect(errs).toHaveLength(2);
+    expect(errs.every((e) => !e.message.includes("SECRET"))).toBe(true);
+  });
+
+  it("ignores messages after close()", async () => {
+    const { ws, stream } = await setup();
+    const log: string[] = [];
+    stream.on("transcript", (t) => log.push(t.text));
+    stream.close();
+    ws.emit("message", Buffer.from(JSON.stringify({ type: "data", data: { transcript: "late" } })));
+    expect(log).toEqual([]);
+  });
+
+  it("emits one empty transcript if the socket closes after end() with none received", async () => {
+    const { ws, stream } = await setup();
+    const log: string[] = [];
+    stream.on("transcript", (t) => log.push(`[${t.text}]`));
+    stream.end();
+    ws.emit("close");
+    ws.emit("close");
+    expect(log).toEqual(["[]"]);
+  });
+
+  it("rejects open() after a 5 s connect timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const ws = new StubWs();
+      const opening = new SarvamStt({ apiKey: "k", wsFactory: () => ws }).open();
+      const assertion = expect(opening).rejects.toThrow("timed out");
+      await vi.advanceTimersByTimeAsync(5001);
+      await assertion;
+      expect(ws.closed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("close() closes the socket", async () => {

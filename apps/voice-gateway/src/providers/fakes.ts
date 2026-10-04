@@ -102,7 +102,12 @@ export interface FakeTtsOptions {
 }
 
 export class FakeTts implements TtsProvider {
-  readonly spoken: Array<{ text: string; language: LanguageCode; speaker: string }> = [];
+  readonly spoken: Array<{
+    text: string;
+    language: LanguageCode;
+    speaker: string;
+    warm?: boolean;
+  }> = [];
   cancelCalls = 0;
   private readonly chunks: number;
   private readonly chunkBytes: number;
@@ -114,13 +119,17 @@ export class FakeTts implements TtsProvider {
     this.delayMs = opts.delayMs ?? 20;
   }
 
-  speak(text: string, opts: { language: LanguageCode; speaker: string }): TtsUtterance {
+  speak(
+    text: string,
+    opts: { language: LanguageCode; speaker: string; warm?: boolean },
+  ): TtsUtterance {
     this.spoken.push({ text, ...opts });
     let cancelled = false;
     let wake: (() => void) | null = null;
     const { chunks, chunkBytes, delayMs } = this;
 
     async function* gen(): AsyncGenerator<Buffer> {
+      if (cancelled) return;
       for (let i = 0; i < chunks; i++) {
         if (delayMs > 0) {
           await new Promise<void>((resolve) => {
@@ -141,6 +150,7 @@ export class FakeTts implements TtsProvider {
     return {
       audio: gen(),
       cancel: () => {
+        if (cancelled) return;
         this.cancelCalls++;
         cancelled = true;
         (wake as (() => void) | null)?.();
@@ -175,12 +185,16 @@ export class FakeLlm implements LlmProvider {
     private readonly script: Record<string, LlmDelta[]> = {},
     private readonly defaultReply = "Okay.",
     private readonly delayMs = 0,
+    /** Per-turn scripts consumed in order, one per stream() call; the keyed map is the fallback. */
+    private readonly turns: LlmDelta[][] = [],
   ) {}
 
   async *stream(req: Parameters<LlmProvider["stream"]>[0]): AsyncGenerator<LlmDelta> {
+    const turn = this.requests.length;
     this.requests.push({ system: req.system, messages: req.messages });
     const key = lastUserText(req.messages);
-    const deltas: LlmDelta[] = this.script[key] ?? [{ type: "text", text: this.defaultReply }];
+    const deltas: LlmDelta[] = this.turns[turn] ??
+      this.script[key] ?? [{ type: "text", text: this.defaultReply }];
     const out = deltas.some((d) => d.type === "done")
       ? deltas
       : [
@@ -192,7 +206,19 @@ export class FakeLlm implements LlmProvider {
         ];
     for (const d of out) {
       if (req.signal.aborted) return;
-      if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
+      if (this.delayMs > 0) {
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, this.delayMs);
+          req.signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(t);
+              resolve();
+            },
+            { once: true },
+          );
+        });
+      }
       if (req.signal.aborted) return;
       yield d;
     }

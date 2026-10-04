@@ -7,12 +7,28 @@ export interface WsLike {
   send(data: string): void;
   close(): void;
 }
-export type WsFactory = (url: string, headers: Record<string, string>) => WsLike;
+export type WsFactory = (
+  url: string,
+  headers: Record<string, string>,
+  protocols?: string[],
+) => WsLike;
 
-export const defaultWsFactory: WsFactory = (url, headers) => new WebSocket(url, { headers });
+export const defaultWsFactory: WsFactory = (url, headers, protocols) =>
+  new WebSocket(url, protocols ?? [], { headers });
 
 export function sarvamHeaders(apiKey: string): Record<string, string> {
   return { "Api-Subscription-Key": apiKey };
+}
+
+/** Subprotocol form of the key, as the Sarvam SDK (and SPIKES) send alongside the header. */
+export function sarvamProtocols(apiKey: string): string[] {
+  return [`api-subscription-key.${apiKey}`];
+}
+
+/** Safe description of a server error payload: only `message`/`code`, truncated. */
+export function serverErrorDetail(data: Record<string, unknown>): string {
+  const v = data["message"] ?? data["code"];
+  return typeof v === "string" ? v.slice(0, 120) : "unspecified";
 }
 
 export function toError(e: unknown): Error {
@@ -26,12 +42,20 @@ export class AsyncQueue<T> implements AsyncIterable<T> {
   private ended = false;
   private failure: Error | null = null;
 
+  constructor(private readonly onReturn?: () => void) {}
+
   push(item: T): void {
     if (this.ended) return;
     this.items.push(item);
     this.wake();
   }
   end(): void {
+    this.ended = true;
+    this.wake();
+  }
+  /** End immediately, discarding anything buffered. */
+  abort(): void {
+    this.items = [];
     this.ended = true;
     this.wake();
   }
@@ -47,16 +71,20 @@ export class AsyncQueue<T> implements AsyncIterable<T> {
     w?.();
   }
   async *[Symbol.asyncIterator](): AsyncGenerator<T> {
-    for (;;) {
-      if (this.items.length > 0) {
-        yield this.items.shift() as T;
-        continue;
+    try {
+      for (;;) {
+        if (this.items.length > 0) {
+          yield this.items.shift() as T;
+          continue;
+        }
+        if (this.failure) throw this.failure;
+        if (this.ended) return;
+        await new Promise<void>((resolve) => {
+          this.waiter = resolve;
+        });
       }
-      if (this.failure) throw this.failure;
-      if (this.ended) return;
-      await new Promise<void>((resolve) => {
-        this.waiter = resolve;
-      });
+    } finally {
+      this.onReturn?.();
     }
   }
 }
