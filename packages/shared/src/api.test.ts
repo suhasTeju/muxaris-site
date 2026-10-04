@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   appointmentBody,
+  callbackPatchBody,
+  callOutcomeBody,
+  callsQuery,
   assistantProfileBody,
   createClinicBody,
   demoRequestBody,
@@ -238,5 +241,27 @@ describe("maskPhone", () => {
   it("keeps only the last four digits", () => {
     expect(maskPhone("+919876543210")).toBe("+91 •••• ••3210");
     expect(maskPhone("12345")).toBe("•••• ••2345");
+  });
+});
+
+describe("call centre schemas", () => {
+  it("callOutcomeBody accepts known outcomes only", () => {
+    expect(callOutcomeBody.safeParse({ outcome: "booked" }).success).toBe(true);
+    expect(callOutcomeBody.safeParse({ outcome: "nope" }).success).toBe(false);
+  });
+  it("callbackPatchBody needs at least one field and bounds the note", () => {
+    expect(callbackPatchBody.safeParse({}).success).toBe(false);
+    expect(callbackPatchBody.safeParse({ status: "done" }).success).toBe(true);
+    expect(callbackPatchBody.safeParse({ assignedTo: null }).success).toBe(true);
+    expect(callbackPatchBody.safeParse({ note: "x".repeat(501) }).success).toBe(false);
+  });
+  it("callsQuery defaults and bounds paging", () => {
+    expect(callsQuery.parse({})).toMatchObject({ limit: 50, offset: 0 });
+    expect(callsQuery.parse({ limit: "20", status: "abandoned" })).toMatchObject({
+      limit: 20,
+      status: "abandoned",
+    });
+    expect(callsQuery.safeParse({ limit: 201 }).success).toBe(false);
+    expect(callsQuery.safeParse({ offset: -1 }).success).toBe(false);
   });
 });

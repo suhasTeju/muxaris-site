@@ -7,11 +7,18 @@ import {
   pgEnum,
   index,
   unique,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { clinics } from "./tenancy.js";
 
 export const callChannelEnum = pgEnum("call_channel", ["browser", "phone"]);
-export const callStatusEnum = pgEnum("call_status", ["in_progress", "completed", "failed"]);
+export const callStatusEnum = pgEnum("call_status", [
+  "in_progress",
+  "completed",
+  "failed",
+  "abandoned",
+]);
 export const callOutcomeEnum = pgEnum("call_outcome", [
   "booked",
   "rescheduled",
@@ -47,8 +54,32 @@ export const calls = pgTable(
     summary: text("summary"),
     sentiment: text("sentiment"),
     metrics: jsonb("metrics").$type<Record<string, number>>().notNull().default({}),
+    recordingStatus: text("recording_status").notNull().default("none"),
+    outcomeSource: text("outcome_source"),
+    analysis: jsonb("analysis").$type<{
+      entities: Record<string, unknown>;
+      needsCallback: boolean;
+      callbackReason?: string;
+      model: string;
+    }>(),
+    analysedAt: timestamp("analysed_at", { withTimezone: true }),
   },
-  (t) => [index("calls_clinic_started_idx").on(t.clinicId, t.startedAt)],
+  (t) => [
+    index("calls_clinic_started_idx").on(t.clinicId, t.startedAt),
+    index("calls_clinic_outcome_idx").on(t.clinicId, t.outcome),
+    check(
+      "calls_recording_status_chk",
+      sql`${t.recordingStatus} IN ('none','pending','ready','failed')`,
+    ),
+    check(
+      "calls_outcome_source_chk",
+      sql`${t.outcomeSource} IS NULL OR ${t.outcomeSource} IN ('gateway','worker','staff')`,
+    ),
+    check(
+      "calls_sentiment_chk",
+      sql`${t.sentiment} IS NULL OR ${t.sentiment} IN ('positive','neutral','negative')`,
+    ),
+  ],
 );
 
 export const callTurns = pgTable(
@@ -90,10 +121,11 @@ export const callbacks = pgTable(
     priority: text("priority").notNull().default("normal"),
     status: callbackStatusEnum("status").notNull().default("open"),
     assignedTo: text("assigned_to"),
+    note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     doneAt: timestamp("done_at", { withTimezone: true }),
   },
-  (t) => [index("callbacks_clinic_idx").on(t.clinicId)],
+  (t) => [index("callbacks_clinic_idx").on(t.clinicId), index("callbacks_call_idx").on(t.callId)],
 );
 
 export const assistantProfiles = pgTable("assistant_profiles", {

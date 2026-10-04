@@ -258,7 +258,7 @@ export interface Call {
   startedAt: Iso;
   endedAt: Iso | null;
   durationS: number | null;
-  status: "in_progress" | "completed" | "failed";
+  status: "in_progress" | "completed" | "failed" | "abandoned";
   outcome:
     | "booked"
     | "rescheduled"
@@ -272,8 +272,32 @@ export interface Call {
   recordingS3Key: string | null;
   transcriptS3Key: string | null;
   summary: string | null;
-  sentiment: string | null;
+  sentiment: "positive" | "neutral" | "negative" | null;
   metrics: Record<string, number>;
+  recordingStatus: "none" | "pending" | "ready" | "failed";
+  outcomeSource: "gateway" | "worker" | "staff" | null;
+  analysis: {
+    entities: Record<string, unknown>;
+    needsCallback: boolean;
+    callbackReason?: string;
+    model: string;
+  } | null;
+  analysedAt: Iso | null;
+}
+export interface Callback {
+  id: string;
+  clinicId: string;
+  callId: string | null;
+  patientId: string | null;
+  /** Masked; the raw phone never leaves the server. */
+  phoneMasked: string;
+  reason: string;
+  priority: string;
+  status: "open" | "done";
+  assignedTo: string | null;
+  note: string | null;
+  createdAt: Iso;
+  doneAt: Iso | null;
 }
 export interface CallTurn {
   id: string;
@@ -313,3 +337,38 @@ export const demoRequestBody = z.object({
   website: z.string().max(200).optional(),
 });
 export type DemoRequestBody = z.infer<typeof demoRequestBody>;
+
+export const CALL_OUTCOMES = [
+  "booked",
+  "rescheduled",
+  "cancelled",
+  "info",
+  "callback",
+  "handoff",
+  "abandoned",
+  "unknown",
+] as const;
+export const callOutcomeEnum = z.enum(CALL_OUTCOMES);
+export const callStatusEnum = z.enum(["in_progress", "completed", "failed", "abandoned"]);
+export type CallStatus = z.infer<typeof callStatusEnum>;
+
+export const callOutcomeBody = z.object({ outcome: callOutcomeEnum });
+
+export const callbackPatchBody = z
+  .object({
+    status: z.enum(["open", "done"]).optional(),
+    assignedTo: z.string().max(64).nullable().optional(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .refine((b) => Object.keys(b).length > 0, "Provide at least one field");
+
+export const callsQuery = z.object({
+  from: isoDateTime.optional(),
+  to: isoDateTime.optional(),
+  outcome: callOutcomeEnum.optional(),
+  status: callStatusEnum.optional(),
+  channel: z.enum(["browser", "phone"]).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type CallsQuery = z.infer<typeof callsQuery>;
