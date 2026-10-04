@@ -6,9 +6,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "synth": "cdk synth",
-    "deploy:auth": "cdk deploy MuxarisAuth --require-approval never",
-    "cdk": "cdk"
+    "synth": "bash scripts/cdk.sh synth",
+    "deploy:auth": "bash scripts/cdk.sh deploy MuxarisAuth --require-approval never",
+    "cdk": "bash scripts/cdk.sh"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.200",

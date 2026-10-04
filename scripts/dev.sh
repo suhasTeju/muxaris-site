@@ -7,6 +7,7 @@ set -a; source .env; set +a
 export AWS_PROFILE="aws-secondary-account" AWS_REGION="ap-south-1"
 docker compose up -d postgres
 until docker exec muxaris-postgres pg_isready -U muxaris >/dev/null 2>&1; do sleep 1; done
+npm run build:packages
 npm run db:migrate && npm run db:seed
 trap 'kill 0' EXIT
 npm run dev -w @muxaris/api &

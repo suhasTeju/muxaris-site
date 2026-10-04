@@ -14,11 +14,14 @@
     "infra"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build:packages": "npm run build -w @muxaris/shared && npm run build -w @muxaris/db",
+    "build": "npm run build:packages && npm run build --if-present -w @muxaris/api -w @muxaris/voice-gateway -w @muxaris/web -w @muxaris/infra",
+    "pretypecheck": "npm run build:packages",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "pretest": "npm run build:packages",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:up": "docker compose up -d postgres",

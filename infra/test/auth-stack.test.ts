@@ -62,3 +62,16 @@ describe("MuxarisAuth", () => {
     );
   });
 });
+
+describe("bin/muxaris account guard", () => {
+  it("refuses to run unless CDK_DEFAULT_ACCOUNT is the secondary account", async () => {
+    const prev = process.env.CDK_DEFAULT_ACCOUNT;
+    process.env.CDK_DEFAULT_ACCOUNT = "111111111111";
+    try {
+      await expect(import("../bin/muxaris.js")).rejects.toThrow(/Refusing to synth/);
+    } finally {
+      if (prev === undefined) delete process.env.CDK_DEFAULT_ACCOUNT;
+      else process.env.CDK_DEFAULT_ACCOUNT = prev;
+    }
+  });
+});
