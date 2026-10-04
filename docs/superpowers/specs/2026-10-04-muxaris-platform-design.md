@@ -20,7 +20,7 @@ Decisions already made with the user (do not re-ask):
 | AWS shape | Backend on **AWS, region ap-south-1 (Mumbai)**, secondary account `aws-secondary-account` profile (acct 005533348545, IAM user `admin`). Containers on **ECS Fargate**, RDS Postgres, S3, SQS, Lambda, Bedrock, CDK. |
 | **AWS account rule** | **Only the secondary account (005533348545) is ever used. Never the primary/default profile (594862665011).** Every `aws`/`cdk` invocation passes `--profile aws-secondary-account`; every script starts with an account guard that aborts unless `sts get-caller-identity` returns 005533348545; CDK `env` is pinned to that account id; GitHub Actions assumes a role only in that account. `AWS_PROFILE=aws-secondary-account` is set in `.env.example` and `scripts/dev.sh`. |
 | Auth | **Amazon Cognito** User Pool (email/password + Google IdP), custom-branded sign-in/sign-up pages in Next.js via Amplify Auth, tokens verified in the API with `aws-jwt-verify`. Clinic membership and roles live in Postgres (`memberships`), not in Cognito groups. |
-| Voice | **Self-orchestrated pipeline**: Sarvam Saaras STT (WebSocket) → Amazon Bedrock Claude with tools → Sarvam Bulbul TTS. Browser calling first; telephony adapter designed in, wired later. |
+| Voice | **Self-orchestrated pipeline**: Sarvam Saaras STT (WebSocket) → Amazon Bedrock **Amazon Nova** (Converse API with tools; no Anthropic models, per the user's 2026-10-04 instruction) → Sarvam Bulbul TTS. Browser calling first; telephony adapter designed in, wired later. |
 | Market | India, multilingual (en-IN, hi-IN, kn-IN, ta-IN, te-IN; code-mixed). INR pricing. |
 | Messaging | Pluggable notification providers. SES email live; SMS and WhatsApp adapters implemented behind flags. |
 | Scope | Scheduling core, call center, patients + reminders, analytics + billing (Razorpay behind a flag). |
@@ -28,7 +28,7 @@ Decisions already made with the user (do not re-ask):
 
 Environment facts verified during planning:
 - `.env` in repo root has `SARVAM_TTS_API_KEY`, `GPT_IMAGE_ENDPOINT`, `GPT_IMAGE_API_KEY` (gitignored). One Sarvam key serves STT, TTS and chat.
-- Secondary AWS account is empty: default VPC only, no CloudFormation stacks, SES has no identities, SMS is in sandbox. Bedrock lists Claude Haiku 4.5 / Sonnet 4.5 / Opus 4.5 and Nova models in ap-south-1.
+- Secondary AWS account is empty: default VPC only, no CloudFormation stacks, SES has no identities, SMS is in sandbox. Bedrock lists Amazon Nova models (Nova 2 Lite via `global.amazon.nova-2-lite-v1:0`, Nova Lite/Pro/Micro via `apac.*`) in ap-south-1. Anthropic models are not used (user decision 2026-10-04).
 - muxaris.com NS is GoDaddy (`domaincontrol.com`), A record points at Netlify. No Route53 zones in either account.
 - Tooling: node 22, npm 10.9, **pnpm is broken** (corepack module missing) → use **npm workspaces**. Docker 28, aws-cli 2, terraform 1.15, `gh`, `clerk` CLI 1.5, `az` logged in. No `cdk` global (use `npx cdk`).
 - svara-ai is private; fetch via `gh api` or clone into the scratchpad.
@@ -62,7 +62,7 @@ Assumptions stated here so they are not re-litigated:
                                               │ SQS: post-call, notifications                   │
         Sarvam AI (api.sarvam.ai)             │ Lambda: post-call worker, notifier, reminders   │
         STT saaras:v4 WS  ◄──────────────────│ EventBridge: reminder cron                      │
-        TTS bulbul:v3     ◄──────────────────│ Bedrock: Claude Haiku 4.5 (talk), Sonnet (sum.) │
+        TTS bulbul:v3     ◄──────────────────│ Bedrock: Nova 2 Lite (talk), Nova Pro (summary)  │
                                               │ SES / SNS · CloudWatch logs+dashboard+alarms    │
                                               │ ECR · IAM OIDC for GitHub Actions               │
                                               └──────────────────────────────────────────────────┘
@@ -124,7 +124,7 @@ class VoiceSession { constructor(transport, ctx:{clinic, assistant, tools, callI
 Flow per session:
 1. Client connects `wss://voice…/v1/session?token=<Cognito access token or short-lived demo token>&clinic=<id>`; gateway verifies the token (`aws-jwt-verify`, same verifier as the API), checks membership, loads clinic + assistant profile, creates `calls` row, sends `ready`, plays greeting (pre-synthesised per language, cached in S3/memory).
 2. Inbound PCM16 16 kHz → Sarvam STT WS `wss://api.sarvam.ai/speech-to-text/ws?model=saaras:v4&language-code=unknown&mode=codemix&sample_rate=16000&input_audio_codec=pcm_s16le&vad_signals=true` (header `Api-Subscription-Key`). Partial/final transcripts forwarded to client as events.
-3. `END_SPEECH` + final transcript → Bedrock Converse **stream** (Claude Haiku 4.5, inference profile if required in ap-south-1) with system prompt (clinic facts, rules: no medical advice, emergencies → handoff, ≤2 short sentences, reply in caller's language) and tools from `packages/shared/tools`: `get_clinic_info`, `find_slots`, `book_appointment`, `reschedule_appointment`, `cancel_appointment`, `lookup_patient`, `request_callback`, `transfer_to_staff`, `end_call`. Tool handlers call `packages/core` directly (same code as the dashboard).
+3. `END_SPEECH` + final transcript → Bedrock Converse **stream** (Amazon Nova 2 Lite via inference profile `global.amazon.nova-2-lite-v1:0`; `<thinking>` text stripped before TTS) with system prompt (clinic facts, rules: no medical advice, emergencies → handoff, ≤2 short sentences, reply in caller's language) and tools from `packages/shared/tools`: `get_clinic_info`, `find_slots`, `book_appointment`, `reschedule_appointment`, `cancel_appointment`, `lookup_patient`, `request_callback`, `transfer_to_staff`, `end_call`. Tool handlers call `packages/core` directly (same code as the dashboard).
 4. LLM text stream → sentence chunker → Sarvam TTS. **One TTS connection per utterance** (open → config → text → flush → close) because Sarvam has no server-side cancel; barge-in (`START_SPEECH` while speaking) = close socket, send `flush_playback` to client, cancel LLM stream. TTS WS URL/schema is verified in the Phase 0 spike (fallback: REST `/text-to-speech` per sentence, which is documented).
 5. Recorder mixes inbound/outbound PCM into a stereo WAV, uploads to S3 on end; transcript JSON to S3; `calls` row finalised; `call.completed` message to SQS.
 6. Guards: per-clinic concurrent-call cap, plan minute cap (usage ledger), global cap from Sarvam Starter limits (20 STT sockets) → graceful "all lines busy" event. Max call length 10 min for browser.
@@ -149,7 +149,7 @@ Dashboard (`/app`): overview (today's appointments, live/recent calls, KPIs), `c
 
 ### Async workers
 
-- **post-call** (SQS → Lambda): Bedrock (Sonnet 4.5) summary ≤60 words, outcome classification, sentiment, extracted entities; writes `calls`; creates `callbacks` if needed; enqueues confirmation notification.
+- **post-call** (SQS → Lambda): Bedrock (Amazon Nova Pro, `apac.amazon.nova-pro-v1:0`) summary ≤60 words, outcome classification, sentiment, extracted entities; writes `calls`; creates `callbacks` if needed; enqueues confirmation notification.
 - **notifier** (SQS → Lambda): provider interface `NotificationProvider { send(msg): Result }` with `SesEmailProvider` (live), `SnsSmsProvider` (behind `SMS_ENABLED`, DLT caveat documented), `WhatsAppCloudProvider` (behind `WHATSAPP_ENABLED`), `ConsoleProvider` (local). Idempotent on `notifications.id`.
 - **reminders** (EventBridge 15-min cron → Lambda): appointments starting in 24h / 2h without a reminder → enqueue.
 
@@ -173,7 +173,7 @@ Each phase gets its own spec in `docs/superpowers/specs/` and plan in `docs/supe
 - Write `docs/superpowers/specs/2026-10-04-muxaris-platform-design.md` from this plan; commit.
 - Scaffold npm-workspaces monorepo; delete Astro files; new `netlify.toml`; `.env.example`; `docker-compose.yml` (Postgres 16); shared eslint/tsconfig/prettier; Vitest.
 - `packages/db` schema + first migration + demo seed (Sunrise Dental Care: Dr. Rao, Dr. Shetty, hours 10–20 Mon–Sat, 6 services, slot rules).
-- **Spike scripts** (`scripts/spike/`): (a) Sarvam STT WS with `vad_signals=true` and `mode=codemix` on a Kannada/English WAV; (b) Sarvam TTS streaming: read `sarvamai` npm source for the WS client, confirm URL/schema, else REST fallback; (c) Bedrock `Converse` with tools against Haiku 4.5 in ap-south-1, `list-inference-profiles` first. Record findings in `docs/SPIKES.md`.
+- **Spike scripts** (`scripts/spike/`): (a) Sarvam STT WS with `vad_signals=true` and `mode=codemix` on a Kannada/English WAV; (b) Sarvam TTS streaming: read `sarvamai` npm source for the WS client, confirm URL/schema, else REST fallback; (c) Bedrock `Converse` with tools against Amazon Nova in ap-south-1, `list-inference-profiles` first. Record findings in `docs/SPIKES.md`.
 - Brand: Muxaris wordmark SVG + mark, design tokens, `gen-assets.sh` prompts; generate hero/section imagery and favicon set.
 
 ### Phase 1: Vertical slice (landing → sign-up → onboarding → first call → appointment on dashboard)
