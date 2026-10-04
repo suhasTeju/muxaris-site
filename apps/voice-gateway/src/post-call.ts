@@ -61,6 +61,7 @@ export async function completeCall(deps: CompleteCallDeps, args: CompleteCallArg
   const guard = <T>(p: Promise<T>): Promise<T> => Promise.race([p, aborted]);
 
   let wavPath: string | undefined;
+  let upload: ReturnType<typeof createReadStream> | undefined;
   try {
     if (!blobs) {
       // Nowhere to put anything: leave the row as it is and send no message.
@@ -91,10 +92,16 @@ export async function completeCall(deps: CompleteCallDeps, args: CompleteCallArg
         if (r) {
           wavPath = r.wavPath;
           const key = callKeys.recording(clinicId, callId);
-          await guard(blobs.put(key, createReadStream(r.wavPath), "audio/wav", r.bytes));
+          upload = createReadStream(r.wavPath);
+          await guard(blobs.put(key, upload, "audio/wav", r.bytes));
           recordingKey = key;
           status = "ready";
           log.info("recording uploaded", { ...ids, bytes: r.bytes, durationMs: r.durationMs });
+          if (r.droppedSamples > 0)
+            log.warn("recording samples dropped at cap", {
+              ...ids,
+              droppedSamples: r.droppedSamples,
+            });
         }
       }
     } catch (e) {
@@ -133,6 +140,7 @@ export async function completeCall(deps: CompleteCallDeps, args: CompleteCallArg
   } finally {
     clearTimeout(timer);
     args.signal?.removeEventListener("abort", onExternal);
+    upload?.destroy();
     if (wavPath) await rm(wavPath, { force: true }).catch(() => undefined);
     // Spool files are removed on success by finish(); after a failure or abort do it here.
     await recorder?.discard().catch(() => undefined);

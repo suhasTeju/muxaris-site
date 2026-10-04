@@ -1,4 +1,4 @@
-import { mkdtempSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
@@ -9,7 +9,7 @@ import { callKeys } from "@muxaris/storage";
 import { FakeBlobStore, FakeQueue } from "@muxaris/storage/fakes";
 import { completeCall } from "./post-call.js";
 import { Recorder } from "./session/recorder.js";
-import { dbReachable, makeDemoClinic, openDb, silentLog } from "./session/test-helpers.js";
+import { dbReachable, makeDemoClinic, openDb, silentLog, sleep } from "./session/test-helpers.js";
 
 const reachable = await dbReachable();
 if (!reachable) console.warn("WARNING: Postgres unreachable, skipping post-call tests");
@@ -176,6 +176,26 @@ describe.skipIf(!reachable)("completeCall", () => {
     expect(readdirSync(dir)).toEqual([]);
     expect(existsSync(dir)).toBe(true);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("abort during finish() leaves no wav behind and destroys the upload", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "post-call-abort-"));
+    try {
+      const recorder = new Recorder({ spoolDir: dir });
+      recorder.caller(pcm(16000 * 20, 1));
+      const callId = await clinic.newCall();
+      const ac = new AbortController();
+      ac.abort();
+      await completeCall(
+        { db, blobs: new FakeBlobStore(), queue: null, log: silentLog },
+        { clinicId: clinic.clinicId, callId, recorder, endedAt, userTurns: 1, signal: ac.signal },
+      );
+      await sleep(200); // finish() may still be running in the background
+      expect(readdirSync(dir)).toEqual([]);
+      expect((await row(callId)).recordingStatus).toBe("failed");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("aborted completion marks the row failed and never throws", async () => {

@@ -49,7 +49,12 @@ class Track {
   private pendingSamples = 0;
   /** Samples already written to the raw file. */
   spooled = 0;
-  constructor(readonly path: string) {}
+  /** Samples dropped because the track hit its cap. */
+  dropped = 0;
+  constructor(
+    readonly path: string,
+    private readonly maxSamples: number,
+  ) {}
 
   get end(): number {
     return this.spooled + this.pendingSamples;
@@ -60,10 +65,18 @@ class Track {
 
   /** Places a chunk at `index`; a gap is zero-filled, a late (overlapping) chunk appends. */
   place(index: number, pcm: Buffer): void {
-    const samples = pcm.length >> 1;
+    let samples = pcm.length >> 1;
     if (samples === 0) return;
     const end = this.end;
-    if (index > end) this.push({ zeros: index - end });
+    const start = Math.max(index, end);
+    // Hard cap on track length: audio arriving faster than real time cannot grow it unbounded.
+    const room = Math.max(0, this.maxSamples - start);
+    if (samples > room) {
+      this.dropped += samples - room;
+      samples = room;
+    }
+    if (samples === 0) return;
+    if (start > end) this.push({ zeros: start - end });
     this.push({ data: Buffer.from(pcm.subarray(0, samples * 2)) });
   }
 
@@ -125,12 +138,16 @@ export interface RecorderOptions {
   /** How often completed samples are flushed to disk, default 30 s. */
   spoolEveryMs?: number;
   now?: () => number;
+  /** Per-track cap in samples (default: one hour). Excess audio is dropped and counted. */
+  maxSamples?: number;
 }
 
 export interface RecorderResult {
   wavPath: string;
   durationMs: number;
   bytes: number;
+  /** Samples dropped at the per-track cap; non-zero is worth logging. */
+  droppedSamples: number;
 }
 
 /**
@@ -150,6 +167,7 @@ export class Recorder {
   private writeChain: Promise<void> = Promise.resolve();
   private writeError: unknown;
   private done = false;
+  private discarded = false;
 
   constructor(opts: RecorderOptions) {
     this.now = opts.now ?? Date.now;
@@ -159,8 +177,9 @@ export class Recorder {
     // Call audio: the spool dir is owner-only and so are the files inside it.
     mkdirSync(opts.spoolDir, { recursive: true, mode: 0o700 });
     chmodSync(opts.spoolDir, 0o700);
-    this.left = new Track(join(opts.spoolDir, `${this.id}.L.raw`));
-    this.right = new Track(join(opts.spoolDir, `${this.id}.R.raw`));
+    const max = opts.maxSamples ?? RATE * 3600;
+    this.left = new Track(join(opts.spoolDir, `${this.id}.L.raw`), max);
+    this.right = new Track(join(opts.spoolDir, `${this.id}.R.raw`), max);
     this.wavPath = join(opts.spoolDir, `${this.id}.wav`);
   }
 
@@ -186,6 +205,11 @@ export class Recorder {
   truncateAssistant(): void {
     if (this.done) return;
     this.right.truncate(this.nowIndex());
+  }
+
+  /** Samples dropped at the per-track cap (both tracks). */
+  get droppedSamples(): number {
+    return this.left.dropped + this.right.dropped;
   }
 
   /** Bytes of audio held in memory (not yet spooled). */
@@ -237,6 +261,10 @@ export class Recorder {
       await this.writeChain;
       if (this.writeError) throw this.writeError;
 
+      if (this.discarded) {
+        await this.cleanup();
+        return null;
+      }
       const bytes = 44 + total * 4;
       const out = await open(this.wavPath, "wx", 0o600);
       const lf = await open(this.left.path, "a+", 0o600);
@@ -259,9 +287,19 @@ export class Recorder {
         await rf.close().catch(() => undefined);
         await out.close().catch(() => undefined);
       }
+      if (this.discarded) {
+        // discard() raced with us: remove what we just wrote.
+        await this.cleanup();
+        return null;
+      }
       await rm(this.left.path, { force: true });
       await rm(this.right.path, { force: true });
-      return { wavPath: this.wavPath, durationMs: Math.round((total / RATE) * 1000), bytes };
+      return {
+        wavPath: this.wavPath,
+        durationMs: Math.round((total / RATE) * 1000),
+        bytes,
+        droppedSamples: this.droppedSamples,
+      };
     } catch (e) {
       await this.cleanup();
       throw e;
@@ -271,6 +309,7 @@ export class Recorder {
   /** Removes all spool files (call after a failed or unwanted recording). */
   async discard(): Promise<void> {
     this.done = true;
+    this.discarded = true;
     await this.cleanup();
   }
 

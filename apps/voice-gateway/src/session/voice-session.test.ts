@@ -55,6 +55,7 @@ afterAll(async () => {
     log?: SessionLogger;
     stt?: FakeStt;
     recordCalls?: boolean;
+    spoolDir?: string;
   }) {
     const transport = new TestTransport();
     const stt = opts.stt ?? new FakeStt();
@@ -68,6 +69,7 @@ afterAll(async () => {
       db,
       log: opts.log ?? silentLog,
       ...(opts.timers ? { timers: opts.timers } : {}),
+      ...(opts.spoolDir ? { spoolDir: opts.spoolDir } : {}),
       ctx: {
         clinic: opts.clinic ?? demo.ctx,
         callId,
@@ -512,6 +514,32 @@ afterAll(async () => {
     const r = await session.recorder!.finish();
     expect(r).not.toBeNull();
     await session.recorder!.discard();
+  });
+
+  it("recorder unavailable: session still starts with the transcription-only disclosure", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "spool-bad-"));
+    const file = join(dir, "file");
+    writeFileSync(file, "x");
+    const logged: string[] = [];
+    const log: SessionLogger = { ...silentLog, error: (m) => void logged.push(m) };
+    try {
+      const { session, tts, transport } = await setup({
+        llm: new FakeLlm(),
+        recordCalls: true,
+        spoolDir: join(file, "sub"), // under a regular file: cannot be created
+        log,
+      });
+      expect(session.recorder).toBeNull();
+      expect(logged).toContain("recorder unavailable");
+      expect(tts.spoken[0]!.text).toBe(DISCLOSURE["en-IN"]);
+      expect(transport.ofType("state").length).toBeGreaterThan(0);
+      await session.end("caller");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("recordCalls false: no recorder and the transcription-only disclosure", async () => {

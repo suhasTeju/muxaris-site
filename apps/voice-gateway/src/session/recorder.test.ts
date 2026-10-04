@@ -167,6 +167,31 @@ describe("Recorder", () => {
     expect(statSync(out!.wavPath).mode & 0o777).toBe(0o600);
   });
 
+  it("discard racing finish leaves no files behind", async () => {
+    let t = 0;
+    const r = new Recorder({ spoolDir: tmp, now: () => t, spoolEveryMs: 10 });
+    r.caller(tone(16000, 1));
+    t = 100;
+    r.caller(tone(16000, 1));
+    t = 2000;
+    const fin = r.finish().catch(() => null);
+    const dis = r.discard();
+    await Promise.all([fin, dis]);
+    expect(readdirSync(tmp)).toEqual([]);
+  });
+
+  it("caps each track at maxSamples and counts dropped samples", async () => {
+    const r = new Recorder({ spoolDir: tmp, now: () => 0, maxSamples: 32000 });
+    r.caller(tone(16000 * 5, 9)); // 5 s delivered instantly
+    expect(r.droppedSamples).toBe(16000 * 3);
+    const out = await r.finish();
+    expect(out!.droppedSamples).toBe(16000 * 3);
+    const { left, right } = readWav(out!.wavPath);
+    expect(left.length).toBe(32000);
+    expect(right.length).toBe(32000);
+    expect(out!.durationMs).toBe(2000);
+  });
+
   it("finish on an empty recorder returns null and leaves no files", async () => {
     const r = new Recorder({ spoolDir: tmp, now: () => 0 });
     expect(await r.finish()).toBeNull();

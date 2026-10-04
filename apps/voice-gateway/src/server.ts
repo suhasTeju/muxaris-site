@@ -81,6 +81,8 @@ export interface ServerDeps {
   shutdownGraceMs?: number;
   /** Max time to wait for a session to finish after the socket closed, ms. */
   closeGraceMs?: number;
+  /** Where recorder spool files go (default: private per-process temp dir). */
+  spoolDir?: string;
   heartbeatMs?: number;
 }
 
@@ -530,7 +532,32 @@ export function createServer(deps: ServerDeps): GatewayServer {
       ws.off("message", ctl.hold);
       for (const f of ctl.early) transport.feed(f.data, f.isBinary);
 
-      const recordCalls = clinic.clinic.settings["recordCalls"] !== false && storage.blobs !== null;
+      const wantRecording =
+        clinic.clinic.settings["recordCalls"] !== false && storage.blobs !== null;
+      const session = new VoiceSession({
+        transport,
+        stt: providers.stt,
+        tts: providers.tts,
+        llm: providers.llm,
+        db,
+        log: sessLog,
+        ...(deps.spoolDir ? { spoolDir: deps.spoolDir } : {}),
+        ctx: {
+          clinic,
+          callId,
+          language,
+          now,
+          maxDurationS: callSecondsAllowed,
+          secondsRemaining: callSecondsAllowed,
+          recordCalls: wantRecording,
+          channel: "browser",
+          callerPhone: undefined,
+          verifiedPhone: undefined,
+        },
+      });
+
+      // The session decides whether recording really is on (the recorder may be unavailable).
+      const recordCalls = session.recorder !== null;
       if (recordCalls) {
         await ctl
           .bound(setCallRecording(db, { clinicId, callId, status: "pending" }))
@@ -545,26 +572,6 @@ export function createServer(deps: ServerDeps): GatewayServer {
         language,
         { recorded: recordCalls },
       );
-      const session = new VoiceSession({
-        transport,
-        stt: providers.stt,
-        tts: providers.tts,
-        llm: providers.llm,
-        db,
-        log: sessLog,
-        ctx: {
-          clinic,
-          callId,
-          language,
-          now,
-          maxDurationS: callSecondsAllowed,
-          secondsRemaining: callSecondsAllowed,
-          recordCalls,
-          channel: "browser",
-          callerPhone: undefined,
-          verifiedPhone: undefined,
-        },
-      });
 
       // Settle the call exactly once: usage ledger + slot release. Triggered when the session
       // closes the transport, or by the backstop below if the socket dropped and it never does.

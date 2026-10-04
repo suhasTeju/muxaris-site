@@ -87,6 +87,8 @@ export interface VoiceSessionDeps {
   ctx: SessionContext;
   log: SessionLogger;
   timers?: SessionTimers;
+  /** Test seam: where recorder spool files go (default: a private per-process temp dir). */
+  spoolDir?: string;
 }
 
 type CallOutcome =
@@ -260,12 +262,22 @@ export class VoiceSession {
     this.log = deps.log;
     this.timers = deps.timers ?? defaultTimers;
     this.language = deps.ctx.language;
-    this.recorder = deps.ctx.recordCalls
-      ? new Recorder({
-          spoolDir: spoolDir(),
+    let recorder: Recorder | null = null;
+    if (deps.ctx.recordCalls) {
+      try {
+        recorder = new Recorder({
+          spoolDir: deps.spoolDir ?? spoolDir(),
           now: () => deps.ctx.now().getTime(),
-        })
-      : null;
+          maxSamples: deps.ctx.maxDurationS * 16_000 + 16_000,
+        });
+      } catch (e) {
+        // An unwritable temp dir must not kill the call: fall back to transcript-only.
+        this.log.error("recorder unavailable", {
+          err: (e as { name?: string })?.name ?? "unknown",
+        });
+      }
+    }
+    this.recorder = recorder;
     let unverifiable = false;
     const norm = (label: string, v: string | undefined) => {
       if (v === undefined) return undefined;
@@ -645,7 +657,7 @@ export class VoiceSession {
       this.ctx.clinic.assistant,
       this.ctx.clinic.clinic,
       this.language,
-      { recorded: this.ctx.recordCalls },
+      { recorded: this.recorder !== null },
     );
     const epoch = this.epoch;
     this.persist({ seq: this.seq++, role: "assistant", text: `${disclosure} ${greeting}` });

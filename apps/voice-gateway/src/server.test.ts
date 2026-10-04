@@ -753,6 +753,35 @@ async function until<T>(
       }
     });
 
+    it("recorder unavailable: call works, plain disclosure, row not left pending", async () => {
+      const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+      const { tmpdir } = await import("node:os");
+      const { join } = await import("node:path");
+      const dir = mkdtempSync(join(tmpdir(), "spool-bad-"));
+      const file = join(dir, "file");
+      writeFileSync(file, "x");
+      try {
+        const blobs = new FakeBlobStore();
+        const queue = new FakeQueue<PostCallMessage>();
+        const stt = new FakeStt();
+        const { port } = await start({
+          storage: { blobs, queue },
+          spoolDir: join(file, "sub"),
+          providers: { stt, tts: new FakeTts(), llm: new FakeLlm() },
+        });
+        const { c, ready, callId } = await talk(port, stt);
+        expect(String(ready.greeting).startsWith(DISCLOSURE["en-IN"])).toBe(true);
+        expect((await callRow(callId)).recordingStatus).not.toBe("pending");
+        end(c);
+        await c.closed;
+        await until(() => queue.sent.length === 1);
+        expect([...blobs.objects.keys()]).toEqual([callKeys.transcript(clinicId, callId)]);
+        expect((await callRow(callId)).recordingStatus).toBe("none");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
     it("no storage: nothing recorded, row stays none", async () => {
       const stt = new FakeStt();
       const { port } = await start({
