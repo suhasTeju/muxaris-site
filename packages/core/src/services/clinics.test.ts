@@ -108,6 +108,22 @@ describe("slugify", () => {
     expect(new Set(results.map((r) => r.clinic.slug)).size).toBe(3);
   });
 
+  it("skips taken slugs deterministically (-2 taken -> -3)", async () => {
+    const mk = () =>
+      createClinicForUser(db, {
+        userId: ctx.user.id,
+        name: "Deterministic Slug Clinic",
+        specialty: "dental",
+        city: "Pune",
+      });
+    const first = await mk();
+    const second = await mk();
+    const third = await mk();
+    extra.push(first.clinic.id, second.clinic.id, third.clinic.id);
+    expect(second.clinic.slug).toBe(`${first.clinic.slug}-2`);
+    expect(third.clinic.slug).toBe(`${first.clinic.slug}-3`);
+  });
+
   it("upserts users by cognito sub", async () => {
     const u = await upsertUser(db, {
       cognitoSub: ctx.user.cognitoSub,

@@ -476,6 +476,66 @@ const at = (date: string, hhmm: string) => atLocal(date, hhmm, "Asia/Kolkata");
     }
   });
 
+  it("cancel works for an inactive doctor but reschedule is not_found", async () => {
+    const doc = await createDoctor(db, a.clinic.id, { name: "Dr Leaving" });
+    await setWorkingHours(db, a.clinic.id, doc.id, [
+      { weekday: 2, startTime: "10:00", endTime: "20:00" },
+    ]);
+    const mk = (phone: string, hhmm: string) =>
+      bookAppointment(db, {
+        clinicId: a.clinic.id,
+        patient: { phone },
+        doctorId: doc.id,
+        serviceId: aSvc.id,
+        startsAt: at(TUESDAY, hhmm),
+        source: "dashboard",
+      });
+    const x = await mk("+919800000060", "10:00");
+    const y = await mk("+919800000061", "11:00");
+    await db.update(schema.doctors).set({ active: false }).where(eq(schema.doctors.id, doc.id));
+    await expect(
+      rescheduleAppointment(db, {
+        clinicId: a.clinic.id,
+        appointmentId: x.id,
+        newStartsAt: at(TUESDAY, "12:00"),
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    const cancelled = await cancelAppointment(db, { clinicId: a.clinic.id, appointmentId: y.id });
+    expect(cancelled.status).toBe("cancelled");
+  });
+
+  it("allows rescheduling after the service was deactivated, still honouring bookableByAi", async () => {
+    const svc = await createService(db, a.clinic.id, { name: "Soon retired", durationMin: 15 });
+    const apt = await bookAppointment(db, {
+      clinicId: a.clinic.id,
+      patient: { phone: "+919800000062" },
+      doctorId: aDocs[1]!.id,
+      serviceId: svc.id,
+      startsAt: at(TUESDAY, "18:30"),
+      source: "dashboard",
+    });
+    await db.update(schema.services).set({ active: false }).where(eq(schema.services.id, svc.id));
+    const moved = await rescheduleAppointment(db, {
+      clinicId: a.clinic.id,
+      appointmentId: apt.id,
+      newStartsAt: at(TUESDAY, "18:45"),
+      source: "ai_call",
+    });
+    expect(moved.status).toBe("rescheduled");
+    await db
+      .update(schema.services)
+      .set({ bookableByAi: false })
+      .where(eq(schema.services.id, svc.id));
+    await expect(
+      rescheduleAppointment(db, {
+        clinicId: a.clinic.id,
+        appointmentId: apt.id,
+        newStartsAt: at(TUESDAY, "19:15"),
+        source: "ai_call",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+  });
+
   it("validates working hours", async () => {
     await expect(
       setWorkingHours(db, a.clinic.id, aDocs[0]!.id, [

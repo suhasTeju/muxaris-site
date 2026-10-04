@@ -343,11 +343,22 @@ export async function findAvailableSlots(
 // ---------- booking ----------
 
 /** Locks the doctor row (tenant check + per-doctor serialisation). Must be first in the tx. */
-async function lockDoctor(tx: DbLike, clinicId: string, doctorId: string) {
+async function lockDoctor(
+  tx: DbLike,
+  clinicId: string,
+  doctorId: string,
+  opts: { requireActive: boolean },
+) {
   const rows = await tx
     .select({ id: doctors.id })
     .from(doctors)
-    .where(and(eq(doctors.id, doctorId), eq(doctors.clinicId, clinicId), eq(doctors.active, true)))
+    .where(
+      and(
+        eq(doctors.id, doctorId),
+        eq(doctors.clinicId, clinicId),
+        ...(opts.requireActive ? [eq(doctors.active, true)] : []),
+      ),
+    )
     .for("update");
   if (rows.length === 0) throw new CoreError("not_found", "doctor not found");
 }
@@ -408,13 +419,17 @@ async function getClinicService(
   tx: DbLike,
   clinicId: string,
   serviceId: string,
-  opts: { forAssistant?: boolean } = {},
+  opts: { forAssistant?: boolean; allowInactive?: boolean } = {},
 ) {
   const [svc] = await tx
     .select()
     .from(services)
     .where(
-      and(eq(services.id, serviceId), eq(services.clinicId, clinicId), eq(services.active, true)),
+      and(
+        eq(services.id, serviceId),
+        eq(services.clinicId, clinicId),
+        ...(opts.allowInactive ? [] : [eq(services.active, true)]),
+      ),
     );
   if (!svc) throw new CoreError("not_found", "service not found");
   if (opts.forAssistant && !svc.bookableByAi) {
@@ -444,7 +459,7 @@ export async function bookAppointment(
 ): Promise<Appointment> {
   assertValidDate(input.startsAt, "startsAt");
   return db.transaction(async (tx) => {
-    await lockDoctor(tx, input.clinicId, input.doctorId);
+    await lockDoctor(tx, input.clinicId, input.doctorId, { requireActive: true });
     const svc = await getClinicService(tx, input.clinicId, input.serviceId, {
       forAssistant: input.source === "ai_call",
     });
@@ -497,7 +512,7 @@ export async function rescheduleAppointment(
         );
     const [pre] = await find();
     if (!pre) throw new CoreError("not_found", "appointment not found");
-    await lockDoctor(tx, input.clinicId, pre.doctorId);
+    await lockDoctor(tx, input.clinicId, pre.doctorId, { requireActive: true });
     const [apt] = await find(); // re-read under the lock
     if (!apt) throw new CoreError("not_found", "appointment not found");
     if (!ACTIVE.includes(apt.status)) {
@@ -505,6 +520,7 @@ export async function rescheduleAppointment(
     }
     const svc = await getClinicService(tx, input.clinicId, apt.serviceId, {
       forAssistant: input.source === "ai_call",
+      allowInactive: true, // an already-booked service may have been retired since
     });
     const endsAt = addMinutes(input.newStartsAt, svc.durationMin);
     await assertSlotFree(tx, {
@@ -546,7 +562,7 @@ export async function cancelAppointment(
         );
     const [pre] = await find();
     if (!pre) throw new CoreError("not_found", "appointment not found");
-    await lockDoctor(tx, input.clinicId, pre.doctorId);
+    await lockDoctor(tx, input.clinicId, pre.doctorId, { requireActive: false });
     const [apt] = await find(); // re-read under the lock
     if (!apt) throw new CoreError("not_found", "appointment not found");
     if (apt.status === "cancelled") return apt;
