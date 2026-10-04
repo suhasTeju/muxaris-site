@@ -9,11 +9,11 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
-  app.use(logger());
+  if (process.env.NODE_ENV !== "test") app.use(logger());
   app.use(
     "*",
     cors({
-      origin: deps.corsOrigins ?? "*",
+      origin: deps.corsOrigins ?? [],
       allowHeaders: ["Authorization", "Content-Type", "X-Clinic-Id"],
     }),
   );

@@ -13,7 +13,10 @@ describe("loadEnv", () => {
       "sarvam",
     );
   });
-  it("throws a readable error without DATABASE_URL", () => {
-    expect(() => loadEnv({})).toThrow(/DATABASE_URL/);
+  it("defaults DATABASE_URL to the local dev database outside production", () => {
+    expect(loadEnv({}).databaseUrl).toBe("postgres://muxaris:muxaris@localhost:5433/muxaris");
+  });
+  it("throws a readable error without DATABASE_URL in production", () => {
+    expect(() => loadEnv({ NODE_ENV: "production" })).toThrow(/DATABASE_URL/);
   });
 });

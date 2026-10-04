@@ -12,13 +12,13 @@ if (
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
 const userText = process.env.USER_TEXT ?? "Hi, I need a teeth cleaning tomorrow afternoon.";
 const client = new BedrockRuntimeClient({ region: "ap-south-1" });
+// Amazon Nova only (no Anthropic models on Bedrock for this project).
 const candidates = [
   process.env.BEDROCK_MODEL_ID,
-  "apac.anthropic.claude-haiku-4-5-20251001-v1:0",
-  "anthropic.claude-haiku-4-5-20251001-v1:0",
-  "global.anthropic.claude-haiku-4-5-20251001-v1:0",
   "global.amazon.nova-2-lite-v1:0",
+  "apac.amazon.nova-lite-v1:0",
 ].filter(Boolean) as string[];
+const allowFallback = process.env.ALLOW_FALLBACK === "1";
 
 for (const modelId of candidates) {
   const t0 = performance.now();
@@ -71,6 +71,10 @@ for (const modelId of candidates) {
       } catch (e) {
         console.log(`  toolInput JSON parse FAILED: ${(e as Error).message}`);
       }
+    }
+    if (modelId !== candidates[0]) {
+      console.log(`WARNING: fell back to ${modelId} (first candidate ${candidates[0]} failed)`);
+      process.exit(allowFallback ? 0 : 2);
     }
     process.exit(0);
   } catch (e) {

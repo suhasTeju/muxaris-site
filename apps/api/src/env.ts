@@ -7,8 +7,13 @@ export interface ApiEnv {
 }
 
 export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
-  const databaseUrl = src.DATABASE_URL;
-  if (!databaseUrl) throw new Error("DATABASE_URL is required (see .env.example)");
+  let databaseUrl = src.DATABASE_URL;
+  if (!databaseUrl) {
+    if (src.NODE_ENV === "production")
+      throw new Error("DATABASE_URL is required (see .env.example)");
+    databaseUrl = "postgres://muxaris:muxaris@localhost:5433/muxaris";
+    console.warn("DATABASE_URL not set: using local dev default (localhost:5433)");
+  }
   const sarvamKey = src.SARVAM_TTS_API_KEY?.trim() || null;
   return {
     port: Number(src.API_PORT ?? 4000),
