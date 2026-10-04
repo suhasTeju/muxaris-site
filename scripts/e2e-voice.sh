@@ -15,6 +15,9 @@ cleanup() { for p in "${PIDS[@]:-}"; do [[ -n "$p" ]] && kill "$p" 2>/dev/null |
 trap cleanup EXIT
 (cd apps/api && exec npx tsx src/index.ts) >"$OUT/api.log" 2>&1 & PIDS+=($!)
 (cd apps/voice-gateway && exec npx tsx src/index.ts) >"$OUT/gateway.log" 2>&1 & PIDS+=($!)
+if [[ "${E2E_WITH_WORKER:-0}" == "1" ]]; then
+  (cd workers/post-call && exec npx tsx src/dev.ts) >"$OUT/worker.log" 2>&1 & PIDS+=($!)
+fi
 for url in http://localhost:4001/healthz http://localhost:4101/healthz; do
   for _ in $(seq 1 60); do curl -fs "$url" >/dev/null 2>&1 && continue 2; sleep 1; done
   echo "timeout waiting for $url (see $OUT/*.log)"; exit 1

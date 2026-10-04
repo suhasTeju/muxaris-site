@@ -328,6 +328,22 @@ async function main(): Promise<void> {
   if (!rec.recordingS3Key) fail("recordingS3Key not set");
   log(`recording ready in ${Date.now() - recStart} ms`);
 
+  // (h2) post-call analysis (needs the worker; E2E_WITH_WORKER=1 in e2e-voice.sh)
+  if (process.env["E2E_EXPECT_SUMMARY"] === "1") {
+    const analysedBy = Date.now() + 60_000;
+    const anStart = Date.now();
+    let an: any = null;
+    for (;;) {
+      an = (await api(`/v1/calls/${callId}`, token, {}, clinicId)).call;
+      if (an.analysedAt || Date.now() > analysedBy) break;
+      await sleep(3000);
+    }
+    if (!an.analysedAt || !an.summary)
+      fail("call not analysed within 60s (is the worker running?)");
+    const words = String(an.summary).trim().split(/\s+/).length;
+    log(`analysed ${Date.now() - anStart} ms after recording ready, summary words=${words}`);
+  }
+
   // (i) appointment check
   const from = new Date(Date.now() - 3600_000).toISOString();
   const to = new Date(Date.now() + 4 * 86400_000).toISOString();

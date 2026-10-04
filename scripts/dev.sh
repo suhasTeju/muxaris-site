@@ -20,4 +20,9 @@ trap 'kill 0' EXIT
 npm run dev -w @muxaris/api &
 npm run dev -w @muxaris/voice-gateway &
 npm run dev -w @muxaris/web &
+if [[ -n "${POST_CALL_QUEUE_URL:-}" ]]; then
+  npm run dev -w @muxaris/worker-post-call &
+else
+  echo "POST_CALL_QUEUE_URL is empty: post-call worker skipped"
+fi
 wait
