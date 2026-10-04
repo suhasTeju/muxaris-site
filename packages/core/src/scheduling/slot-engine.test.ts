@@ -241,3 +241,36 @@ describe("findSlots hardening", () => {
     expect(partOfDayOf(ist("2026-10-06T12:00:00"), TZ)).toBe("afternoon");
   });
 });
+
+describe("findSlots fix round 2", () => {
+  const withHours = (startTime: string, endTime: string): FindSlotsInput => ({
+    ...base(),
+    doctors: [
+      { doctorId: "doc_a", workingHours: [{ weekday: 2, startTime, endTime }], timeOff: [] },
+    ],
+  });
+  it.each(["00:00", "24:00"])("22:00-%s yields slots, all on the requested date", (end) => {
+    const slots = findSlots(withHours("22:00", end));
+    expect(slots.length).toBeGreaterThan(0);
+    expect(slots.every((s) => localDateString(s.startsAt, TZ) === "2026-10-06")).toBe(true);
+    expect(slots.at(-1)!.startsAt.toISOString()).toBe(ist("2026-10-06T23:15:00").toISOString());
+  });
+  it.each([
+    ["10:00", "10:00"],
+    ["12:00", "10:00"],
+    ["00:00", "00:00"],
+  ])("rejects hours %s-%s", (s, e) => {
+    expect(() => findSlots(withHours(s, e))).toThrow("working hours end must be after start");
+  });
+  it("accepts 24:00 only as an end time", () => {
+    expect(() => findSlots(withHours("24:00", "24:00"))).toThrow(RangeError);
+  });
+  it("rejects NaN/negative maxDaysAhead and leadTimeMin", () => {
+    expect(() => findSlots({ ...base(), rules: { ...base().rules, maxDaysAhead: NaN } })).toThrow(
+      RangeError,
+    );
+    expect(() => findSlots({ ...base(), rules: { ...base().rules, leadTimeMin: -1 } })).toThrow(
+      RangeError,
+    );
+  });
+});

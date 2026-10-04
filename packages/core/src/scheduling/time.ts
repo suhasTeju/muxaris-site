@@ -27,15 +27,24 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((utc(b) - utc(a)) / 86_400_000);
 }
 
+/**
+ * Throws RangeError unless `hhmm` is strict HH:mm. "24:00" is valid only when
+ * `allowMidnightEnd` is true (end times).
+ */
+export function assertTimeString(hhmm: string, allowMidnightEnd = false): void {
+  if (!TIME_RE.test(hhmm)) throw new RangeError(`Invalid time "${hhmm}": expected HH:mm`);
+  const [hh, mm] = hhmm.split(":").map(Number) as [number, number];
+  if (mm > 59 || hh > 24 || (hh === 24 && (mm > 0 || !allowMidnightEnd))) {
+    throw new RangeError(`Invalid time "${hhmm}": out of range`);
+  }
+}
+
 /** Build a Date for local wall-clock time on a calendar date in tz (dayOffset shifts the calendar day). */
 export function atLocal(date: string, hhmm: string, tz: string, dayOffset = 0): Date {
   assertDateString(date);
-  if (!TIME_RE.test(hhmm)) throw new RangeError(`Invalid time "${hhmm}": expected HH:mm`);
+  assertTimeString(hhmm, true);
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
   const [hh, mm] = hhmm.split(":").map(Number) as [number, number];
-  if (hh > 24 || mm > 59 || (hh === 24 && mm > 0)) {
-    throw new RangeError(`Invalid time "${hhmm}": out of range`);
-  }
   const out = new Date(new TZDate(y, m - 1, d + dayOffset, hh, mm, 0, tz).getTime());
   if (dayOffset === 0 && hh < 24 && localDateString(out, tz) !== date) {
     throw new RangeError(`Invalid local time "${date} ${hhmm}" in ${tz}`);

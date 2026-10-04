@@ -1,6 +1,7 @@
 import { addMinutes } from "date-fns";
 import {
   assertDateString,
+  assertTimeString,
   atLocal,
   daysBetween,
   localDateString,
@@ -58,6 +59,11 @@ const overlaps = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) =>
 export function findSlots(i: FindSlotsInput): Slot[] {
   assertDateString(i.date);
   for (const h of i.holidays) assertDateString(h);
+  for (const k of ["maxDaysAhead", "leadTimeMin"] as const) {
+    if (!Number.isFinite(i.rules[k]) || i.rules[k] < 0) {
+      throw new RangeError(`${k} must be a finite number >= 0, got ${i.rules[k]}`);
+    }
+  }
   if (!(i.rules.slotGrainMin > 0)) {
     throw new RangeError(`slotGrainMin must be > 0, got ${i.rules.slotGrainMin}`);
   }
@@ -76,10 +82,20 @@ export function findSlots(i: FindSlotsInput): Slot[] {
       .filter((a) => a.doctorId === doc.doctorId)
       .map((a) => ({ s: a.startsAt, e: a.endsAt }));
     for (const wh of doc.workingHours.filter((w) => w.weekday === weekday)) {
+      assertTimeString(wh.startTime);
+      assertTimeString(wh.endTime, true);
       const open = atLocal(i.date, wh.startTime, i.timezone);
       let close = atLocal(i.date, wh.endTime, i.timezone);
-      // An end at or before the start (e.g. "00:00") means the next day's midnight.
-      if (close <= open) close = atLocal(i.date, wh.endTime, i.timezone, 1);
+      if (close <= open) {
+        // Only an end of exactly midnight ("00:00" / "24:00") crosses into the next day.
+        if (wh.endTime !== "00:00" && wh.endTime !== "24:00") {
+          throw new RangeError("working hours end must be after start");
+        }
+        if (wh.startTime === "00:00" && wh.endTime === "00:00") {
+          throw new RangeError("working hours end must be after start");
+        }
+        close = atLocal(i.date, "00:00", i.timezone, 1);
+      }
       for (let t = open; addMinutes(t, need) <= close; t = addMinutes(t, i.rules.slotGrainMin)) {
         if (t < earliest) continue;
         const endWithBuffer = addMinutes(t, need);
