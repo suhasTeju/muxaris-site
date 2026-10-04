@@ -4,3 +4,4 @@ cdk.out
 node_modules
 package-lock.json
 *.md
+packages/db/drizzle
