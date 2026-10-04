@@ -210,11 +210,21 @@ describe("auth error classification over HTTP", () => {
     await db
       .insert(schema.memberships)
       .values({ id: newId("mem"), userId: u!.id, clinicId: clinic, role: "front_desk" });
-    const date = nextTuesday();
+    // A different Tuesday and the shortest service, so the final owner-override booking can
+    // never collide with the 03:00 booking made by the previous test (same doctor and day).
+    const date = new Date(Date.parse(`${nextTuesday()}T00:00:00Z`) + 7 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const all = (await (
+      await call("GET", "/services", { token: tok(subs[0]!), clinic })
+    ).json()) as J;
+    const shortest = [...all.services].sort(
+      (x: J, y: J) => x.durationMin + (x.bufferMin ?? 0) - (y.durationMin + (y.bufferMin ?? 0)),
+    )[0];
     const body = (extra: object) => ({
       patient: { phone: "9876543211", name: "Walk In" },
       doctorId,
-      serviceId: svcId,
+      serviceId: shortest.id as string,
       startsAt: `${date}T02:00:00+05:30`,
       ...extra,
     });

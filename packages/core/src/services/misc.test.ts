@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { schema } from "@muxaris/db";
+import { atLocal, localDateString, weekdayOf } from "../scheduling/time.js";
 import { loadDemoClinicData } from "./demo.js";
 import { findPatientByPhone, listUpcomingForPatient, upsertPatientByPhone } from "./patients.js";
 import { appendTurn, createCall, createCallback, finishCall } from "./calls.js";
@@ -65,8 +66,12 @@ warnIfUnreachable(reachable, "core demo/patient/call tests");
   it("lists upcoming appointments for a patient", async () => {
     const [doc] = await listDoctors(db, a.clinic.id);
     const [svc] = await listServices(db, a.clinic.id);
-    const startsAt = new Date(Date.now() + 3 * 86_400_000);
-    startsAt.setUTCMinutes(0, 0, 0);
+    // 11:00 clinic time on the next Mon-Fri at least two days out (inside working hours always).
+    const tz = a.clinic.timezone;
+    let day = 2;
+    const dateOf = (n: number) => localDateString(new Date(Date.now() + n * 86_400_000), tz);
+    while ([0, 6].includes(weekdayOf(dateOf(day), tz))) day++;
+    const startsAt = atLocal(dateOf(day), "11:00", tz);
     const apt = await bookAppointment(db, {
       clinicId: a.clinic.id,
       patient: { phone: "+919822222222" },
