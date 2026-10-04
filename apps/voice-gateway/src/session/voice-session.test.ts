@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { schema } from "@muxaris/db";
 import { FakeLlm, FakeStt, FakeTts } from "../providers/fakes.js";
-import { DISCLOSURE } from "./prompt.js";
+import { DISCLOSURE, openingUtterances } from "./prompt.js";
+import { chunkSentences } from "./sentence-chunker.js";
 import { VoiceSession, type SessionTimers } from "./voice-session.js";
 import {
   ScriptedLlm,
@@ -486,27 +487,48 @@ afterAll(async () => {
     expect(transport.ofType("ended")[0]).toMatchObject({ reason: "assistant", outcome: "handoff" });
   });
 
-  it("opens with the AI/transcription disclosure, unless switched off", async () => {
+  it("always opens with the AI/transcription disclosure, as one persisted turn 0", async () => {
     const on = await setup({ llm: new FakeLlm() });
-    const d = DISCLOSURE["en-IN"];
-    expect(on.tts.spoken[0]!.text).toBe(d);
-    expect(on.tts.spoken).toHaveLength(2);
+    const { disclosure, greeting } = openingUtterances(
+      demo.ctx.assistant,
+      demo.ctx.clinic,
+      "en-IN",
+    );
+    expect(disclosure).toBe(DISCLOSURE["en-IN"]);
+    expect(on.tts.spoken.map((x) => x.text)).toEqual([disclosure, greeting]);
     await on.session.end("caller");
     const rows = await db
       .select()
       .from(schema.callTurns)
       .where(eq(schema.callTurns.callId, on.callId));
-    expect(rows.find((r) => r.seq === 0)!.text!.startsWith(d)).toBe(true);
-
-    const off = await setup({
-      llm: new FakeLlm(),
-      clinic: {
-        ...demo.ctx,
-        assistant: { ...demo.ctx.assistant!, settings: { disclosure: false } } as never,
-      },
-    });
-    expect(off.tts.spoken).toHaveLength(1);
-    expect(off.tts.spoken[0]!.text).not.toContain(d);
-    await off.session.end("caller");
+    expect(rows.find((r) => r.seq === 0)!.text).toBe(`${disclosure} ${greeting}`);
   });
+
+  it("ignores barge-in until the disclosure has been sent", async () => {
+    const s = await setup({
+      llm: new FakeLlm(),
+      tts: new FakeTts({ chunks: 4, delayMs: 30 }),
+      waitListening: false,
+    });
+    s.stt.push({ type: "speech_start" });
+    s.stt.push({ type: "speech_end" });
+    s.stt.push({ type: "transcript", text: "hello", language: "en-IN" });
+    await waitFor(() => s.tts.spoken.length === 2, 4000, "greeting spoken");
+    expect(s.transport.ofType("flush_playback")).toHaveLength(0);
+    expect(s.tts.spoken[0]!.text).toBe(DISCLOSURE["en-IN"]);
+    await s.session.end("caller");
+  });
+
+  it.each(["hi-IN", "kn-IN", "ta-IN", "te-IN", "en-IN"] as const)(
+    "keeps the %s disclosure whole and in order through chunkSentences",
+    async (lang) => {
+      const text = DISCLOSURE[lang];
+      async function* slices() {
+        for (let i = 0; i < text.length; i += 7) yield text.slice(i, i + 7);
+      }
+      const out: string[] = [];
+      for await (const c of chunkSentences(slices())) out.push(c);
+      expect(out.join(" ").replace(/\s+/g, " ").trim()).toBe(text);
+    },
+  );
 });

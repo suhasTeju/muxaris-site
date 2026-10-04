@@ -19,7 +19,7 @@ import type {
   TtsProvider,
   TtsUtterance,
 } from "../providers/types.js";
-import { DISCLOSURE, buildSystemPrompt, type ClinicContext } from "./prompt.js";
+import { buildSystemPrompt, openingUtterances, type ClinicContext } from "./prompt.js";
 import { chunkSentences } from "./sentence-chunker.js";
 import { executeTool, summarizeResult, type ToolContext } from "./tools.js";
 import type { MediaTransport } from "./transport.js";
@@ -137,6 +137,7 @@ class TextQueue implements AsyncIterable<string> {
 
 interface SpeechItem {
   text: string;
+  disclosure?: boolean;
   epoch: number;
   /** Shared per-round counter of sentences whose audio actually started. */
   spoken?: { started: number } | undefined;
@@ -164,6 +165,8 @@ export class VoiceSession {
   private state: "listening" | "thinking" | "speaking" | null = null;
   private started = false;
   private ended = false;
+  private disclosurePending = false;
+  private finalDurationS: number | undefined;
   private startedAt = 0;
 
   /** Bumped on every barge-in: anything tagged with an older epoch is stale and dropped. */
@@ -287,6 +290,13 @@ export class VoiceSession {
     this.speakGreeting();
   }
 
+  /** Call duration in seconds: final once ended, running before that (0 if never started). */
+  get durationS(): number {
+    if (this.finalDurationS !== undefined) return this.finalDurationS;
+    if (!this.startedAt) return 0;
+    return Math.max(0, Math.round((this.ctx.now().getTime() - this.startedAt) / 1000));
+  }
+
   async end(reason: EndReason): Promise<void> {
     return this.finish(reason, true);
   }
@@ -325,7 +335,8 @@ export class VoiceSession {
     }
     await this.persistChain;
     const outcome = this.outcome();
-    const durationS = Math.max(0, Math.round((this.ctx.now().getTime() - this.startedAt) / 1000));
+    const durationS = this.durationS;
+    this.finalDurationS = durationS;
     try {
       await finishCall(this.db, {
         callId: this.ctx.callId,
@@ -426,9 +437,19 @@ export class VoiceSession {
     );
   }
 
-  private enqueueSpeech(text: string, epoch: number, spoken?: { started: number }): void {
+  private enqueueSpeech(
+    text: string,
+    epoch: number,
+    spoken?: { started: number },
+    disclosure = false,
+  ): void {
     if (this.ended || epoch !== this.epoch || !text.trim()) return;
-    this.speechQueue.push({ text, epoch, ...(spoken ? { spoken } : {}) });
+    this.speechQueue.push({
+      text,
+      epoch,
+      ...(spoken ? { spoken } : {}),
+      ...(disclosure ? { disclosure } : {}),
+    });
     if (!this.pumpActive) {
       this.pumpActive = true;
       this.pumpPromise = this.pump();
@@ -442,7 +463,10 @@ export class VoiceSession {
         this.pumpActive = false;
         return;
       }
-      if (item.epoch !== this.epoch || this.ended) continue;
+      if (item.epoch !== this.epoch || this.ended) {
+        if (item.disclosure) this.disclosurePending = false;
+        continue;
+      }
       this.setState("speaking");
       let utt: TtsUtterance | null = null;
       try {
@@ -467,6 +491,7 @@ export class VoiceSession {
       } catch {
         if (item.epoch === this.epoch) this.providerError("tts");
       } finally {
+        if (item.disclosure) this.disclosurePending = false;
         if (this.currentUtt === utt) this.currentUtt = null;
       }
     }
@@ -483,23 +508,18 @@ export class VoiceSession {
   }
 
   private speakGreeting(): void {
-    const a = this.ctx.clinic.assistant;
-    const text =
-      a?.greeting?.[this.language] ??
-      Object.values(a?.greeting ?? {}).find((g) => g.trim()) ??
-      `Hello, this is ${a?.name ?? "the receptionist"} at ${this.ctx.clinic.clinic.name}. How can I help you?`;
+    const { disclosure, greeting } = openingUtterances(
+      this.ctx.clinic.assistant,
+      this.ctx.clinic.clinic,
+      this.language,
+    );
     const epoch = this.epoch;
-    // Read defensively: the profile has no settings field yet, so the disclosure defaults to ON.
-    const settings = (a as { settings?: { disclosure?: unknown } } | null)?.settings;
-    const disclosure = settings?.disclosure === false ? null : DISCLOSURE[this.language];
-    this.persist({
-      seq: this.seq++,
-      role: "assistant",
-      text: disclosure ? `${disclosure} ${text}` : text,
-    });
+    this.persist({ seq: this.seq++, role: "assistant", text: `${disclosure} ${greeting}` });
     this.assistantTurns++;
-    if (disclosure) this.enqueueSpeech(disclosure, epoch);
-    this.enqueueSpeech(text, epoch);
+    // The disclosure is a privacy promise: barge-in is ignored until it has been sent.
+    this.disclosurePending = true;
+    this.enqueueSpeech(disclosure, epoch, undefined, true);
+    this.enqueueSpeech(greeting, epoch);
     void this.drain().then(() => {
       if (!this.ended && epoch === this.epoch) this.setState("listening");
     });
@@ -508,7 +528,7 @@ export class VoiceSession {
   // ------------------------------------------------------------------ barge-in
 
   private onSpeechStart(): void {
-    if (this.ended) return;
+    if (this.ended || this.disclosurePending) return;
     if (this.state === "thinking" || this.state === "speaking") {
       this.interrupt();
       return;
@@ -527,6 +547,7 @@ export class VoiceSession {
   }
 
   private interrupt(): void {
+    if (this.disclosurePending) return;
     this.epoch++;
     if (!this.forcedEnd) this.endRequested = false; // barge-in during the closing sentence cancels the hang-up
     this.lastAudioSentAt = 0;

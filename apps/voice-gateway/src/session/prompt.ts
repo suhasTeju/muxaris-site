@@ -2,7 +2,7 @@ import type { getClinicContext } from "@muxaris/core";
 import { LANGUAGES, type LanguageCode } from "@muxaris/shared";
 import { WEEKDAY_NAMES, formatLocalLong } from "./local-time.js";
 
-/** Spoken at the start of every call (privacy promise); `assistant.settings.disclosure === false` turns it off. */
+/** Spoken at the start of every call (privacy promise). Always on in Phase 1; not interruptible. */
 export const DISCLOSURE: Record<LanguageCode, string> = {
   "en-IN": "This call is answered by an AI assistant and may be transcribed.",
   "hi-IN": "यह कॉल एक एआई सहायक द्वारा उत्तर दी जा रही है और इसे लिखित रूप में सहेजा जा सकता है।",
@@ -13,6 +13,22 @@ export const DISCLOSURE: Record<LanguageCode, string> = {
 };
 
 export type ClinicContext = Awaited<ReturnType<typeof getClinicContext>>;
+
+/**
+ * The opening of every call, computed once: `ready.greeting` (disclosure + " " + greeting), the
+ * spoken audio and the persisted turn 0 all use these exact strings.
+ */
+export function openingUtterances(
+  assistant: ClinicContext["assistant"],
+  clinic: ClinicContext["clinic"],
+  language: LanguageCode,
+): { disclosure: string; greeting: string } {
+  const greeting =
+    assistant?.greeting?.[language] ??
+    Object.values(assistant?.greeting ?? {}).find((g) => g.trim()) ??
+    `Hello, this is ${assistant?.name ?? "the receptionist"} at ${clinic.name}. How can I help you?`;
+  return { disclosure: DISCLOSURE[language], greeting };
+}
 
 const languageLabel = (code: LanguageCode) => LANGUAGES.find((l) => l.code === code)?.label ?? code;
 

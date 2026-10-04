@@ -13,6 +13,17 @@ export interface VoiceEnv {
   cognitoClientId: string | null;
 }
 
+/** Positive integer from an env var; throws at boot on empty, NaN, fractional or <= 0. */
+function positiveInt(src: NodeJS.ProcessEnv, key: string, fallback: number, max?: number): number {
+  const raw = src[key];
+  if (raw === undefined) return fallback;
+  const v = raw.trim();
+  const n = /^\d+$/.test(v) ? Number(v) : NaN;
+  if (!Number.isSafeInteger(n) || n <= 0 || (max !== undefined && n > max))
+    throw new Error(`${key} must be a positive integer${max ? ` <= ${max}` : ""}, got "${raw}"`);
+  return n;
+}
+
 export function loadEnv(src: NodeJS.ProcessEnv = process.env): VoiceEnv {
   let databaseUrl = src.DATABASE_URL;
   if (!databaseUrl) {
@@ -34,15 +45,15 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): VoiceEnv {
     );
   const sarvamKey = src.SARVAM_TTS_API_KEY?.trim() || null;
   return {
-    port: Number(src.VOICE_PORT ?? 4100),
+    port: positiveInt(src, "VOICE_PORT", 4100, 65535),
     databaseUrl,
     sarvamKey,
     provider: sarvamKey ? "sarvam" : "mock",
     // Amazon Nova only (no Anthropic models on Bedrock)
     bedrockModelId: src.BEDROCK_MODEL_ID?.trim() || "global.amazon.nova-2-lite-v1:0",
     awsRegion: src.AWS_REGION?.trim() || "ap-south-1",
-    maxSessions: Number(src.MAX_SESSIONS ?? 15),
-    maxCallSeconds: Number(src.MAX_CALL_SECONDS ?? 600),
+    maxSessions: positiveInt(src, "MAX_SESSIONS", 15),
+    maxCallSeconds: positiveInt(src, "MAX_CALL_SECONDS", 600),
     corsOrigins: (src.CORS_ORIGINS ?? "http://localhost:3000")
       .split(",")
       .map((o) => o.trim())

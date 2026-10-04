@@ -36,4 +36,12 @@ describe("voice-gateway loadEnv", () => {
     );
     expect(() => loadEnv({ AUTH_MODE: "nope" })).toThrow(/AUTH_MODE/);
   });
+  it.each(["abc", "", " ", "0", "-5", "1.5", "15x"])(
+    "rejects MAX_SESSIONS / MAX_CALL_SECONDS / VOICE_PORT=%j at boot",
+    (bad) => {
+      expect(() => loadEnv({ ...dev, MAX_SESSIONS: bad })).toThrow(/MAX_SESSIONS/);
+      expect(() => loadEnv({ ...dev, MAX_CALL_SECONDS: bad })).toThrow(/MAX_CALL_SECONDS/);
+      expect(() => loadEnv({ ...dev, VOICE_PORT: bad })).toThrow(/VOICE_PORT/);
+    },
+  );
 });

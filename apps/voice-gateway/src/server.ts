@@ -1,15 +1,14 @@
 import http from "node:http";
 import {
   AuthUnavailableError,
-  CoreError,
   createCall,
   finishCall,
   getClinicContext,
   getMembership,
+  getUserByCognitoSub,
   getPlanForClinic,
   getUsedCallSeconds,
   recordCallUsage,
-  upsertUser,
   usageMonth,
   type TokenVerifier,
 } from "@muxaris/core";
@@ -20,7 +19,7 @@ import {
   type GatewayEvent,
   type LanguageCode,
 } from "@muxaris/shared";
-import { WebSocketServer, type WebSocket } from "ws";
+import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { createVerifier } from "./auth.js";
 import type { VoiceEnv } from "./env.js";
 import { BedrockLlm } from "./providers/bedrock-llm.js";
@@ -28,6 +27,7 @@ import { FakeLlm, FakeStt, FakeTts } from "./providers/fakes.js";
 import { SarvamStt } from "./providers/sarvam-stt.js";
 import { SarvamTts } from "./providers/sarvam-tts.js";
 import type { LlmProvider, SttProvider, TtsProvider } from "./providers/types.js";
+import { openingUtterances } from "./session/prompt.js";
 import { VoiceSession, type SessionLogger } from "./session/voice-session.js";
 import { WsTransport } from "./ws-transport.js";
 
@@ -61,10 +61,19 @@ export interface ServerDeps {
   now?: () => Date;
   /** Test seams. */
   startTimeoutMs?: number;
+  /** Whole-setup deadline (first frame + verify + DB + createCall), ms. */
+  setupTimeoutMs?: number;
+  /** Max time shutdown() waits for live calls to finish, ms. */
+  shutdownGraceMs?: number;
+  /** Max time to wait for a session to finish after the socket closed, ms. */
+  closeGraceMs?: number;
   heartbeatMs?: number;
 }
 
 const START_TIMEOUT_MS = 5000;
+const SETUP_TIMEOUT_MS = 10_000;
+const SHUTDOWN_GRACE_MS = 10_000;
+const CLOSE_GRACE_MS = 5000;
 const HEARTBEAT_MS = 20_000;
 const MAX_MISSED_PONGS = 2;
 const MAX_PAYLOAD = 64 * 1024;
@@ -109,6 +118,7 @@ function rejectWith(
   event: Extract<GatewayEvent, { type: "error" }>["code"],
   message: string,
 ): void {
+  if (ws.readyState !== ws.OPEN) return;
   try {
     ws.send(JSON.stringify({ type: "error", code: event, message } satisfies GatewayEvent));
     ws.close(code, event);
@@ -117,17 +127,36 @@ function rejectWith(
   }
 }
 
-export function createServer(deps: ServerDeps): http.Server {
+const CLINIC_ID_RE = /^cl_[a-z0-9]{1,40}$/;
+/** Client-supplied ids are logged only when they look like ours. */
+const logId = (id: string) => (CLINIC_ID_RE.test(id) ? id : "invalid");
+
+export type GatewayServer = http.Server & { shutdown(): Promise<void> };
+
+interface LiveCall {
+  session: VoiceSession;
+  /** Resolves once the call row, usage ledger and slot are settled. */
+  settled: Promise<void>;
+}
+
+export function createServer(deps: ServerDeps): GatewayServer {
   const { db, env } = deps;
   const log = deps.log ?? consoleLogger;
   const now = deps.now ?? (() => new Date());
   const verifier = deps.verifier ?? createVerifier(env);
   const providers = deps.providers ?? createProviders(env);
   const startTimeoutMs = deps.startTimeoutMs ?? START_TIMEOUT_MS;
+  const setupTimeoutMs = deps.setupTimeoutMs ?? SETUP_TIMEOUT_MS;
+  const shutdownGraceMs = deps.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
+  const closeGraceMs = deps.closeGraceMs ?? CLOSE_GRACE_MS;
   const heartbeatMs = deps.heartbeatMs ?? HEARTBEAT_MS;
+  const maxPreAuth = 2 * env.maxSessions;
 
   let active = 0;
+  let preAuth = 0;
+  let shuttingDown = false;
   const perClinic = new Map<string, number>();
+  const live = new Set<LiveCall>();
   const release = (clinicId: string) => {
     active = Math.max(0, active - 1);
     const n = (perClinic.get(clinicId) ?? 1) - 1;
@@ -143,7 +172,7 @@ export function createServer(deps: ServerDeps): http.Server {
     }
     res.writeHead(404);
     res.end();
-  });
+  }) as GatewayServer;
 
   const wss = new WebSocketServer({
     noServer: true,
@@ -168,6 +197,21 @@ export function createServer(deps: ServerDeps): http.Server {
   });
 
   wss.on("connection", (ws) => {
+    ws.on("error", () => ws.terminate());
+    if (shuttingDown || preAuth >= maxPreAuth) {
+      log.warn("connection refused", { reason: shuttingDown ? "shutdown" : "preauth_cap" });
+      rejectWith(ws, 1013, "busy", "server busy, try again later");
+      return;
+    }
+    preAuth++;
+    let preAuthHeld = true;
+    const dropPreAuth = () => {
+      if (preAuthHeld) {
+        preAuthHeld = false;
+        preAuth--;
+      }
+    };
+
     // Heartbeat: terminate after MAX_MISSED_PONGS unanswered pings.
     let missed = 0;
     ws.on("pong", () => {
@@ -185,21 +229,38 @@ export function createServer(deps: ServerDeps): http.Server {
         ws.terminate();
       }
     }, heartbeatMs);
-    ws.on("close", () => clearInterval(hb));
-    ws.on("error", () => ws.terminate());
 
     let closed = false;
-    ws.on("close", () => {
-      closed = true;
-    });
-
-    // First frame must be a valid `start` within the deadline.
-    const timer = setTimeout(() => {
+    let expired = false;
+    let gotStart = false;
+    const startTimer = setTimeout(() => {
       ws.removeAllListeners("message");
+      expired = true;
       rejectWith(ws, 4001, "auth_failed", "start frame not received in time");
     }, startTimeoutMs);
+    // One deadline for the whole setup: first frame, verification, DB work and createCall.
+    const setupTimer = setTimeout(() => {
+      if (expired) return;
+      expired = true;
+      if (gotStart) {
+        log.warn("setup deadline exceeded");
+        rejectWith(ws, 1011, "internal", "session setup timed out");
+      } else rejectWith(ws, 4001, "auth_failed", "start frame not received in time");
+    }, setupTimeoutMs);
+    const clearTimers = () => {
+      clearTimeout(startTimer);
+      clearTimeout(setupTimer);
+    };
+    ws.on("close", () => {
+      closed = true;
+      clearInterval(hb);
+      clearTimers();
+      dropPreAuth();
+    });
+
     ws.once("message", (data, isBinary) => {
-      clearTimeout(timer);
+      clearTimeout(startTimer);
+      if (expired) return;
       let parsed: ReturnType<typeof clientEventSchema.safeParse> | undefined;
       if (!isBinary) {
         try {
@@ -209,54 +270,77 @@ export function createServer(deps: ServerDeps): http.Server {
         }
       }
       if (!parsed?.success || parsed.data.type !== "start") {
+        clearTimers();
         rejectWith(ws, 4001, "auth_failed", "first frame must be a start message");
         return;
       }
-      const start = parsed.data;
-      void handleStart(ws, start, () => closed).catch((e) => {
-        log.error("session setup failed", safeErr(e));
-        rejectWith(ws, 1011, "internal", "internal error");
-      });
+      gotStart = true;
+      // Frames sent during setup (audio, `end`) are held and replayed to the transport.
+      const early: Array<{ data: RawData; isBinary: boolean }> = [];
+      const hold = (d: RawData, b: boolean) => {
+        if (early.length < 500) early.push({ data: d, isBinary: b });
+      };
+      ws.on("message", hold);
+      const ctl = {
+        gone: () => closed || expired || shuttingDown,
+        early,
+        hold,
+        done: () => {
+          clearTimers();
+          dropPreAuth();
+        },
+      };
+      void handleStart(ws, parsed.data, ctl)
+        .catch((e) => {
+          log.error("session setup failed", safeErr(e));
+          if (!closed && !expired) rejectWith(ws, 1011, "internal", "internal error");
+        })
+        .finally(ctl.done);
     });
   });
 
   async function handleStart(
     ws: WebSocket,
     start: { token: string; clinicId: string; language?: LanguageCode | undefined },
-    isClosed: () => boolean,
+    ctl: {
+      gone: () => boolean;
+      early: Array<{ data: RawData; isBinary: boolean }>;
+      hold: (d: RawData, b: boolean) => void;
+      done: () => void;
+    },
   ): Promise<void> {
+    const reqClinic = logId(start.clinicId);
     // --- authenticate
     let identity;
     try {
       identity = await verifier.verify(start.token);
     } catch (e) {
+      if (ctl.gone()) return;
       if (e instanceof AuthUnavailableError) {
-        log.warn("auth unavailable", { clinicId: start.clinicId });
+        const cause = (e as { cause?: unknown }).cause;
+        log.warn("auth unavailable", { clinicId: reqClinic, ...(cause ? safeErr(cause) : {}) });
         rejectWith(ws, 1011, "provider", "authentication service unavailable");
       } else {
-        log.info("auth failed", { clinicId: start.clinicId });
+        log.info("auth failed", { clinicId: reqClinic });
         rejectWith(ws, 4001, "auth_failed", "invalid or expired token");
       }
       return;
     }
-    let user;
-    try {
-      user = await upsertUser(db, { cognitoSub: identity.sub, email: identity.email });
-    } catch (e) {
-      if (e instanceof CoreError && e.code === "conflict")
-        rejectWith(ws, 4003, "forbidden", "account conflict");
-      else if (e instanceof CoreError) rejectWith(ws, 4001, "auth_failed", "invalid account");
-      else throw e;
-      return;
-    }
-    // --- authorize
-    const membership = await getMembership(db, { userId: user.id, clinicId: start.clinicId });
-    if (!membership) {
-      log.info("forbidden", { sub: identity.sub, clinicId: start.clinicId });
+    if (ctl.gone()) return;
+    // --- authorize (lookup only: a valid identity must not create user rows here)
+    const user = await getUserByCognitoSub(db, identity.sub);
+    if (ctl.gone()) return;
+    const membership = user
+      ? await getMembership(db, { userId: user.id, clinicId: start.clinicId })
+      : null;
+    if (ctl.gone()) return;
+    if (!user || !membership) {
+      log.info("forbidden", { sub: identity.sub, clinicId: reqClinic });
       rejectWith(ws, 4003, "forbidden", "not a member of this clinic");
       return;
     }
     const clinic = await getClinicContext(db, start.clinicId);
+    if (ctl.gone()) return;
     const clinicId = clinic.clinic.id;
     const enabled = clinic.clinic.languages as string[];
     const language = (start.language ?? enabled[0] ?? "en-IN") as LanguageCode;
@@ -266,9 +350,13 @@ export function createServer(deps: ServerDeps): http.Server {
     }
 
     // --- usage cap
+    // Phase 1 limits (parked): the ledger is written only when a call ends, so up to
+    // maxConcurrentCalls simultaneous calls can each use the full remaining minutes (overshoot),
+    // and the concurrency counters below are per process (per-clinic limit x instance count).
     const plan = await getPlanForClinic(db, clinicId);
     const month = usageMonth(clinic.clinic.timezone, now());
     const used = await getUsedCallSeconds(db, clinicId, month);
+    if (ctl.gone()) return;
     const secondsRemaining = plan.includedCallMinutes * 60 - used;
     if (secondsRemaining <= 0) {
       log.info("quota exhausted", { sub: identity.sub, clinicId });
@@ -293,11 +381,7 @@ export function createServer(deps: ServerDeps): http.Server {
 
     let call;
     try {
-      call = await createCall(db, {
-        clinicId,
-        channel: "browser",
-        startedByUserId: user.id,
-      });
+      call = await createCall(db, { clinicId, channel: "browser", startedByUserId: user.id });
     } catch (e) {
       releaseOnce();
       throw e;
@@ -309,31 +393,30 @@ export function createServer(deps: ServerDeps): http.Server {
       error: (m, f) => log.error(m, { callId, clinicId, sub: identity.sub, ...f }),
     };
 
-    if (isClosed()) {
-      // Caller left during setup: close out the row without starting a session.
+    if (ctl.gone()) {
+      // Caller left (or setup expired / shutdown began) before the session started:
+      // close the row out as abandoned. No usage is recorded.
       try {
-        await finishCall(db, { callId, clinicId, status: "completed", durationS: 0 });
+        await finishCall(db, {
+          callId,
+          clinicId,
+          status: "failed",
+          outcome: "abandoned",
+          durationS: 0,
+        });
       } catch {
         /* best effort */
       }
       releaseOnce();
+      rejectWith(ws, 1011, "internal", "session setup aborted");
       return;
     }
 
     const transport = new WsTransport(ws);
-    const startedAt = now().getTime();
-    transport.onceClosed(() => {
-      const durationS = Math.max(0, Math.round((now().getTime() - startedAt) / 1000));
-      void recordCallUsage(db, {
-        clinicId,
-        month: usageMonth(clinic.clinic.timezone, now()),
-        callSeconds: durationS,
-      })
-        .catch((e) => sessLog.error("usage ledger update failed", safeErr(e)))
-        .finally(releaseOnce);
-      sessLog.info("call closed", { durationS });
-    });
+    ws.off("message", ctl.hold);
+    for (const f of ctl.early) transport.feed(f.data, f.isBinary);
 
+    const { disclosure, greeting } = openingUtterances(clinic.assistant, clinic.clinic, language);
     const session = new VoiceSession({
       transport,
       stt: providers.stt,
@@ -354,14 +437,62 @@ export function createServer(deps: ServerDeps): http.Server {
       },
     });
 
-    const a = clinic.assistant;
-    const assistantName = a?.name ?? "the receptionist";
-    const greeting =
-      a?.greeting?.[language] ??
-      Object.values(a?.greeting ?? {}).find((g) => g.trim()) ??
-      `Hello, this is ${assistantName} at ${clinic.clinic.name}. How can I help you?`;
-    transport.sendEvent({ type: "ready", callId, assistantName, greeting, language });
+    // Settle the call exactly once: usage ledger + slot release. Triggered when the session
+    // closes the transport, or by the backstop below if the socket dropped and it never does.
+    let settledOnce = false;
+    let resolveSettled!: () => void;
+    const settled = new Promise<void>((r) => (resolveSettled = r));
+    const entry: LiveCall = { session, settled };
+    live.add(entry);
+    const settle = (finishRow: boolean) => {
+      if (settledOnce) return;
+      settledOnce = true;
+      const durationS = session.durationS;
+      void (async () => {
+        try {
+          if (finishRow) {
+            await finishCall(db, {
+              callId,
+              clinicId,
+              status: "failed",
+              outcome: "abandoned",
+              durationS,
+            });
+          }
+          await recordCallUsage(db, {
+            clinicId,
+            month: usageMonth(clinic.clinic.timezone, now()),
+            callSeconds: durationS,
+          });
+        } catch (e) {
+          sessLog.error("call settle failed", safeErr(e));
+        } finally {
+          releaseOnce();
+          live.delete(entry);
+          resolveSettled();
+          sessLog.info("call settled", { durationS });
+        }
+      })();
+    };
+    transport.onceClosed(() => settle(false));
+    // Backstop: if the socket closes and the session still has not closed out after a grace
+    // period (e.g. a hung DB write), settle anyway so the slot is never leaked.
+    const onSocketClose = () => {
+      const t = setTimeout(() => settle(true), closeGraceMs);
+      void settled.then(() => clearTimeout(t));
+    };
+    if (ws.readyState === ws.OPEN) ws.once("close", onSocketClose);
+    else onSocketClose();
+
+    transport.sendEvent({
+      type: "ready",
+      callId,
+      assistantName: clinic.assistant?.name ?? "the receptionist",
+      greeting: `${disclosure} ${greeting}`,
+      language,
+    });
     sessLog.info("session accepted", { language });
+    ctl.done();
     try {
       await session.start();
     } catch (e) {
@@ -370,9 +501,24 @@ export function createServer(deps: ServerDeps): http.Server {
     }
   }
 
-  server.on("close", () => {
+  server.shutdown = async () => {
+    shuttingDown = true;
+    log.info("shutdown started", { live: live.size });
+    // Stop accepting connections; existing sockets are handled below.
+    server.close();
+    const pending = [...live];
+    for (const c of pending) void c.session.end("error");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.allSettled(pending.map((c) => c.settled)),
+      new Promise<void>((r) => {
+        timer = setTimeout(r, shutdownGraceMs);
+      }),
+    ]);
+    clearTimeout(timer);
     for (const c of wss.clients) c.terminate();
+    server.closeAllConnections();
     wss.close();
-  });
+  };
   return server;
 }
