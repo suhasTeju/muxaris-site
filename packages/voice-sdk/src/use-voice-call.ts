@@ -28,6 +28,8 @@ export interface UseVoiceCall {
   tools: CallTool[];
   booking: BookingEvent | null;
   secondsRemaining: number | null;
+  /** Seconds left in the monthly plan, from `ready` (null until known). */
+  planSecondsRemaining: number | null;
   error: string | null;
   /** Coarse category of `error` (auth, busy, quota, unsupported, network, internal). */
   errorCode: VoiceErrorCode | null;
@@ -44,6 +46,7 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
   const [tools, setTools] = useState<CallTool[]>([]);
   const [booking, setBooking] = useState<BookingEvent | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
+  const [planSecondsRemaining, setPlanSecondsRemaining] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<VoiceErrorCode | null>(null);
   const clientRef = useRef<VoiceClient | null>(null);
@@ -59,6 +62,7 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
     setTools([]);
     setBooking(null);
     setSecondsRemaining(null);
+    setPlanSecondsRemaining(null);
     setError(null);
     setErrorCode(null);
 
@@ -87,6 +91,11 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
       });
     });
     client.on("booking", (e) => current() && setBooking(e));
+    client.on("ready", (e) => {
+      if (!current()) return;
+      if (e.secondsRemaining !== undefined) setSecondsRemaining(e.secondsRemaining);
+      setPlanSecondsRemaining(e.planSecondsRemaining ?? null);
+    });
     client.on("usage", (e) => current() && setSecondsRemaining(e.secondsRemaining));
     client.on("state", (e) => current() && setState(e.state));
     let gotEnded = false;
@@ -150,5 +159,17 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
     [],
   );
 
-  return { phase, state, lines, tools, booking, secondsRemaining, error, errorCode, start, stop };
+  return {
+    phase,
+    state,
+    lines,
+    tools,
+    booking,
+    secondsRemaining,
+    planSecondsRemaining,
+    error,
+    errorCode,
+    start,
+    stop,
+  };
 }

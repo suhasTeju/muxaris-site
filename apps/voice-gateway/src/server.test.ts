@@ -607,6 +607,38 @@ async function until<T>(
     expect(b.events[0]).toMatchObject({ code: "busy" });
   });
 
+  async function setUsed(seconds: number) {
+    const month = usageMonth("Asia/Kolkata");
+    await db
+      .insert(schema.usageLedger)
+      .values({ clinicId, month, callSeconds: seconds, calls: 1 })
+      .onConflictDoUpdate({
+        target: [schema.usageLedger.clinicId, schema.usageLedger.month],
+        set: { callSeconds: seconds },
+      });
+  }
+
+  it("ready.secondsRemaining is the per-call cap when the plan quota is larger", async () => {
+    await setUsed(0);
+    const { port } = await start({ env: { ...baseEnv, maxCallSeconds: 600 } });
+    const c = await open(port);
+    c.ws.send(startFrame(member));
+    const ready = await c.waitFor((e) => e.type === "ready");
+    expect(plan.includedCallMinutes * 60).toBeGreaterThan(600);
+    expect(ready.secondsRemaining).toBe(600);
+    expect(ready.planSecondsRemaining).toBeUndefined();
+  });
+
+  it("ready.secondsRemaining is the plan quota left when it is below the cap", async () => {
+    await setUsed(plan.includedCallMinutes * 60 - 90);
+    const { port } = await start({ env: { ...baseEnv, maxCallSeconds: 600 } });
+    const c = await open(port);
+    c.ws.send(startFrame(member));
+    const ready = await c.waitFor((e) => e.type === "ready");
+    expect(ready.secondsRemaining).toBe(90);
+    expect(ready.planSecondsRemaining).toBe(90);
+  });
+
   it("rejects with quota + 4029 when the month's minutes are used up", async () => {
     const month = usageMonth("Asia/Kolkata");
     await db

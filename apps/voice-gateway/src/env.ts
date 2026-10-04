@@ -63,7 +63,7 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): VoiceEnv {
     bedrockModelId: src.BEDROCK_MODEL_ID?.trim() || "global.amazon.nova-2-lite-v1:0",
     awsRegion: src.AWS_REGION?.trim() || "ap-south-1",
     maxSessions: positiveInt(src, "MAX_SESSIONS", 15),
-    maxCallSeconds: positiveInt(src, "MAX_CALL_SECONDS", 600),
+    maxCallSeconds: positiveInt(src, "MAX_CALL_SECONDS", 1200),
     corsOrigins: (src.CORS_ORIGINS ?? "http://localhost:3000")
       .split(",")
       .map((o) => o.trim())

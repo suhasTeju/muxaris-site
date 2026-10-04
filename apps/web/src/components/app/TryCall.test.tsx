@@ -41,6 +41,7 @@ const base = {
   tools: [],
   booking: null,
   secondsRemaining: null,
+  planSecondsRemaining: null,
   error: null,
 };
 
@@ -62,6 +63,19 @@ describe("TryCall", () => {
     expect([...select.options].map((o) => o.value)).toEqual(["en-IN", "kn-IN"]);
     expect(screen.getByText(/microphone access/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Start call" })).toBeTruthy();
+  });
+
+  it("shows the plan quota line only when the plan is the binding limit", () => {
+    hook.value = {
+      ...base,
+      phase: "live",
+      state: "listening",
+      secondsRemaining: 90,
+      planSecondsRemaining: 90,
+    };
+    render(<TryCall />);
+    expect(screen.getByText("1:30 left in this call")).toBeTruthy();
+    expect(screen.getByText("Your plan has 1:30 of call time left this month")).toBeTruthy();
   });
 
   it("fetches a fresh token on Start, then starts the call with it", async () => {
@@ -109,7 +123,8 @@ describe("TryCall", () => {
         .getAllByRole("listitem")
         .map((i) => i.getAttribute("data-status")),
     ).toEqual(["done", "started"]);
-    expect(screen.getByText("2:05 remaining")).toBeTruthy();
+    expect(screen.getByText("2:05 left in this call")).toBeTruthy();
+    expect(screen.queryByText(/Your plan has/)).toBeNull();
     const card = screen.getByRole("region", { name: "Appointment booked" });
     expect(within(card).getByText(/Dr\. Rao · Tue, 6 Oct, 9:30 am/)).toBeTruthy();
     expect(

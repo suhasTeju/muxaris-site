@@ -61,7 +61,18 @@ function TryCallInner() {
     clinicId: activeClinic.id,
     language,
   });
-  const { phase, state, lines, tools, booking, secondsRemaining, error, start, stop } = call;
+  const {
+    phase,
+    state,
+    lines,
+    tools,
+    booking,
+    secondsRemaining,
+    planSecondsRemaining,
+    error,
+    start,
+    stop,
+  } = call;
   // errorCode ships with the voice SDK; wording is the fallback when it is absent.
   const errorCode = (call as { errorCode?: string | null }).errorCode ?? null;
 
@@ -190,7 +201,13 @@ function TryCallInner() {
             </p>
             {secondsRemaining !== null && active ? (
               <p className="text-muted text-sm tabular-nums">
-                {formatRemaining(secondsRemaining)} remaining
+                {formatRemaining(secondsRemaining)} left in this call
+              </p>
+            ) : null}
+            {planSecondsRemaining !== null && secondsRemaining !== null && active ? (
+              <p className="text-muted text-xs tabular-nums">
+                Your plan has {formatRemaining(Math.min(planSecondsRemaining, secondsRemaining))} of
+                call time left this month
               </p>
             ) : null}
           </div>

@@ -18,6 +18,10 @@ export type GatewayEvent =
       assistantName: string;
       greeting: string;
       language: LanguageCode;
+      /** Seconds this call may run: min(per-call cap, plan quota left). */
+      secondsRemaining?: number;
+      /** Seconds left in the clinic's monthly plan (sent only when below the call cap). */
+      planSecondsRemaining?: number;
     }
   | { type: "state"; state: "listening" | "thinking" | "speaking" }
   | { type: "transcript"; role: "user" | "assistant"; text: string; language?: string; final: true }
@@ -88,6 +92,8 @@ export const gatewayEventSchema = z.discriminatedUnion("type", [
     assistantName: z.string(),
     greeting: z.string(),
     language: languageCode,
+    secondsRemaining: z.number().int().nonnegative().optional(),
+    planSecondsRemaining: z.number().int().nonnegative().optional(),
   }),
   z.object({
     type: z.literal("state"),

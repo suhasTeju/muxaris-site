@@ -9,7 +9,7 @@ describe("voice-gateway loadEnv", () => {
     expect(env.databaseUrl).toBe("postgres://muxaris:muxaris@localhost:5433/muxaris");
     expect(env.bedrockModelId).toBe("global.amazon.nova-2-lite-v1:0");
     expect(env.maxSessions).toBe(15);
-    expect(env.maxCallSeconds).toBe(600);
+    expect(env.maxCallSeconds).toBe(1200);
   });
   it("throws without DATABASE_URL in production", () => {
     expect(() => loadEnv({ NODE_ENV: "production" })).toThrow(/DATABASE_URL/);

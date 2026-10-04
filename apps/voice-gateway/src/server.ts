@@ -419,12 +419,15 @@ export function createServer(deps: ServerDeps): GatewayServer {
     const month = usageMonth(clinic.clinic.timezone, now());
     const used = await ctl.bound(getUsedCallSeconds(db, clinicId, month));
     if (ctl.gone()) return;
-    const secondsRemaining = plan.includedCallMinutes * 60 - used;
-    if (secondsRemaining <= 0) {
+    const planSecondsRemaining = plan.includedCallMinutes * 60 - used;
+    if (planSecondsRemaining <= 0) {
       log.info("quota exhausted", { sub: identity.sub, clinicId });
       rejectWith(ws, 4029, "quota", "monthly call minutes exhausted");
       return;
     }
+
+    // What this call may use: the per-call cap, or what is left of the monthly plan if lower.
+    const callSecondsAllowed = Math.min(env.maxCallSeconds, planSecondsRemaining);
 
     // --- concurrency (check + reserve with no await in between)
     if (active >= env.maxSessions || (perClinic.get(clinicId) ?? 0) >= plan.maxConcurrentCalls) {
@@ -508,8 +511,8 @@ export function createServer(deps: ServerDeps): GatewayServer {
           callId,
           language,
           now,
-          maxDurationS: env.maxCallSeconds,
-          secondsRemaining,
+          maxDurationS: callSecondsAllowed,
+          secondsRemaining: callSecondsAllowed,
           channel: "browser",
           callerPhone: undefined,
           verifiedPhone: undefined,
@@ -570,6 +573,9 @@ export function createServer(deps: ServerDeps): GatewayServer {
         assistantName: clinic.assistant?.name ?? "the receptionist",
         greeting: `${disclosure} ${greeting}`,
         language,
+        secondsRemaining: callSecondsAllowed,
+        // Only when the plan, not the per-call cap, is the binding limit.
+        ...(planSecondsRemaining < env.maxCallSeconds ? { planSecondsRemaining } : {}),
       });
       sessLog.info("session accepted", { language });
       ctl.done();
