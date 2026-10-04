@@ -241,7 +241,11 @@ describe("auth error classification over HTTP", () => {
       clinic,
       body: body({ allowOutsideRules: true }),
     });
-    expect(ok.status).toBe(201);
+    const okBody = (await ok.json()) as J;
+    expect({ status: ok.status, reason: okBody.reason ?? okBody.error?.code }).toEqual({
+      status: 201,
+      reason: undefined,
+    });
   });
 
   it("rejects an over-wide appointment range", async () => {

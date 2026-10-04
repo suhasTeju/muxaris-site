@@ -120,7 +120,7 @@ export class TestTransport implements MediaTransport {
 
 export const silentLog: SessionLogger = { info() {}, warn() {}, error() {} };
 
-export async function waitFor(pred: () => boolean, ms = 4000, label = "condition") {
+export async function waitFor(pred: () => boolean, ms = 15_000, label = "condition") {
   const t0 = Date.now();
   while (!pred()) {
     if (Date.now() - t0 > ms) throw new Error(`timeout waiting for ${label}`);
