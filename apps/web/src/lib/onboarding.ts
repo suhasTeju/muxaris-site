@@ -37,7 +37,8 @@ export function resumeStep(serverStep: unknown, hasClinic: boolean): OnboardingS
 }
 
 export function writeActiveClinicCookie(id: string) {
-  document.cookie = `${CLINIC_COOKIE}=${encodeURIComponent(id)}; Path=/; SameSite=Lax; max-age=31536000`;
+  const secure = location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${CLINIC_COOKIE}=${encodeURIComponent(id)}; Path=/; SameSite=Lax; max-age=31536000${secure}`;
 }
 
 // ---- Greetings ----

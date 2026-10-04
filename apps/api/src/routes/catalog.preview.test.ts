@@ -40,7 +40,7 @@ describe("POST /assistant/preview", () => {
     const res = await post(body);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("audio/wav");
-    expect(res.headers.get("cache-control")).toBe("private, max-age=3600");
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
     expect(Buffer.from(await res.arrayBuffer())).toEqual(wav);
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("https://api.sarvam.ai/text-to-speech");
@@ -67,6 +67,18 @@ describe("POST /assistant/preview", () => {
     expect((await post({ ...body, text: "" })).status).toBe(400);
     expect((await post({ ...body, speaker: "anushka" })).status).toBe(400);
     expect((await post({ ...body, text: "x".repeat(301) })).status).toBe(400);
+  });
+
+  it("maps upstream failures to 502 tts_failed", async () => {
+    const { post, fetchMock } = setup({ provider: "sarvam", sarvamKey: "k" });
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 403 }));
+    const r1 = await post(body);
+    expect(r1.status).toBe(502);
+    expect((await r1.json()).error.code).toBe("tts_failed");
+    fetchMock.mockRejectedValueOnce(new Error("boom"));
+    expect((await post(body)).status).toBe(502);
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ audios: [] }), { status: 200 }));
+    expect((await post(body)).status).toBe(502);
   });
 
   it("rate limits to 30 per hour per clinic", async () => {

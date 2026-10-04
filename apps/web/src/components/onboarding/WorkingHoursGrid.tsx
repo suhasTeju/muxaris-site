@@ -27,9 +27,9 @@ export function WorkingHoursGrid({
     onChange(value.map((d, i) => (i === day ? { ...d, ...p } : d)));
   }
   return (
-    <div>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-ink text-sm font-medium">Working hours</p>
+    <fieldset>
+      <legend className="text-ink text-sm font-medium">Working hours</legend>
+      <div className="mt-1 flex justify-end">
         <Btn variant="ghost" onClick={() => onChange(copyMondayToAll(value))}>
           Copy Monday to all
         </Btn>
@@ -39,6 +39,7 @@ export function WorkingHoursGrid({
           const d = value[day]!;
           const err = errors[day];
           const base = `${idPrefix}-${day}`;
+          const errId = `${base}-err`;
           return (
             <li key={day} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2">
               <label className="text-ink flex min-h-11 w-36 cursor-pointer items-center gap-2.5 text-sm">
@@ -58,6 +59,7 @@ export function WorkingHoursGrid({
                     type="time"
                     value={d.start}
                     aria-invalid={Boolean(err)}
+                    aria-describedby={err ? errId : undefined}
                     onChange={(e) => patch(day, { start: e.target.value })}
                     className={timeCls}
                   />
@@ -68,6 +70,7 @@ export function WorkingHoursGrid({
                     type="time"
                     value={d.end}
                     aria-invalid={Boolean(err)}
+                    aria-describedby={err ? errId : undefined}
                     onChange={(e) => patch(day, { end: e.target.value })}
                     className={timeCls}
                   />
@@ -76,7 +79,7 @@ export function WorkingHoursGrid({
                 <span className="text-muted text-sm">Closed</span>
               )}
               {err ? (
-                <p role="alert" className="text-danger basis-full text-sm">
+                <p id={errId} role="alert" className="text-danger basis-full text-sm">
                   {err}
                 </p>
               ) : null}
@@ -84,6 +87,6 @@ export function WorkingHoursGrid({
           );
         })}
       </ul>
-    </div>
+    </fieldset>
   );
 }

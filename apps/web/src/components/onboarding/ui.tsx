@@ -159,7 +159,9 @@ export function StepShell({
 }) {
   return (
     <section className="border-line bg-surface shadow-card rounded-2xl border p-6 sm:p-10">
-      <h1 className="font-display text-3xl leading-tight">{title}</h1>
+      <h1 tabIndex={-1} className="font-display text-3xl leading-tight outline-none">
+        {title}
+      </h1>
       {lead ? <p className="font-display text-muted mt-2 italic">{lead}</p> : null}
       <div className="mt-8 space-y-6">{children}</div>
       <div className="mt-10 flex flex-wrap items-center justify-between gap-3">{footer}</div>

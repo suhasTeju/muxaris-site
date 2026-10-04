@@ -55,6 +55,9 @@ function createPreviewLimiter(now: () => number) {
   const hits = new Map<string, number[]>();
   return (key: string): boolean => {
     const t = now();
+    for (const [k, v] of hits) {
+      if (k !== key && v.every((x) => t - x >= PREVIEW_WINDOW_MS)) hits.delete(k);
+    }
     const recent = (hits.get(key) ?? []).filter((x) => t - x < PREVIEW_WINDOW_MS);
     if (recent.length >= PREVIEW_MAX) {
       hits.set(key, recent);
@@ -206,7 +209,7 @@ export function catalogRoutes(db: Db, opts: CatalogOptions = {}) {
     }
     return new Response(Buffer.from(audio, "base64"), {
       status: 200,
-      headers: { "Content-Type": "audio/wav", "Cache-Control": "private, max-age=3600" },
+      headers: { "Content-Type": "audio/wav", "Cache-Control": "private, no-store" },
     });
   });
 

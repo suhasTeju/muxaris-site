@@ -84,7 +84,14 @@ export function StepAssistant({
     };
   }, [call]);
 
-  useEffect(() => () => audioRef.current?.pause(), []);
+  const urlRef = useRef<string | null>(null);
+  const dropAudio = () => {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    urlRef.current = null;
+  };
+  useEffect(() => dropAudio, []);
 
   const voiceOf = (code: LanguageCode) => voices[code] ?? DEFAULT_SPEAKER;
 
@@ -115,9 +122,9 @@ export function StepAssistant({
         );
       }
       const url = URL.createObjectURL(await res.blob());
-      audioRef.current?.pause();
+      dropAudio();
+      urlRef.current = url;
       const audio = new Audio(url);
-      audio.onended = () => URL.revokeObjectURL(url);
       audioRef.current = audio;
       await audio.play();
     } catch (e) {

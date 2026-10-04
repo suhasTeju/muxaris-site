@@ -22,6 +22,7 @@ import {
 } from "./ui";
 
 export interface ClinicInfo {
+  specialty?: string | null;
   id: string;
   name: string;
   languages: LanguageCode[];
@@ -42,38 +43,44 @@ export function StepBasics({
   onCreated,
   onContinue,
   onDemo,
+  demoFailed,
+  onRetryDemo,
 }: {
   clinic: ClinicInfo | null;
   call: Call;
   onCreated: (c: ClinicInfo) => Promise<void>;
   onContinue: () => Promise<void>;
   onDemo: () => Promise<void>;
+  /** The demo clinic exists but loading its data failed. */
+  demoFailed: boolean;
+  onRetryDemo: () => Promise<void>;
 }) {
   const [name, setName] = useState(clinic?.name ?? "");
-  const [specialty, setSpecialty] = useState("dental");
+  const [specialty, setSpecialty] = useState(clinic?.specialty ?? "dental");
   const [city, setCity] = useState(clinic?.city ?? "Bengaluru");
   const [phone, setPhone] = useState(clinic?.phone ?? "");
   const [langs, setLangs] = useState<LanguageCode[]>(clinic?.languages ?? ["en-IN", "kn-IN"]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"submit" | "demo" | null>(null);
+  // One shared flag so no two actions (create, demo, retry) can run at once.
+  const [pending, setPending] = useState<"create" | "demo" | "retry" | null>(null);
   const locked = clinic !== null;
 
-  async function run(kind: "submit" | "demo", fn: () => Promise<void>) {
+  async function run(kind: "create" | "demo" | "retry", fn: () => Promise<void>) {
     setError(null);
-    setBusy(kind);
+    setPending(kind);
     try {
       await fn();
     } catch (e) {
       setError(errMsg(e));
     } finally {
-      setBusy(null);
+      setPending(null);
     }
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (locked) return run("submit", onContinue);
+    if (locked) return run("create", onContinue);
     const body = {
       name,
       specialty,
@@ -90,7 +97,7 @@ export function StepBasics({
       return;
     }
     setErrors({});
-    await run("submit", async () => {
+    await run("create", async () => {
       const res = await call<{ clinic: { id: string; name: string; languages?: LanguageCode[] } }>(
         "/v1/clinics",
         { method: "POST", body },
@@ -117,8 +124,8 @@ export function StepBasics({
         footer={
           <>
             <span />
-            <Btn type="submit" busy={busy === "submit"}>
-              Continue
+            <Btn type="submit" busy={pending === "create"} disabled={pending !== null}>
+              {demoFailed ? "Continue manually" : "Continue"}
             </Btn>
           </>
         }
@@ -131,10 +138,26 @@ export function StepBasics({
             <Btn
               variant="secondary"
               className="mt-3"
-              busy={busy === "demo"}
+              busy={pending === "demo"}
+              disabled={pending !== null}
               onClick={() => run("demo", onDemo)}
             >
               Load demo clinic
+            </Btn>
+          </div>
+        ) : demoFailed ? (
+          <div className="border-line bg-paper rounded-xl border p-4">
+            <p className="text-sm">
+              Your clinic was created, but the demo data did not finish loading.
+            </p>
+            <Btn
+              variant="secondary"
+              className="mt-3"
+              busy={pending === "retry"}
+              disabled={pending !== null}
+              onClick={() => run("retry", onRetryDemo)}
+            >
+              Retry loading demo data
             </Btn>
           </div>
         ) : (

@@ -24,6 +24,7 @@ interface ClinicRow {
   id: string;
   name: string;
   city?: string | null;
+  specialty?: string | null;
   phone?: string | null;
   languages?: string[] | null;
 }
@@ -32,6 +33,7 @@ const toInfo = (c: ClinicRow): ClinicInfo => ({
   id: c.id,
   name: c.name,
   city: c.city ?? null,
+  specialty: c.specialty ?? null,
   phone: c.phone ?? null,
   languages: (c.languages ?? []).filter((l): l is LanguageCode =>
     (LANGUAGE_CODES as readonly string[]).includes(l),
@@ -54,6 +56,11 @@ export function Wizard({
   const [loadError, setLoadError] = useState<string | null>(null);
   const clinicId = clinic?.id;
   const resumed = useRef(false);
+  const navBusy = useRef(false);
+  const root = useRef<HTMLDivElement | null>(null);
+  const firstStep = useRef(true);
+  const [navError, setNavError] = useState<string | null>(null);
+  const [demoFailed, setDemoFailed] = useState(false);
 
   const callFor = useCallback(
     (id: string | undefined) =>
@@ -66,12 +73,12 @@ export function Wizard({
     [callFor, clinicId],
   );
 
-  // Resume: read the clinic and its saved step once.
+  // Resolve the saved step exactly once, at mount, and only when a clinic already exists.
+  // Later initialClinic changes (router.refresh() after an in-wizard create) must never refetch it.
   useEffect(() => {
-    // Resume only for a clinic present at mount; later router.refresh() prop changes must not reset the step.
-    if (!initialClinic || resumed.current) return;
+    if (resumed.current) return;
     resumed.current = true;
-    const live = true;
+    if (!initialClinic) return;
     (async () => {
       try {
         if (cookieStale) writeActiveClinicCookie(initialClinic.id);
@@ -80,16 +87,25 @@ export function Wizard({
           c<{ clinic: ClinicRow }>(`/v1/clinics/${initialClinic.id}`),
           c<{ step: string | null }>("/v1/onboarding"),
         ]);
-        if (!live) return;
         setClinic(toInfo(detail.clinic));
         const s = resumeStep(saved.step, true);
         if (s === "done") router.replace("/app");
         else setStep(s);
       } catch (e) {
-        if (live) setLoadError(errMsg(e));
+        setLoadError(errMsg(e));
       }
     })();
   }, [initialClinic, cookieStale, callFor, router]);
+
+  // Move focus to the new step heading (not on first paint).
+  useEffect(() => {
+    if (step === null) return;
+    if (firstStep.current) {
+      firstStep.current = false;
+      return;
+    }
+    root.current?.querySelector<HTMLElement>("h1")?.focus();
+  }, [step]);
 
   async function go(to: OnboardingStep, id = clinicId) {
     await callFor(id)("/v1/onboarding/step", { method: "PUT", body: { step: to } });
@@ -97,9 +113,23 @@ export function Wizard({
     window.scrollTo?.({ top: 0 });
   }
   const advance = (from: OnboardingStep) => () => go(nextStep(from));
-  const back = (from: OnboardingStep) => () => go(prevStep(from));
+  // Navigation outside a form submit: surface failures inline and ignore concurrent clicks.
+  const nav = (fn: () => Promise<void>) => async () => {
+    if (navBusy.current) return;
+    navBusy.current = true;
+    setNavError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setNavError(errMsg(e));
+    } finally {
+      navBusy.current = false;
+    }
+  };
+  const back = (from: OnboardingStep) => nav(() => go(prevStep(from)));
 
   async function activate(c: ClinicInfo) {
+    resumed.current = true; // the effect must never refetch /onboarding mid-flow
     writeActiveClinicCookie(c.id);
     setClinic(c);
     router.refresh();
@@ -118,8 +148,14 @@ export function Wizard({
     const info = toInfo(res.clinic);
     if (!info.languages.length) info.languages = [...SUNRISE_BASICS.languages];
     await activate(info);
-    await callFor(info.id)("/v1/demo/load", { method: "POST" });
-    await go("review", info.id);
+    setDemoFailed(true);
+    await loadDemo(info.id);
+  }
+
+  async function loadDemo(id: string) {
+    await callFor(id)("/v1/demo/load", { method: "POST" });
+    await go("review", id);
+    setDemoFailed(false);
   }
 
   async function onFinish() {
@@ -152,8 +188,13 @@ export function Wizard({
   const langs: LanguageCode[] = clinic?.languages.length ? clinic.languages : ["en-IN"];
 
   return (
-    <div>
+    <div ref={root}>
       <Progress step={step} />
+      {navError ? (
+        <div className="mb-4">
+          <ErrorNote message={navError} />
+        </div>
+      ) : null}
       {step === "basics" ? (
         <StepBasics
           clinic={clinic}
@@ -161,6 +202,8 @@ export function Wizard({
           onCreated={onCreated}
           onContinue={advance("basics")}
           onDemo={onDemo}
+          demoFailed={demoFailed}
+          onRetryDemo={() => loadDemo(clinic!.id)}
         />
       ) : null}
       {step === "doctors" && clinic ? (
@@ -188,7 +231,7 @@ export function Wizard({
         <StepReview
           call={call}
           clinicName={clinic.name}
-          onEdit={(s) => go(s)}
+          onEdit={(s) => nav(() => go(s))()}
           onBack={back("review")}
           onFinish={onFinish}
         />

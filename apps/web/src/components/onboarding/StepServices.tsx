@@ -63,7 +63,7 @@ export function StepServices({
   }, [call]);
 
   const patch = (key: number, p: Partial<Row>) =>
-    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p, saved: false } : r)));
+    setRows((rs) => rs.map((r) => (r.key === key && !r.saved ? { ...r, ...p } : r)));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -146,12 +146,13 @@ export function StepServices({
                   <Check
                     label="Offer"
                     checked={r.selected}
+                    disabled={Boolean(r.saved)}
                     onChange={(e) => patch(r.key, { selected: e.target.checked })}
                   />
                   <TextField
                     label="Service"
                     value={r.name}
-                    disabled={!r.selected}
+                    disabled={!r.selected || Boolean(r.saved)}
                     onChange={(e) => patch(r.key, { name: e.target.value })}
                   />
                 </div>
@@ -161,7 +162,7 @@ export function StepServices({
                   inputMode="numeric"
                   min={5}
                   value={Number.isNaN(r.durationMin) ? "" : r.durationMin}
-                  disabled={!r.selected}
+                  disabled={!r.selected || Boolean(r.saved)}
                   onChange={(e) => patch(r.key, { durationMin: num(e.target.value) })}
                 />
                 <TextField
@@ -170,7 +171,7 @@ export function StepServices({
                   inputMode="numeric"
                   min={0}
                   value={Number.isNaN(r.bufferMin) ? "" : r.bufferMin}
-                  disabled={!r.selected}
+                  disabled={!r.selected || Boolean(r.saved)}
                   onChange={(e) => patch(r.key, { bufferMin: num(e.target.value) })}
                 />
                 <TextField
@@ -179,16 +180,19 @@ export function StepServices({
                   inputMode="numeric"
                   min={0}
                   value={Number.isNaN(r.priceInr) ? "" : r.priceInr}
-                  disabled={!r.selected}
+                  disabled={!r.selected || Boolean(r.saved)}
                   onChange={(e) => patch(r.key, { priceInr: num(e.target.value) })}
                 />
               </div>
               <Check
                 label="Assistant can book this"
                 checked={r.bookableByAi}
-                disabled={!r.selected}
+                disabled={!r.selected || Boolean(r.saved)}
                 onChange={(e) => patch(r.key, { bookableByAi: e.target.checked })}
               />
+              {r.saved ? (
+                <p className="text-muted text-sm">Saved. Edit later in Settings.</p>
+              ) : null}
               {rowErr[r.key] ? (
                 <p role="alert" className="text-danger text-sm">
                   {rowErr[r.key]}
