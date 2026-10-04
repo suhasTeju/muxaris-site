@@ -53,6 +53,12 @@ describe("AnalysisCard", () => {
     expect(screen.getByText("No caller speech to summarise.")).toBeTruthy();
   });
 
+  it("falls back to No summary available when analysed without a skipped marker", () => {
+    render(<AnalysisCard call={call({ analysedAt: new Date().toISOString() })} onCall={vi.fn()} />);
+    expect(screen.getByText("No summary available")).toBeTruthy();
+    expect(screen.queryByText("No caller speech to summarise.")).toBeNull();
+  });
+
   it("shows Summary pending and polls every 10 s for a recent call", async () => {
     vi.useFakeTimers();
     const onCall = vi.fn();

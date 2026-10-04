@@ -58,8 +58,8 @@ export function AnalysisCard({ call, onCall }: { call: Call; onCall: (call: Call
   let body: React.ReactNode;
   if (call.summary) {
     body = <p className="text-[15px]">{call.summary}</p>;
-  } else if (call.analysedAt) {
-    // The worker ran but there was nothing to summarise: say so rather than guess.
+  } else if (call.analysedAt && call.analysis?.skipped === "no_turns") {
+    // The worker marked this call as having no caller speech: say so rather than guess.
     body = <p className="text-muted">No caller speech to summarise.</p>;
   } else if (pending) {
     body = (

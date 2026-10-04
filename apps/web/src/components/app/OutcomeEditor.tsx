@@ -14,6 +14,12 @@ export function OutcomeEditor({ call, onSaved }: { call: Call; onSaved: (call: C
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // A poll may bring a worker-set outcome: follow it unless the user is mid-edit.
+  const [seen, setSeen] = useState(call.outcome);
+  if (seen !== call.outcome) {
+    if (value === (seen ?? "")) setValue(call.outcome ?? "");
+    setSeen(call.outcome);
+  }
   const changed = value !== "" && value !== call.outcome;
 
   async function save() {

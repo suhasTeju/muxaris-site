@@ -52,4 +52,13 @@ describe("OutcomeEditor", () => {
     expect((screen.getByLabelText("Outcome") as HTMLSelectElement).value).toBe("handoff");
     expect(onSaved).not.toHaveBeenCalled();
   });
+
+  it("follows a worker-set outcome arriving from a poll, so Save cannot overwrite it", () => {
+    const { rerender } = render(<OutcomeEditor call={call()} onSaved={vi.fn()} />);
+    rerender(<OutcomeEditor call={call({ outcome: "callback" })} onSaved={vi.fn()} />);
+    expect((screen.getByLabelText("Outcome") as HTMLSelectElement).value).toBe("callback");
+    expect(
+      (screen.getByRole("button", { name: "Save outcome" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
 });
