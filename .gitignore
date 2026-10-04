@@ -11,3 +11,4 @@ coverage
 *.log
 .turbo
 scripts/spike/out
+.superpowers/
