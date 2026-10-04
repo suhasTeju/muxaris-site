@@ -515,6 +515,12 @@ afterAll(async () => {
     s.stt.push({ type: "transcript", text: "hello", language: "en-IN" });
     await waitFor(() => s.tts.spoken.length === 2, 4000, "greeting spoken");
     expect(s.transport.ofType("flush_playback")).toHaveLength(0);
+    // the caller's words are kept (not dropped) even though barge-in was ignored
+    await waitFor(
+      () => s.transport.ofType("transcript").some((t) => t.role === "user" && t.text === "hello"),
+      4000,
+      "user transcript",
+    );
     expect(s.tts.spoken[0]!.text).toBe(DISCLOSURE["en-IN"]);
     await s.session.end("caller");
   });

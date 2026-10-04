@@ -5,6 +5,7 @@ import type { MediaTransport } from "./session/transport.js";
 /** Drop outbound audio rather than buffer without bound for a stalled client. */
 /** Cap on frames held while the session is still being set up. */
 const MAX_PENDING = 500;
+const MAX_PENDING_BYTES = 256 * 1024;
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 
 /** MediaTransport over one WebSocket: binary frames are audio, text frames are ClientEvents. */
@@ -17,6 +18,7 @@ export class WsTransport implements MediaTransport {
 
   /** Frames that arrived before the consumer registered its callback (bounded). */
   private pendingAudio: Buffer[] = [];
+  private pendingBytes = 0;
   private pendingEvents: ClientEvent[] = [];
 
   constructor(private readonly ws: WebSocket) {
@@ -33,7 +35,13 @@ export class WsTransport implements MediaTransport {
           ? Buffer.from(data)
           : data;
       if (this.audioCb) this.audioCb(buf);
-      else if (this.pendingAudio.length < MAX_PENDING) this.pendingAudio.push(buf);
+      else if (
+        this.pendingAudio.length < MAX_PENDING &&
+        this.pendingBytes + buf.length <= MAX_PENDING_BYTES
+      ) {
+        this.pendingBytes += buf.length;
+        this.pendingAudio.push(buf);
+      }
       return;
     }
     let json: unknown;
@@ -53,6 +61,7 @@ export class WsTransport implements MediaTransport {
     this.audioCb = cb;
     const q = this.pendingAudio;
     this.pendingAudio = [];
+    this.pendingBytes = 0;
     q.forEach(cb);
   }
   sendAudio(pcm24k: Buffer): void {

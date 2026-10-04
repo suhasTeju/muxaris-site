@@ -77,6 +77,21 @@ const CLOSE_GRACE_MS = 5000;
 const HEARTBEAT_MS = 20_000;
 const MAX_MISSED_PONGS = 2;
 const MAX_PAYLOAD = 64 * 1024;
+/** The `start` frame is tiny; anything bigger is rejected before parsing. */
+const MAX_START_FRAME_BYTES = 8 * 1024;
+/** Frames held (per connection) between `start` and the transport being ready. */
+const MAX_EARLY_BYTES = 256 * 1024;
+const MAX_EARLY_FRAMES = 500;
+
+class SetupExpired extends Error {
+  constructor() {
+    super("setup deadline exceeded");
+    this.name = "SetupExpired";
+  }
+}
+
+const rawLength = (d: RawData): number =>
+  Array.isArray(d) ? d.reduce((n, b) => n + b.length, 0) : d.byteLength;
 
 export function createProviders(env: ServerEnv): Providers {
   if (env.provider === "sarvam" && env.sarvamKey) {
@@ -193,6 +208,12 @@ export function createServer(deps: ServerDeps): GatewayServer {
       socket.destroy();
       return;
     }
+    if (shuttingDown || preAuth >= maxPreAuth) {
+      log.warn("upgrade refused", { reason: shuttingDown ? "shutdown" : "preauth_cap" });
+      socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   });
 
@@ -233,15 +254,21 @@ export function createServer(deps: ServerDeps): GatewayServer {
     let closed = false;
     let expired = false;
     let gotStart = false;
+    let resolveExpired!: () => void;
+    const expiredP = new Promise<void>((r) => (resolveExpired = r));
+    const expire = () => {
+      expired = true;
+      resolveExpired();
+    };
     const startTimer = setTimeout(() => {
       ws.removeAllListeners("message");
-      expired = true;
+      expire();
       rejectWith(ws, 4001, "auth_failed", "start frame not received in time");
     }, startTimeoutMs);
     // One deadline for the whole setup: first frame, verification, DB work and createCall.
     const setupTimer = setTimeout(() => {
       if (expired) return;
-      expired = true;
+      expire();
       if (gotStart) {
         log.warn("setup deadline exceeded");
         rejectWith(ws, 1011, "internal", "session setup timed out");
@@ -261,6 +288,11 @@ export function createServer(deps: ServerDeps): GatewayServer {
     ws.once("message", (data, isBinary) => {
       clearTimeout(startTimer);
       if (expired) return;
+      if (!isBinary && rawLength(data) > MAX_START_FRAME_BYTES) {
+        clearTimers();
+        rejectWith(ws, 1009, "internal", "start frame too large");
+        return;
+      }
       let parsed: ReturnType<typeof clientEventSchema.safeParse> | undefined;
       if (!isBinary) {
         try {
@@ -277,12 +309,33 @@ export function createServer(deps: ServerDeps): GatewayServer {
       gotStart = true;
       // Frames sent during setup (audio, `end`) are held and replayed to the transport.
       const early: Array<{ data: RawData; isBinary: boolean }> = [];
+      let earlyBytes = 0;
       const hold = (d: RawData, b: boolean) => {
-        if (early.length < 500) early.push({ data: d, isBinary: b });
+        earlyBytes += rawLength(d);
+        if (early.length >= MAX_EARLY_FRAMES || earlyBytes > MAX_EARLY_BYTES) {
+          // An unauthenticated client streaming during setup: drop the connection.
+          ws.off("message", hold);
+          early.length = 0;
+          if (!expired) {
+            expire();
+            log.warn("early buffer overflow");
+            rejectWith(ws, 1009, "internal", "too much data before the session was ready");
+          }
+          return;
+        }
+        early.push({ data: d, isBinary: b });
       };
       ws.on("message", hold);
       const ctl = {
         gone: () => closed || expired || shuttingDown,
+        // Races a setup step against the setup deadline so a hung dependency cannot hold us.
+        bound: <T>(p: Promise<T>): Promise<T> =>
+          Promise.race([
+            p,
+            expiredP.then((): never => {
+              throw new SetupExpired();
+            }),
+          ]),
         early,
         hold,
         done: () => {
@@ -292,6 +345,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
       };
       void handleStart(ws, parsed.data, ctl)
         .catch((e) => {
+          if (e instanceof SetupExpired) return; // the deadline timer already closed the socket
           log.error("session setup failed", safeErr(e));
           if (!closed && !expired) rejectWith(ws, 1011, "internal", "internal error");
         })
@@ -304,6 +358,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
     start: { token: string; clinicId: string; language?: LanguageCode | undefined },
     ctl: {
       gone: () => boolean;
+      bound: <T>(p: Promise<T>) => Promise<T>;
       early: Array<{ data: RawData; isBinary: boolean }>;
       hold: (d: RawData, b: boolean) => void;
       done: () => void;
@@ -313,7 +368,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
     // --- authenticate
     let identity;
     try {
-      identity = await verifier.verify(start.token);
+      identity = await ctl.bound(verifier.verify(start.token));
     } catch (e) {
       if (ctl.gone()) return;
       if (e instanceof AuthUnavailableError) {
@@ -328,10 +383,10 @@ export function createServer(deps: ServerDeps): GatewayServer {
     }
     if (ctl.gone()) return;
     // --- authorize (lookup only: a valid identity must not create user rows here)
-    const user = await getUserByCognitoSub(db, identity.sub);
+    const user = await ctl.bound(getUserByCognitoSub(db, identity.sub));
     if (ctl.gone()) return;
     const membership = user
-      ? await getMembership(db, { userId: user.id, clinicId: start.clinicId })
+      ? await ctl.bound(getMembership(db, { userId: user.id, clinicId: start.clinicId }))
       : null;
     if (ctl.gone()) return;
     if (!user || !membership) {
@@ -339,7 +394,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
       rejectWith(ws, 4003, "forbidden", "not a member of this clinic");
       return;
     }
-    const clinic = await getClinicContext(db, start.clinicId);
+    const clinic = await ctl.bound(getClinicContext(db, start.clinicId));
     if (ctl.gone()) return;
     const clinicId = clinic.clinic.id;
     const enabled = clinic.clinic.languages as string[];
@@ -353,9 +408,9 @@ export function createServer(deps: ServerDeps): GatewayServer {
     // Phase 1 limits (parked): the ledger is written only when a call ends, so up to
     // maxConcurrentCalls simultaneous calls can each use the full remaining minutes (overshoot),
     // and the concurrency counters below are per process (per-clinic limit x instance count).
-    const plan = await getPlanForClinic(db, clinicId);
+    const plan = await ctl.bound(getPlanForClinic(db, clinicId));
     const month = usageMonth(clinic.clinic.timezone, now());
-    const used = await getUsedCallSeconds(db, clinicId, month);
+    const used = await ctl.bound(getUsedCallSeconds(db, clinicId, month));
     if (ctl.gone()) return;
     const secondsRemaining = plan.includedCallMinutes * 60 - used;
     if (secondsRemaining <= 0) {
@@ -380,10 +435,23 @@ export function createServer(deps: ServerDeps): GatewayServer {
     };
 
     let call;
+    const callP = createCall(db, { clinicId, channel: "browser", startedByUserId: user.id });
     try {
-      call = await createCall(db, { clinicId, channel: "browser", startedByUserId: user.id });
+      call = await ctl.bound(callP);
     } catch (e) {
       releaseOnce();
+      // If the insert eventually lands after the deadline, close the orphan row out.
+      void callP
+        .then((row) =>
+          finishCall(db, {
+            callId: row.id,
+            clinicId,
+            status: "failed",
+            outcome: "abandoned",
+            durationS: 0,
+          }),
+        )
+        .catch(() => undefined);
       throw e;
     }
     const callId = call.id;

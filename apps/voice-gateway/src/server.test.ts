@@ -42,8 +42,13 @@ interface Client {
   ): Promise<Record<string, unknown>>;
 }
 
-function connect(port: number, path = "/v1/session", headers?: Record<string, string>): Client {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`, { headers: headers ?? {} });
+function connect(
+  port: number,
+  path = "/v1/session",
+  headers?: Record<string, string>,
+  opts: { autoPong?: boolean } = {},
+): Client {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`, { headers: headers ?? {}, ...opts });
   const events: Array<Record<string, unknown>> = [];
   const c: Client = {
     ws,
@@ -122,8 +127,13 @@ async function until<T>(
     servers.push(server);
     return { server, port: await listen(server) };
   }
-  const dial = (port: number, path?: string, headers?: Record<string, string>) => {
-    const c = connect(port, path, headers);
+  const dial = (
+    port: number,
+    path?: string,
+    headers?: Record<string, string>,
+    opts?: { autoPong?: boolean },
+  ) => {
+    const c = connect(port, path, headers, opts);
     clients.push(c);
     return c;
   };
@@ -290,13 +300,13 @@ async function until<T>(
     expect((await c.closed).code).toBe(1009);
   });
 
-  it("caps unauthenticated connections at 2x MAX_SESSIONS (1013) and frees them on close", async () => {
+  it("refuses unauthenticated connections over 2x MAX_SESSIONS with 503 at upgrade, and frees them on close", async () => {
     const { port } = await start({ env: { ...baseEnv, maxSessions: 1 }, startTimeoutMs: 10_000 });
     const a = await open(port);
     const b = await open(port);
     const over = dial(port);
-    expect((await over.closed).code).toBe(1013);
-    expect(over.events[0]).toMatchObject({ type: "error", code: "busy" });
+    const err = await new Promise<Error>((r) => over.ws.once("error", r));
+    expect(err.message).toMatch(/503/);
     a.ws.close();
     b.ws.close();
     await Promise.all([a.closed, b.closed]);
@@ -308,6 +318,129 @@ async function until<T>(
       const { code } = await c.closed;
       return code === 4001;
     });
+  });
+
+  it("closes 1009 for an oversized first frame without parsing it", async () => {
+    const { port } = await start();
+    const c = await open(port);
+    c.ws.send(JSON.stringify({ type: "start", token: "x".repeat(9 * 1024), clinicId }));
+    expect((await c.closed).code).toBe(1009);
+  });
+
+  it("closes 1009 when a client streams more than 256 KiB during setup, and frees the slot", async () => {
+    const { createDevVerifier } = await import("@muxaris/core");
+    const dev = createDevVerifier();
+    await db
+      .update(schema.plans)
+      .set({ maxConcurrentCalls: 1 })
+      .where(eq(schema.plans.id, plan.id));
+    const { port } = await start({
+      verifier: {
+        verify: async (t) => {
+          await new Promise((r) => setTimeout(r, 400));
+          return dev.verify(t);
+        },
+      },
+    });
+    const c = await open(port);
+    c.ws.send(startFrame(member));
+    for (let i = 0; i < 6; i++) c.ws.send(Buffer.alloc(60 * 1024));
+    expect((await c.closed).code).toBe(1009);
+    // the abandoned setup must not hold the (1-call) slot
+    const ok = await until(async () => {
+      const d = await open(port);
+      d.ws.send(startFrame(member));
+      const first = (await Promise.race([
+        d.waitFor((e) => e.type === "ready" || e.type === "error"),
+        d.closed,
+      ])) as { type?: string };
+      return first.type === "ready";
+    });
+    expect(ok).toBe(true);
+  });
+
+  it("releases the slot when createCall hangs past the setup deadline", async () => {
+    await db
+      .update(schema.plans)
+      .set({ maxConcurrentCalls: 1 })
+      .where(eq(schema.plans.id, plan.id));
+    let hang = true;
+    const hungDb = new Proxy(db, {
+      get(t, p) {
+        if (p === "insert" && hang) {
+          return () => ({ values: () => ({ returning: () => new Promise(() => undefined) }) });
+        }
+        const v = Reflect.get(t, p, t);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    }) as Db;
+    const { port } = await start({ db: hungDb, setupTimeoutMs: 300 });
+    const c = await open(port);
+    c.ws.send(startFrame(member));
+    expect((await c.closed).code).toBe(1011);
+    hang = false;
+    const d = await open(port);
+    d.ws.send(startFrame(member));
+    await d.waitFor((e) => e.type === "ready");
+  });
+
+  it("terminates a client that stops answering heartbeat pings", async () => {
+    const { port } = await start({ heartbeatMs: 40, startTimeoutMs: 10_000 });
+    const c = dial(port, "/v1/session", undefined, { autoPong: false });
+    const t0 = Date.now();
+    expect((await c.closed).code).toBe(1006);
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
+
+  it("settles a call (usage, row, slot) via the backstop when the session never closes out", async () => {
+    await db
+      .update(schema.plans)
+      .set({ maxConcurrentCalls: 1 })
+      .where(eq(schema.plans.id, plan.id));
+    let hang = false;
+    const hangChain: unknown = new Proxy(function () {}, {
+      get: (_t, k) => (k === "then" ? () => undefined : hangChain),
+      apply: () => hangChain,
+    });
+    const hungDb = new Proxy(db, {
+      get(t, p) {
+        if (p === "select" && hang) return () => hangChain;
+        const v = Reflect.get(t, p, t);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    }) as Db;
+    const stt = new FakeStt();
+    const { port } = await start({
+      db: hungDb,
+      closeGraceMs: 100,
+      providers: {
+        // Once STT opens the session persists its first turn, which now hangs forever.
+        stt: {
+          open: async () => {
+            hang = true;
+            return stt.open();
+          },
+        },
+        tts: new FakeTts(),
+        llm: new FakeLlm(),
+      },
+    });
+    const a = await open(port);
+    a.ws.send(startFrame(member));
+    const ready = await a.waitFor((e) => e.type === "ready");
+    await until(async () => hang);
+    a.ws.terminate();
+    await a.closed;
+    await until(async () => (await ledger())[0]?.calls === 1);
+    const [call] = await db
+      .select()
+      .from(schema.calls)
+      .where(eq(schema.calls.id, ready.callId as string));
+    expect(call!.status).toBe("failed");
+    hang = false;
+    const b = await open(port);
+    b.ws.send(startFrame(member));
+    await b.waitFor((e) => e.type === "ready");
   });
 
   it("runs a full call: ready, state events, end, ledger and call row updated", async () => {
