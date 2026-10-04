@@ -62,20 +62,51 @@ Found in `sarvamai` SDK (`dist/cjs/api/resources/textToSpeechStreaming`):
 - Second run: socket open 122 ms, transcript 209 ms after the last audio frame.
 - Bogus key: `stt-ws failed: status=403 body=Forbidden`, exit 1 (HTTP upgrade rejected).
 
-## 3. Bedrock tool calling (BLOCKED: payment instrument)
+## 3. Bedrock tool calling (Nova verified; Anthropic blocked by payment instrument)
 
 - `aws bedrock list-inference-profiles --query ... haiku-4-5` returned: `global.anthropic.claude-haiku-4-5-20251001-v1:0` and `in.anthropic.claude-haiku-4-5-20251001-v1:0`. There is **no `apac.` profile** for Haiku 4.5 in ap-south-1 (`apac.anthropic...` -> `ValidationException: The provided model identifier is invalid`).
 - Bare `anthropic.claude-haiku-4-5-20251001-v1:0` -> `ValidationException: Invocation of model ID ... with on-demand throughput isn't supported. Retry your request with the ID or ARN of an inference profile`.
 - **Root cause of the earlier 404s:** the account had not submitted the Anthropic use-case form (`aws bedrock get-use-case-for-model-access` -> `ResourceNotFoundException: You have not filled out the request form`), giving `ResourceNotFoundException: Model use case details have not been submitted for this account`. Submitting it with `put-use-case-for-model-access` fixed that, with propagation taking under 40 minutes. During propagation, calls flipped between success and 404; the single early success is explained by that.
 - **One successful call** (before the form was fixed, prompt had no date) on `global.anthropic.claude-haiku-4-5-20251001-v1:0`: `first-token=860 ms total=1102 ms stopReason=end_turn`; no tool call, the model asked: "I'd be happy to help you book a teeth cleaning tomorrow afternoon! Could you please provide tomorrow's date in YYYY-MM-DD format so I can check our available slots?" The system prompt must therefore carry the current date (the script now derives it from `new Date()` in Asia/Kolkata).
-- **Current blocker (after the form was submitted):** all calls on `global.` (and `in.`) now fail with HTTP 403: `AccessDeniedException: Model access is denied due to INVALID_PAYMENT_INSTRUMENT:A valid payment instrument must be provided.. Your AWS Marketplace subscription for this model cannot be completed at this time.` Retried about every 60 s for ~15 minutes with both the original and the clarified utterance ("I want a teeth cleaning tomorrow afternoon, please check what times are free."); occasionally the 404 form error reappeared mid-propagation. The AWS account needs a valid payment method for the Marketplace subscription to the Anthropic model. Until then the `find_slots` tool call, the accumulated `toolUse.input` JSON, `stopReason` (expected `tool_use`) and `messageStop` handling remain **unobserved**. The script already accumulates `contentBlockDelta.delta.toolUse.input`, records `messageStop.stopReason`, and JSON-parses the input (`toolInput parsed: ...` or `parse FAILED`).
-- Re-run when fixed: `source scripts/lib/aws-guard.sh && npx tsx scripts/spike/bedrock-tools.ts` (optionally `USER_TEXT="..."`, `BEDROCK_MODEL_ID=...`). Failures print `bedrock-converse failed: status=... body=...` and exit 1.
+- **Current blocker (Anthropic only):** with the use-case form already submitted, Anthropic models on this account return HTTP 403 `AccessDeniedException: Model access is denied due to INVALID_PAYMENT_INSTRUMENT:A valid payment instrument must be provided.. Your AWS Marketplace subscription for this model cannot be completed at this time.` until a valid payment method is added to account 005533348545 (Marketplace subscription). Haiku 4.5 tool calling is therefore unverified; Amazon Nova works without it (below).
+
+### Observed Converse tool-call stream on Amazon Nova
+
+Prompt: system "You are Muxaris, the receptionist for Sunrise Dental Care. Use tools to check availability before offering times. Today is 2026-10-04 (Asia/Kolkata). ...", user "Hi, I need a teeth cleaning tomorrow afternoon.", all nine `ASSISTANT_TOOLS` in `toolConfig`.
+
+`global.amazon.nova-2-lite-v1:0` (ConverseStream): `first-token=1107 ms total=1113 ms stopReason=tool_use`; `find_slots` fired, no text, no `<thinking>` block. Events verbatim:
+
+```json
+{"messageStart":{"role":"assistant"}}
+{"contentBlockStart":{"start":{"toolUse":{"toolUseId":"tooluse_RFSTw0vUEJBYPxBU3kfgmi","name":"find_slots"}},"contentBlockIndex":0}}
+{"contentBlockDelta":{"delta":{"toolUse":{"input":"{\"date\":\"2026-10-05\",\"part_of_day\":\"afternoon\",\"service_id\":\"teeth_cleaning\"}"}},"contentBlockIndex":0}}
+{"contentBlockStop":{"contentBlockIndex":0}}
+{"messageStop":{"stopReason":"tool_use"}}
+{"metadata":{"usage":{"inputTokens":2040,"outputTokens":57,"totalTokens":2097},"metrics":{"latencyMs":926}}}
+```
+
+Parsed input: `{"date":"2026-10-05","part_of_day":"afternoon","service_id":"teeth_cleaning"}` (valid JSON; date correctly derived as tomorrow). Note the whole input arrived in one delta fragment, and `first-token` here is the time to `messageStart`-adjacent `contentBlockStart`, so effective time-to-tool-call is about 1.1 s (the 1105 ms before `messageStart` is model latency; `metadata.metrics.latencyMs`=926). A second run with the clarified utterance ("I want a teeth cleaning tomorrow afternoon, please check what times are free.") gave the same `find_slots` call, first-token 914 ms, total 919 ms. `service_id:"teeth_cleaning"` is a guessed id: the model did not look it up, so the prompt/tool descriptions should steer it to call `get_clinic_info` or list services for real ids.
+
+`apac.amazon.nova-pro-v1:0`: `first-token=505 ms total=841 ms stopReason=tool_use`. It emitted a text block first: deltas `"<thinking"`, `">"`, ` I`, ` need`, ... streamed token by token (`contentBlockIndex":0`), total text `"<thinking> I need to check the availability for teeth cleaning appointments tomorrow afternoon. </thinking>\n"`, then `contentBlockStop` (index 0), then the tool block at `contentBlockIndex":1`:
+
+```json
+{"contentBlockStart":{"start":{"toolUse":{"toolUseId":"tooluse_UvUJyCxbRx0BwbVkSiJMqR","name":"find_slots"}},"contentBlockIndex":1}}
+{"contentBlockDelta":{"delta":{"toolUse":{"input":"{\"date\":\"2026-10-05\",\"part_of_day\":\"afternoon\"}"}},"contentBlockIndex":1}}
+{"contentBlockStop":{"contentBlockIndex":1}}
+{"messageStop":{"stopReason":"tool_use"}}
+{"metadata":{"usage":{"inputTokens":1704,"outputTokens":52,"totalTokens":1756},"metrics":{"latencyMs":695}}}
+```
+
+Parsed input: `{"date":"2026-10-05","part_of_day":"afternoon"}`. So Nova Pro emits `<thinking>...</thinking>` text before the tool call, and its `first-token` (505 ms) is a thinking token, not speakable content. The script's built-in candidate order is `BEDROCK_MODEL_ID`, `apac.anthropic...`, bare `anthropic...`, `global.anthropic...`, then `global.amazon.nova-2-lite-v1:0` (and logs every stream event).
+
+- Re-run for Anthropic when fixed: `source scripts/lib/aws-guard.sh && npx tsx scripts/spike/bedrock-tools.ts` (optionally `USER_TEXT="..."`, `BEDROCK_MODEL_ID=...`). Failures print `bedrock-converse failed: status=... body=...` and exit 1.
 
 ## Decisions for Phase 1
 
 - **TTS: use the WebSocket** (`wss://api.sarvam.ai/text-to-speech/ws`) per call, config once, send each LLM sentence as a `text` message plus `flush`; use `output_audio_codec:"linear16"` to skip WAV headers (set the sample rate to what the telephony leg needs). First audio ~130 ms after the handshake vs 1.2 s+ for REST. Keep REST as fallback.
 - **TTS speaker/model:** `bulbul:v3` + `shubh` (or another v3 speaker); `anushka` only works on bulbul:v2. Make speaker a per-clinic config validated against the v3 list.
 - **STT: use `wss://api.sarvam.ai/speech-to-text/ws`** with `saaras:v4`, `mode=codemix`, `language-code=unknown`, `vad_signals=true`, 16 kHz PCM16 in 100 ms frames. Treat `END_SPEECH` as the end-of-turn cue: the final `data` transcript arrives ~200 ms later (no partials), so barge-in must key off `START_SPEECH`, not transcripts. Resample 8 kHz telephony audio to 16 kHz first.
-- **LLM: Bedrock via an inference profile id only** (`global.anthropic.claude-haiku-4-5-20251001-v1:0` or `in.`...; there is no `apac.` profile). Inject current date/time/timezone into the system prompt. Expected ~0.9 s first-token, so budget the voice turn: STT ~0.2 s + LLM ~0.9 s + TTS ~0.15 s.
+- **LLM adapter:** reads `BEDROCK_MODEL_ID`; default `global.amazon.nova-2-lite-v1:0` for now, switching to `global.anthropic.claude-haiku-4-5-20251001-v1:0` once the account payment instrument is fixed. The adapter must strip `<thinking>...</thinking>` blocks from streamed text before sending it to TTS (Nova Pro emits them; 2-lite did not). The tool-call stream shape (`contentBlockStart.toolUse{toolUseId,name}` -> `contentBlockDelta.toolUse.input` fragments -> `contentBlockStop` -> `messageStop.stopReason="tool_use"`) is the Converse API's and identical across models, so the fallback is safe; accumulate input fragments per `contentBlockIndex` and parse at `contentBlockStop`.
+- **Bedrock ids:** inference profile ids only (no on-demand bare ids; no `apac.` profile for Haiku 4.5). Inject current date/time/timezone into the system prompt. Nova 2 Lite measured ~0.9-1.1 s to the tool call; Haiku ~0.9 s first token (one early observation). Budget the voice turn: STT ~0.2 s + LLM ~0.9 s + TTS ~0.15 s.
 - **Prerequisite:** the Anthropic use-case form must be submitted (done) and the AWS account needs a valid payment instrument for the Marketplace subscription; tool-calling must still be verified once that is fixed.
 - Error handling: all Sarvam auth failures surface as 403 (REST body JSON `invalid_api_key_error`; WS upgrade `Forbidden`).

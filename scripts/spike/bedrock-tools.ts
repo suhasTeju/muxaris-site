@@ -17,6 +17,7 @@ const candidates = [
   "apac.anthropic.claude-haiku-4-5-20251001-v1:0",
   "anthropic.claude-haiku-4-5-20251001-v1:0",
   "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "global.amazon.nova-2-lite-v1:0",
 ].filter(Boolean) as string[];
 
 for (const modelId of candidates) {
@@ -49,6 +50,7 @@ for (const modelId of candidates) {
     let text = "";
     let stopReason = "";
     for await (const ev of out.stream ?? []) {
+      console.log(`  ev [+${Math.round(performance.now() - t0)} ms] ${JSON.stringify(ev)}`);
       if (!firstToken && (ev.contentBlockDelta || ev.contentBlockStart))
         firstToken = performance.now() - t0;
       if (ev.contentBlockStart?.start?.toolUse)
