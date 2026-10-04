@@ -1,0 +1,6 @@
+dist
+.next
+cdk.out
+node_modules
+package-lock.json
+*.md

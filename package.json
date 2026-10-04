@@ -1,20 +1,43 @@
 {
-  "name": "muxaris-site",
-  "type": "module",
+  "name": "muxaris",
   "version": "0.1.0",
   "private": true,
-  "description": "Marketing site for Muxaris — the role-based LLM gateway.",
-  "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview",
-    "check": "astro check"
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10"
   },
-  "dependencies": {
-    "astro": "^5.13.2"
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "workers/*",
+    "infra"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:generate": "npm run generate -w @muxaris/db",
+    "db:migrate": "npm run migrate -w @muxaris/db",
+    "db:seed": "npm run seed -w @muxaris/db",
+    "dev": "bash scripts/dev.sh"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.12",
-    "tailwindcss": "^4.1.12"
+    "@eslint/js": "^9",
+    "@types/node": "^22",
+    "eslint": "^9",
+    "eslint-config-prettier": "^10",
+    "globals": "^16",
+    "prettier": "^3",
+    "tsx": "^4",
+    "typescript": "^5.9",
+    "typescript-eslint": "^8",
+    "vitest": "^3"
   }
 }

@@ -1,62 +1,46 @@
-# muxaris-site
+# Muxaris
 
-Marketing site for **Muxaris** — an open-source, role-based LLM gateway.
+Muxaris is an AI voice receptionist for Indian dental clinics. It answers calls in the caller's
+language, checks the clinic's real schedule, books, reschedules and cancels appointments, and hands
+emergencies to staff. Every call is transcribed, summarised and shown on a clinic dashboard.
 
-Static Astro + Tailwind v4. No JS framework, no client-side runtime, no external
-requests at page load beyond Google Fonts.
+## Layout
 
-## Local
+This is an npm-workspaces monorepo.
 
-```bash
-npm install
-npm run dev      # http://localhost:4321
-npm run build    # -> dist/
-npm run preview
-```
+| Path                   | What it is                                                              |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `apps/web`             | Next.js app: marketing site, Cognito auth, onboarding, dashboard        |
+| `apps/api`             | Hono REST API on Fargate: Cognito JWT verify, Drizzle, OpenAPI          |
+| `apps/voice-gateway`   | WebSocket voice session engine: Sarvam STT/TTS, Bedrock, recorder       |
+| `workers/post-call`    | Lambda: call summary, outcome and sentiment                             |
+| `workers/notifier`     | Lambda: dispatches notifications from a queue                           |
+| `workers/reminders`    | Lambda (cron): finds appointments due for reminders                     |
+| `packages/db`          | Drizzle schema, migrations, demo seed, typed client                     |
+| `packages/core`        | Domain services: scheduling, patients, calls, notifications, plans      |
+| `packages/shared`      | Zod schemas, API types, tool definitions, constants                     |
+| `packages/voice-sdk`   | Browser client: mic capture, playback, barge-in, events                 |
+| `infra`                | AWS CDK app: network, data, services, workers, observability, CI/CD    |
 
-## Deploy (Netlify)
+## Local setup
 
-`netlify.toml` is committed, so Netlify needs no dashboard configuration:
+1. `cp .env.example .env` and fill in the values.
+2. `npm install`
+3. `npm run db:up` to start Postgres on port 5433.
+4. `npm run db:migrate && npm run db:seed`
+5. `npm run dev`
 
-- build command `npm run build`
-- publish directory `dist`
-- Node 22
+Other root scripts: `npm run build`, `lint`, `typecheck`, `test`, `format`.
 
-Either connect the repo in the Netlify UI, or:
+## AWS
 
-```bash
-npx netlify-cli deploy --prod
-```
+Only the `aws-secondary-account` profile is ever used; see `scripts/lib/aws-guard.sh`.
 
-Point `muxaris.com` at the site once the domain is registered, and update
-`site:` in `astro.config.mjs` if the final domain differs.
+## Docs
 
-## Structure
+- [Platform design spec](docs/superpowers/specs/2026-10-04-muxaris-platform-design.md)
+- [Phase 0 plan](docs/superpowers/plans/2026-10-04-phase-0-foundation.md)
 
-| Path | Purpose |
-| --- | --- |
-| `src/layouts/Base.astro` | Document shell, fonts, meta, background field |
-| `src/styles/global.css` | Design tokens (`@theme`), grid/grain, motion |
-| `src/components/` | One file per page section |
-| `src/pages/index.astro` | Section order |
+## License
 
-## Design notes
-
-Network-operations console aesthetic. Two accent colours do the explaining:
-**amber** is the primary route, **teal** is the fallback route. They appear
-together in the logo, the hero status strip, the registry table and the usage
-log, so the product's core idea is legible before any copy is read.
-
-Type: Bricolage Grotesque (display), Instrument Sans (body), JetBrains Mono
-(code and all technical labels).
-
-## Copy
-
-All copy is original. The page structure follows the conventions of developer
-infrastructure sites generally — hero, provider strip, concept, features, code
-diff, accounting, install — which is a common layout, not anyone's asset. No
-third-party text, screenshots, logos or design files are used.
-
-The sample rows in the usage-log and registry tables are illustrative of the
-schema and are labelled as such. They are not benchmark results and must not be
-relabelled as measurements without real data behind them.
+MIT, see `LICENSE`.
