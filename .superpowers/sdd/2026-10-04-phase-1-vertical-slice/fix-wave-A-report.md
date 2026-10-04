@@ -8,3 +8,6 @@
 - Skipped: 5 (maxPerSlot inert) because making it meaningful needs concurrency semantics in the engine, beyond the rulings; 8 and 11 are Phase 5 / acceptable per the review.
 - Parked C: GET /doctors has workingHours; appointment responses carry patient { name, phoneMasked } (maskPhone in shared). Parked H: .env.example AUTH_MODE=cognito.
 - Existing tests changed: booking conflicts now expect code slot_unavailable/reason conflict (core + api); two tests used an off-grid 13:10 and now use 13:15; clinics tests use fresh users where they exceeded the 5-clinic cap.
+
+## Follow-up: allowOutsideRules is owner-only
+POST /appointments and PATCH reschedule return 403 `{ error: { code: "owner_required" } }` when a non-owner sends `allowOutsideRules: true` (never silently dropped). Tests in apps/api/src/hardening.test.ts: owner books off-hours with the flag; front_desk gets 403; without the flag both get 409 slot_unavailable.

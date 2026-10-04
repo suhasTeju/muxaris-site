@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import pg from "pg";
 import { createDb, schema, newId } from "@muxaris/db";
 import { createCognitoVerifier, createDevVerifier } from "@muxaris/core";
@@ -30,7 +30,7 @@ if (!reachable) console.warn("WARNING: Postgres unreachable, skipping api harden
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = any;
 const run = newId("t").slice(-8).toLowerCase();
-const subs = [`h-a-${run}`, `h-cap-${run}`];
+const subs = [`h-a-${run}`, `h-cap-${run}`, `h-fd-${run}`];
 const tok = (sub: string) => `dev:${sub}:${sub}@test.example`;
 const app = createApp({ version: "test", db, verifier: createDevVerifier() });
 const clinicIds: string[] = [];
@@ -198,6 +198,50 @@ describe("auth error classification over HTTP", () => {
       })
     ).json()) as J;
     expect(list.appointments[0].patient.phoneMasked).toBe("+91 •••• ••3210");
+  });
+
+  it("allowOutsideRules is owner-only; front_desk gets 403 owner_required", async () => {
+    const fd = tok(subs[2]!);
+    await call("GET", "/me", { token: fd });
+    const [u] = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.cognitoSub, subs[2]!));
+    await db
+      .insert(schema.memberships)
+      .values({ id: newId("mem"), userId: u!.id, clinicId: clinic, role: "front_desk" });
+    const date = nextTuesday();
+    const body = (extra: object) => ({
+      patient: { phone: "9876543211", name: "Walk In" },
+      doctorId,
+      serviceId: svcId,
+      startsAt: `${date}T02:00:00+05:30`,
+      ...extra,
+    });
+    for (const token of [fd, tok(subs[0]!)]) {
+      const res = await call("POST", "/appointments", { token, clinic, body: body({}) });
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as J).reason).toBe("outside_hours");
+    }
+    const denied = await call("POST", "/appointments", {
+      token: fd,
+      clinic,
+      body: body({ allowOutsideRules: true }),
+    });
+    expect(denied.status).toBe(403);
+    expect(((await denied.json()) as J).error.code).toBe("owner_required");
+    const deniedResched = await call("PATCH", "/appointments/apt_x/reschedule", {
+      token: fd,
+      clinic,
+      body: { startsAt: `${date}T02:00:00+05:30`, allowOutsideRules: true },
+    });
+    expect(deniedResched.status).toBe(403);
+    const ok = await call("POST", "/appointments", {
+      token: tok(subs[0]!),
+      clinic,
+      body: body({ allowOutsideRules: true }),
+    });
+    expect(ok.status).toBe(201);
   });
 
   it("rejects an over-wide appointment range", async () => {

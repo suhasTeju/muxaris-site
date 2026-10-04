@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { and, desc, eq, gte, ilike, inArray, lt, or } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
@@ -61,6 +61,12 @@ async function attachPatients<T extends { patientId: string }>(
   });
 }
 
+const ownerRequired = (c: Context<AppEnv>) =>
+  c.json(
+    { error: { code: "owner_required", message: "owner role required to override slot rules" } },
+    403,
+  );
+
 export function appointmentRoutes(db: Db) {
   const r = new Hono<AppEnv>();
   const member = requireClinic(db);
@@ -99,6 +105,7 @@ export function appointmentRoutes(db: Db) {
 
   r.post("/appointments", member, v("json", appointmentBody), async (c) => {
     const b = c.req.valid("json");
+    if (b.allowOutsideRules && c.get("clinic").role !== "owner") return ownerRequired(c);
     const appointment = await bookAppointment(db, {
       clinicId: c.get("clinic").id,
       patient: {
@@ -119,6 +126,7 @@ export function appointmentRoutes(db: Db) {
 
   r.patch("/appointments/:id/reschedule", member, v("json", rescheduleBody), async (c) => {
     const b = c.req.valid("json");
+    if (b.allowOutsideRules && c.get("clinic").role !== "owner") return ownerRequired(c);
     const clinicId = c.get("clinic").id;
     const appointmentId = c.req.param("id");
     if (b.doctorId || b.serviceId) {
