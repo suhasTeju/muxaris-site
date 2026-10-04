@@ -4,12 +4,14 @@ COPY package.json package-lock.json ./
 COPY apps/voice-gateway/package.json apps/voice-gateway/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
+COPY packages/core/package.json packages/core/
 RUN npm ci --workspace @muxaris/voice-gateway --include-workspace-root
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY packages/db packages/db
+COPY packages/core packages/core
 COPY apps/voice-gateway apps/voice-gateway
-RUN npm run build -w @muxaris/shared && npm run build -w @muxaris/db && npm run build -w @muxaris/voice-gateway
+RUN npm run build -w @muxaris/shared && npm run build -w @muxaris/db && npm run build -w @muxaris/core && npm run build -w @muxaris/voice-gateway
 
 FROM node:22-alpine
 WORKDIR /repo
@@ -21,6 +23,8 @@ COPY --from=build /repo/packages/shared/dist packages/shared/dist
 COPY --from=build /repo/packages/db/package.json packages/db/
 COPY --from=build /repo/packages/db/dist packages/db/dist
 COPY --from=build /repo/packages/db/drizzle packages/db/drizzle
+COPY --from=build /repo/packages/core/package.json packages/core/
+COPY --from=build /repo/packages/core/dist packages/core/dist
 COPY --from=build /repo/apps/voice-gateway/package.json apps/voice-gateway/
 COPY --from=build /repo/apps/voice-gateway/dist apps/voice-gateway/dist
 EXPOSE 4100

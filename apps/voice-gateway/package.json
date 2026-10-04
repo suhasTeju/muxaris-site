@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1146.0",
+    "@muxaris/core": "^0.1.0",
     "@muxaris/db": "*",
     "@muxaris/shared": "*",
+    "drizzle-orm": "^0.45.3",
     "ws": "^8"
   },
   "devDependencies": {

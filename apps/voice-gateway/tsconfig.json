@@ -2,5 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "outDir": "dist", "rootDir": "src" },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/providers/test-helpers.ts", "src/providers/__manual__"]
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/providers/test-helpers.ts",
+    "src/session/test-helpers.ts",
+    "src/providers/__manual__"
+  ]
 }
