@@ -27,5 +27,8 @@ COPY --from=build /repo/packages/core/package.json packages/core/
 COPY --from=build /repo/packages/core/dist packages/core/dist
 COPY --from=build /repo/apps/voice-gateway/package.json apps/voice-gateway/
 COPY --from=build /repo/apps/voice-gateway/dist apps/voice-gateway/dist
+USER node
 EXPOSE 4100
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.VOICE_PORT||4100)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "apps/voice-gateway/dist/index.js"]

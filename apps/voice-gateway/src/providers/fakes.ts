@@ -80,9 +80,15 @@ export class FakeSttStream implements SttStream {
 
 export class FakeStt implements SttProvider {
   readonly streams: FakeSttStream[] = [];
+  /** The next N open() calls reject (simulates a failed reconnect). */
+  failNextOpens = 0;
   constructor(private readonly script: FakeSttScriptItem[] = []) {}
 
   async open(): Promise<SttStream> {
+    if (this.failNextOpens > 0) {
+      this.failNextOpens--;
+      throw new Error("fake stt open failed");
+    }
     const s = new FakeSttStream(this.script);
     this.streams.push(s);
     return s;
@@ -99,6 +105,8 @@ export interface FakeTtsOptions {
   chunks?: number;
   chunkBytes?: number;
   delayMs?: number;
+  /** Utterances whose text matches fail (the audio iterable throws before any audio). */
+  failWhen?: (text: string) => boolean;
 }
 
 export class FakeTts implements TtsProvider {
@@ -112,8 +120,10 @@ export class FakeTts implements TtsProvider {
   private readonly chunks: number;
   private readonly chunkBytes: number;
   private readonly delayMs: number;
+  private readonly failWhen: ((text: string) => boolean) | undefined;
 
   constructor(opts: FakeTtsOptions = {}) {
+    this.failWhen = opts.failWhen;
     this.chunks = opts.chunks ?? 3;
     this.chunkBytes = opts.chunkBytes ?? 960;
     this.delayMs = opts.delayMs ?? 20;
@@ -127,9 +137,11 @@ export class FakeTts implements TtsProvider {
     let cancelled = false;
     let wake: (() => void) | null = null;
     const { chunks, chunkBytes, delayMs } = this;
+    const fails = this.failWhen?.(text) === true;
 
     async function* gen(): AsyncGenerator<Buffer> {
       if (cancelled) return;
+      if (fails) throw new Error("fake tts failure");
       for (let i = 0; i < chunks; i++) {
         if (delayMs > 0) {
           await new Promise<void>((resolve) => {

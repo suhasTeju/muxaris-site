@@ -15,25 +15,94 @@ export const TTS_URL =
   "wss://api.sarvam.ai/text-to-speech/ws?model=bulbul:v3&send_completion_event=true";
 
 const INACTIVITY_MS = 10_000;
+/** Waits before the 2nd and 3rd connection attempt when an utterance fails before any audio. */
+export const TTS_RETRY_DELAYS_MS: readonly number[] = [300, 900];
 
 export interface SarvamTtsOptions {
   apiKey: string;
   wsFactory?: WsFactory;
   url?: string;
+  /** Backoff before each retry of an utterance that failed before producing audio. */
+  retryDelaysMs?: readonly number[];
 }
 
 export class SarvamTts implements TtsProvider {
   private readonly apiKey: string;
   private readonly wsFactory: WsFactory;
   private readonly url: string;
+  private readonly retryDelaysMs: readonly number[];
 
   constructor(opts: SarvamTtsOptions) {
     this.apiKey = opts.apiKey;
     this.wsFactory = opts.wsFactory ?? defaultWsFactory;
     this.url = opts.url ?? TTS_URL;
+    this.retryDelaysMs = opts.retryDelaysMs ?? TTS_RETRY_DELAYS_MS;
   }
 
+  /**
+   * One utterance. A failure before the first audio chunk (handshake error such as 429/503,
+   * socket drop, server error) is retried on a fresh socket after each delay in `retryDelaysMs`;
+   * after that the audio iterable throws. Once audio has flowed there is no retry.
+   */
   speak(
+    text: string,
+    opts: { language: LanguageCode; speaker: string; warm?: boolean },
+  ): TtsUtterance {
+    let cancelled = false;
+    let current = this.speakOnce(text, opts); // first attempt starts immediately
+    let wakeSleep: (() => void) | null = null;
+    const delays = this.retryDelaysMs;
+    const attempt = (n: number) => (n === 0 ? current : (current = this.speakOnce(text, opts)));
+
+    async function* gen(): AsyncGenerator<Buffer> {
+      for (let n = 0; ; n++) {
+        if (cancelled) return;
+        let produced = false;
+        try {
+          for await (const chunk of attempt(n).audio) {
+            produced = true;
+            yield chunk;
+          }
+          return;
+        } catch (e) {
+          if (produced || cancelled || n >= delays.length) throw e;
+        }
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, delays[n]);
+          wakeSleep = () => {
+            clearTimeout(t);
+            resolve();
+          };
+        });
+        wakeSleep = null;
+      }
+    }
+
+    const audio = gen();
+    const cancel = (): void => {
+      cancelled = true;
+      current.cancel();
+      wakeSleep?.();
+    };
+    // Stop the socket if the consumer abandons the iterator early.
+    return {
+      audio: {
+        [Symbol.asyncIterator]: () => {
+          const it = audio[Symbol.asyncIterator]();
+          return {
+            next: () => it.next(),
+            return: async () => {
+              cancel();
+              return it.return(undefined);
+            },
+          };
+        },
+      },
+      cancel,
+    };
+  }
+
+  private speakOnce(
     text: string,
     opts: { language: LanguageCode; speaker: string; warm?: boolean },
   ): TtsUtterance {

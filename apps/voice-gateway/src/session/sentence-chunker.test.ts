@@ -44,4 +44,31 @@ describe("chunkSentences", () => {
     expect(await collect(["  ", "\n", "Done"])).toEqual(["Done"]);
     expect(await collect([])).toEqual([]);
   });
+  it("does not split after abbreviations, initials, numbers or before a lowercase word", async () => {
+    expect(await collect(["Dr. Meera Rao is free at 2 p.m. tomorrow."])).toEqual([
+      "Dr. Meera Rao is free at 2 p.m. tomorrow.",
+    ]);
+    expect(
+      await collect(["Please ask Mr. Rao", " and Mrs. Rao, Ms. Iyer, St. Mary. Fine."]),
+    ).toEqual(["Please ask Mr. Rao and Mrs. Rao, Ms. Iyer, St. Mary.", "Fine."]);
+    expect(await collect(["Book with M. Rao today. Next, e.g. Monday, vs. Tuesday."])).toEqual([
+      "Book with M. Rao today.",
+      "Next, e.g. Monday, vs. Tuesday.",
+    ]);
+    expect(await collect(["It is at 2. 30 sharp. Then we start, i.e. soon."])).toEqual([
+      "It is at 2. 30 sharp.",
+      "Then we start, i.e. soon.",
+    ]);
+    expect(await collect(["Room No. 5 is open.", " Thanks."])).toEqual([
+      "Room No. 5 is open.",
+      "Thanks.",
+    ]);
+  });
+  it("splits across deltas once the next sentence starts, and still splits at the danda", async () => {
+    expect(await collect(["Dr.", " Rao is in. ", "Anything", " else?"])).toEqual([
+      "Dr. Rao is in.",
+      "Anything else?",
+    ]);
+    expect(await collect(["Dr. Rao आज हैं।अगला।"])).toEqual(["Dr. Rao आज हैं।", "अगला।"]);
+  });
 });

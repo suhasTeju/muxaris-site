@@ -6,9 +6,25 @@ const isSpace = (c: string | undefined) => c !== undefined && /\s/.test(c);
 
 /**
  * Finds the end (exclusive) of the first complete sentence in `buf`, or -1.
- * `?`, `!` and the Devanagari danda split immediately; `.` only when followed by whitespace so
- * "Dr. Rao", "2.30" and "Rs.500" stay intact. Trailing closers/terminators stay with the sentence.
+ * `?`, `!` and the Devanagari danda split immediately; `.` only when followed by whitespace and not
+ * after Dr./Mr./St./No./vs./e.g./i.e., an initial ("M. Rao") or a number, nor before a lowercase
+ * word, so "Dr. Rao", "2 p.m. tomorrow", "2.30" and "Rs.500" stay intact. Trailing closers/terminators stay with the sentence.
  */
+const ABBREVIATION = /(?:^|[^\p{L}])(?:Dr|Mr|Mrs|Ms|Prof|St|No|vs|e\.g|i\.e)$/iu;
+const INITIAL = /(?:^|[^\p{L}])\p{Lu}$/u;
+
+/** True when the "." at `i` belongs to an abbreviation, initial or number, not a sentence end. */
+function isNonTerminalDot(buf: string, i: number, after: number): boolean {
+  const before = buf.slice(0, i);
+  if (ABBREVIATION.test(before) || INITIAL.test(before)) return true;
+  let k = after;
+  while (k < buf.length && isSpace(buf[k])) k++;
+  const next = buf[k];
+  if (next === undefined) return false; // caller waits for more text
+  if (/\d$/.test(before) && /\d/.test(next)) return true; // "2. 30"
+  return /\p{Ll}/u.test(next); // continues in lowercase
+}
+
 function sentenceEnd(buf: string): number {
   for (let i = 0; i < buf.length; i++) {
     const c = buf[i]!;
@@ -17,10 +33,11 @@ function sentenceEnd(buf: string): number {
     while (j + 1 < buf.length && TRAIL.has(buf[j + 1]!)) j++;
     if (c === "." && !STRONG.has(buf[j]!) && buf[j] !== "।") {
       if (j + 1 >= buf.length) return -1; // can't tell yet ("2." vs "2.30")
-      if (!isSpace(buf[j + 1])) {
+      if (!isSpace(buf[j + 1]) || isNonTerminalDot(buf, i, j + 1)) {
         i = j;
         continue;
       }
+      if (!/\S/.test(buf.slice(j + 1))) return -1; // only whitespace so far: wait for the next char
     }
     return j + 1;
   }

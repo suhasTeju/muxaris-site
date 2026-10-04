@@ -5,7 +5,7 @@ import { schema } from "@muxaris/db";
 import { FakeLlm, FakeStt, FakeTts } from "../providers/fakes.js";
 import { DISCLOSURE, openingUtterances } from "./prompt.js";
 import { chunkSentences } from "./sentence-chunker.js";
-import { VoiceSession, type SessionTimers } from "./voice-session.js";
+import { VoiceSession, type SessionLogger, type SessionTimers } from "./voice-session.js";
 import {
   ScriptedLlm,
   TestTransport,
@@ -52,9 +52,11 @@ afterAll(async () => {
     channel?: "browser" | "phone" | "unset";
     waitListening?: boolean;
     clinic?: typeof demo.ctx;
+    log?: SessionLogger;
+    stt?: FakeStt;
   }) {
     const transport = new TestTransport();
-    const stt = new FakeStt();
+    const stt = opts.stt ?? new FakeStt();
     const tts = opts.tts ?? new FakeTts({ chunks: 2, delayMs: 1 });
     const callId = opts.callId ?? (await demo.newCall());
     const session = new VoiceSession({
@@ -63,7 +65,7 @@ afterAll(async () => {
       tts,
       llm: opts.llm as never,
       db,
-      log: silentLog,
+      log: opts.log ?? silentLog,
       ...(opts.timers ? { timers: opts.timers } : {}),
       ctx: {
         clinic: opts.clinic ?? demo.ctx,
@@ -523,6 +525,163 @@ afterAll(async () => {
     );
     expect(s.tts.spoken[0]!.text).toBe(DISCLOSURE["en-IN"]);
     await s.session.end("caller");
+  });
+
+  const toolResultsIn = (m: any[]) =>
+    m.flatMap((x) =>
+      (x.content ?? []).flatMap((b: any) =>
+        b.toolResult ? [{ id: b.toolResult.toolUseId, text: b.toolResult.content[0].text }] : [],
+      ),
+    );
+
+  it("tool batch: calls after a barge-in are answered 'interrupted' and never executed", async () => {
+    const llm = new ScriptedLlm([
+      () => [
+        call("b1", "get_clinic_info", {}),
+        call("b2", "end_call", { summary: "x" }),
+        call("b3", "get_clinic_info", {}),
+      ],
+      () => [{ type: "text", text: "Still here." }],
+    ]);
+    const { transport, stt, say, session } = await setup({ llm });
+    const requests: any[][] = [];
+    const orig = llm.stream.bind(llm);
+    llm.stream = (req: any) => {
+      requests.push(structuredClone(req.messages));
+      return orig(req);
+    };
+    transport.hook = (e) => {
+      if (e.type === "tool" && e.status === "started") {
+        transport.hook = undefined;
+        stt.push({ type: "speech_start" }); // caller barges in while the first tool runs
+      }
+    };
+    say("hello");
+    await waitFor(() => transport.ofType("flush_playback").length === 1, 4000, "flush");
+    await sleep(100);
+    expect(transport.ofType("tool").filter((t) => t.status === "started")).toHaveLength(1);
+    expect(transport.ofType("ended")).toHaveLength(0); // the queued end_call never ran
+    say("one more thing");
+    await waitFor(() => llm.calls === 2, 4000, "second llm call");
+    const p = pairing(requests[1]!);
+    expect(p.uses).toEqual(["b1", "b2", "b3"]);
+    expect(p.res).toEqual(["b1", "b2", "b3"]);
+    const results = toolResultsIn(requests[1]!);
+    expect(results[1]!.text).toContain("interrupted");
+    expect(results[2]!.text).toContain("interrupted");
+    await session.end("caller");
+  });
+
+  it("tool batch: at most 3 calls run per LLM round, extras get too_many_tools", async () => {
+    const llm = new ScriptedLlm([
+      () => [1, 2, 3, 4, 5].map((i) => call(`m${i}`, "get_clinic_info", {})),
+      () => [{ type: "text", text: "Done." }],
+    ]);
+    const { transport, say, session } = await setup({ llm });
+    const requests: any[][] = [];
+    const orig = llm.stream.bind(llm);
+    llm.stream = (req: any) => {
+      requests.push(structuredClone(req.messages));
+      return orig(req);
+    };
+    say("hello");
+    await waitFor(() => llm.calls === 2, 4000, "second llm call");
+    expect(transport.ofType("tool").filter((t) => t.status === "started")).toHaveLength(3);
+    const results = toolResultsIn(requests[1]!);
+    expect(results.map((r) => r.id)).toEqual(["m1", "m2", "m3", "m4", "m5"]);
+    expect(results.slice(0, 3).every((r) => !r.text.includes("too_many_tools"))).toBe(true);
+    expect(results[3]!.text).toContain("too_many_tools");
+    expect(results[4]!.text).toContain("too_many_tools");
+    expect(pairing(requests[1]!).uses).toEqual(pairing(requests[1]!).res);
+    await session.end("caller");
+  });
+
+  it("a TTS failure skips that utterance and keeps the call going", async () => {
+    const tts = new FakeTts({ chunks: 1, delayMs: 1, failWhen: (t) => t.includes("Okay") });
+    const llm = new FakeLlm();
+    const { transport, say, session } = await setup({ llm, tts });
+    say("hello");
+    await waitFor(() => llm.requests.length === 1, 4000, "llm");
+    await waitFor(() => transport.ofType("state").at(-1)?.state === "listening", 4000, "listening");
+    expect(transport.ofType("ended")).toHaveLength(0);
+    expect(transport.ofType("error")).toHaveLength(0);
+    say("and again");
+    await waitFor(() => llm.requests.length === 2, 4000, "llm 2");
+    await waitFor(() => tts.spoken.filter((s) => s.text.includes("Okay")).length === 2, 4000);
+    expect(transport.closed).toBe(false);
+    await session.end("caller");
+  });
+
+  it("an STT drop reconnects once and the call continues on the new stream", async () => {
+    const llm = new FakeLlm();
+    const stt = new FakeStt();
+    const { transport, session, say } = await setup({ llm, stt });
+    stt.push({ type: "error", error: new Error("socket dropped") });
+    await waitFor(() => stt.streams.length === 2, 2000, "reconnect");
+    expect(stt.streams[0]!.closed).toBe(true);
+    await sleep(20); // handlers attach once open() resolves
+    expect(transport.ofType("ended")).toHaveLength(0);
+    say("hello after reconnect");
+    await waitFor(() => llm.requests.length === 1, 4000, "llm");
+    await session.end("caller");
+  });
+
+  it("a failed STT reconnect speaks the trouble line and ends with reason error, keeping the outcome", async () => {
+    const { date } = await firstOpenDay(db, demo.ctx, new Date());
+    const llm = new ScriptedLlm([
+      ...(bookingSteps(date) as never[]),
+      () => [{ type: "text", text: "Booked." }],
+    ]);
+    const stt = new FakeStt();
+    const tts = new FakeTts({ chunks: 1, delayMs: 1 });
+    const { transport, say, callId } = await setup({ llm, stt, tts });
+    say("book me");
+    await waitFor(() => transport.ofType("booking").length === 1, 8000, "booking");
+    await waitFor(() => transport.ofType("state").at(-1)?.state === "listening", 4000, "listening");
+    stt.failNextOpens = 1;
+    stt.push({ type: "error", error: new Error("socket dropped") });
+    await waitFor(() => transport.ofType("ended").length === 1, 4000, "ended");
+    expect(transport.ofType("ended")[0]).toMatchObject({ reason: "error", outcome: "booked" });
+    expect(tts.spoken.at(-1)!.text).toContain("having trouble hearing you");
+    expect(tts.spoken.at(-1)!.text).toContain("call the clinic directly");
+    const [row] = await db.select().from(schema.calls).where(eq(schema.calls.id, callId));
+    expect(row!.outcome).toBe("booked");
+  });
+
+  it("logs one structured line per turn with timings only", async () => {
+    const lines: Array<{ msg: string; fields?: Record<string, unknown> }> = [];
+    const log: SessionLogger = {
+      info: (msg, fields) => void lines.push({ msg, ...(fields ? { fields } : {}) }),
+      warn() {},
+      error() {},
+    };
+    const llm = new FakeLlm({}, "Secret reply text.");
+    const { transport, say, session } = await setup({ llm, log });
+    say("my private words");
+    await waitFor(() => transport.ofType("state").at(-1)?.state === "listening", 4000);
+    await waitFor(() => lines.some((l) => l.msg === "turn"), 4000, "turn log");
+    const turn = lines.filter((l) => l.msg === "turn");
+    expect(turn).toHaveLength(1);
+    expect(Object.keys(turn[0]!.fields!).sort()).toEqual([
+      "llmFirstTokenMs",
+      "sttMs",
+      "ttsFirstAudioMs",
+      "turn",
+    ]);
+    expect(turn[0]!.fields!["turn"]).toBe(1);
+    for (const k of ["llmFirstTokenMs", "ttsFirstAudioMs"])
+      expect(typeof turn[0]!.fields![k]).toBe("number");
+    expect(JSON.stringify(lines)).not.toMatch(/private words|Secret reply/);
+    await session.end("caller");
+  });
+
+  it("splits PCM16 audio on even byte boundaries when the provider sends an odd chunk", async () => {
+    const tts = new FakeTts({ chunks: 3, chunkBytes: 5, delayMs: 1 });
+    const { transport, session } = await setup({ llm: new FakeLlm(), tts });
+    const sizes = transport.log.flatMap((l) => (l.kind === "audio" ? [l.bytes] : []));
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(sizes.every((n) => n % 2 === 0)).toBe(true);
+    await session.end("caller");
   });
 
   it.each(["hi-IN", "kn-IN", "ta-IN", "te-IN", "en-IN"] as const)(

@@ -88,6 +88,11 @@ type CallOutcome =
 
 const MAX_MESSAGES = 30;
 const MAX_TOOL_ROUNDS = 6;
+/** Tool calls executed per LLM round; extras are answered with a "too_many_tools" error. */
+const MAX_TOOLS_PER_ROUND = 3;
+/** One reconnect attempt after a mid-call STT drop must finish within this window. */
+const STT_RECONNECT_MS = 2000;
+const MAX_STT_RECONNECTS = 3;
 const USAGE_INTERVAL_MS = 30_000;
 const TOOLS = toBedrockTools(ASSISTANT_TOOLS);
 /** PCM16 mono 24 kHz */
@@ -105,6 +110,24 @@ const FALLBACK: Record<LanguageCode, string> = {
 
 const isLanguageCode = (s: string | undefined): s is LanguageCode =>
   s !== undefined && (LANGUAGE_CODES as readonly string[]).includes(s);
+
+/** Spoken when speech recognition fails for good; the call then ends. */
+const STT_TROUBLE: Record<LanguageCode, string> = {
+  "en-IN": "I'm having trouble hearing you, please call the clinic directly.",
+  "hi-IN": "मुझे आपकी आवाज़ सुनने में दिक्कत आ रही है, कृपया क्लिनिक को सीधे कॉल करें।",
+  "kn-IN": "ನಿಮ್ಮ ಮಾತು ಕೇಳಲು ತೊಂದರೆಯಾಗುತ್ತಿದೆ, ದಯವಿಟ್ಟು ಕ್ಲಿನಿಕ್‌ಗೆ ನೇರವಾಗಿ ಕರೆ ಮಾಡಿ.",
+  "ta-IN": "உங்கள் குரலைக் கேட்பதில் சிக்கல் உள்ளது, தயவுசெய்து கிளினிக்கை நேரடியாக அழைக்கவும்.",
+  "te-IN": "మీ మాట వినడంలో సమస్య ఉంది, దయచేసి క్లినిక్‌కు నేరుగా కాల్ చేయండి.",
+};
+
+type UsedOutcome = "booked" | "rescheduled" | "cancelled" | "callback" | "handoff";
+const TOOL_OUTCOME: Partial<Record<ToolName, UsedOutcome>> = {
+  book_appointment: "booked",
+  reschedule_appointment: "rescheduled",
+  cancel_appointment: "cancelled",
+  request_callback: "callback",
+  transfer_to_staff: "handoff",
+};
 
 /** Minimal push-based async iterable used to feed LLM text into the sentence chunker. */
 class TextQueue implements AsyncIterable<string> {
@@ -146,6 +169,11 @@ interface SpeechItem {
 interface TurnInfo {
   epoch: number;
   speechEndAt: number;
+  /** Speech end to transcript, ms; null when the STT sent no speech_end signal. */
+  sttMs: number | null;
+  llmStartAt?: number;
+  llmFirstTokenAt?: number;
+  firstSentenceAt?: number;
   firstAudioAt?: number;
 }
 
@@ -194,7 +222,9 @@ export class VoiceSession {
   private assistantTurns = 0;
   private toolCalls = 0;
   private latencies: number[] = [];
-  private used = new Set<"booked" | "rescheduled" | "cancelled" | "callback" | "handoff">();
+  private used = new Set<UsedOutcome>();
+  private sttRecovering = false;
+  private sttReconnects = 0;
 
   private readonly tctx: ToolContext;
   private readonly callerPhone: string | undefined;
@@ -272,12 +302,7 @@ export class VoiceSession {
         return;
       }
       this.stt = stt;
-      stt.on("speech_start", () => this.onSpeechStart());
-      stt.on("speech_end", () => {
-        this.speechEndAt = this.ctx.now().getTime();
-      });
-      stt.on("transcript", (t) => this.onTranscript(t));
-      stt.on("error", () => this.providerError("stt"));
+      this.attachStt(stt);
       this.transport.onInboundAudio((pcm) => {
         if (!this.ended) this.stt?.sendAudio(pcm);
       });
@@ -288,6 +313,79 @@ export class VoiceSession {
 
     this.log.info("session started", { callId: this.ctx.callId, language: this.language });
     this.speakGreeting();
+  }
+
+  private attachStt(stt: SttStream): void {
+    stt.on("speech_start", () => this.onSpeechStart());
+    stt.on("speech_end", () => {
+      this.speechEndAt = this.ctx.now().getTime();
+    });
+    stt.on("transcript", (t) => this.onTranscript(t));
+    stt.on("error", () => {
+      if (this.stt === stt) void this.recoverStt(stt);
+    });
+  }
+
+  /** Mid-call STT drop: one reconnect attempt within 2 s, else tell the caller and end. */
+  private async recoverStt(dead: SttStream): Promise<void> {
+    if (this.ended || this.sttRecovering) return;
+    this.sttRecovering = true;
+    this.stt = null; // inbound audio is dropped while reconnecting
+    try {
+      dead.close();
+    } catch {
+      /* already closed */
+    }
+    this.log.warn("stt dropped; reconnecting", { attempt: this.sttReconnects + 1 });
+    let fresh: SttStream | null = null;
+    if (this.sttReconnects < MAX_STT_RECONNECTS) {
+      this.sttReconnects++;
+      let timedOut = false;
+      let timer: unknown;
+      const open = this.sttProvider.open();
+      try {
+        fresh = await Promise.race([
+          open,
+          new Promise<never>((_, reject) => {
+            timer = this.timers.setTimeout(() => {
+              timedOut = true;
+              reject(new Error("stt reconnect timed out"));
+            }, STT_RECONNECT_MS);
+          }),
+        ]);
+      } catch {
+        fresh = null;
+        // A socket that opens after the deadline must not leak.
+        void open.then(
+          (late) => {
+            if (timedOut) late.close();
+          },
+          () => undefined,
+        );
+      }
+      this.timers.clearTimeout(timer);
+    }
+    this.sttRecovering = false;
+    if (this.ended) {
+      fresh?.close();
+      return;
+    }
+    if (fresh) {
+      this.stt = fresh;
+      this.attachStt(fresh);
+      this.log.info("stt reconnected");
+      return;
+    }
+    // Give up: say so in the caller's language, then end as a provider error. The call's
+    // outcome (e.g. a booking already made) is untouched.
+    this.interrupt();
+    const line = STT_TROUBLE[this.language];
+    this.assistantTurns++;
+    this.persist({ seq: this.seq++, role: "assistant", text: line });
+    this.transport.sendEvent({ type: "transcript", role: "assistant", text: line, final: true });
+    this.enqueueSpeech(line, this.epoch);
+    await this.drain();
+    this.providerError("stt");
   }
 
   /** Call duration in seconds: final once ended, running before that (0 if never started). */
@@ -469,6 +567,7 @@ export class VoiceSession {
       }
       this.setState("speaking");
       let utt: TtsUtterance | null = null;
+      let carry: Buffer | null = null; // PCM16 needs even byte lengths; hold a split sample
       try {
         utt = this.tts.speak(item.text, { language: this.language, speaker: this.speaker() });
         this.currentUtt = utt;
@@ -485,11 +584,19 @@ export class VoiceSession {
             item.spoken.started++;
             item.spoken = undefined; // count each sentence once
           }
-          this.noteAudioSent(chunk.length);
-          this.transport.sendAudio(chunk);
+          let out: Buffer = carry ? Buffer.concat([carry, chunk]) : chunk;
+          carry = null;
+          if (out.length % 2 === 1) {
+            carry = out.subarray(out.length - 1);
+            out = out.subarray(0, out.length - 1);
+          }
+          if (out.length === 0) continue;
+          this.noteAudioSent(out.length);
+          this.transport.sendAudio(out);
         }
-      } catch {
-        if (item.epoch === this.epoch) this.providerError("tts");
+      } catch (e) {
+        // The provider already retried; skip this utterance and stay in the call.
+        if (item.epoch === this.epoch) this.log.error("tts utterance failed", { code: errCode(e) });
       } finally {
         if (item.disclosure) this.disclosurePending = false;
         if (this.currentUtt === utt) this.currentUtt = null;
@@ -569,7 +676,7 @@ export class VoiceSession {
     if (this.ended) return;
     const text = t.text.trim();
     if (!text) return; // silence or noise: stay listening, no LLM call
-    if (isLanguageCode(t.language)) {
+    if (isLanguageCode(t.language) && this.enabledLanguages().includes(t.language)) {
       this.language = t.language;
       this.detectedLanguage = t.language;
     }
@@ -580,14 +687,19 @@ export class VoiceSession {
     const ac = new AbortController();
     this.turnAbort = ac;
     const speechEndAt = this.speechEndAt ?? now;
+    const sttMs = this.speechEndAt !== null ? now - this.speechEndAt : null;
     this.speechEndAt = null;
     this.turnsPending++;
     this.turnChain = this.turnChain
-      .then(() => this.runTurn(text, t.language, epoch, speechEndAt, ac))
+      .then(() => this.runTurn(text, t.language, epoch, speechEndAt, sttMs, ac))
       .catch(() => this.providerError("turn"))
       .finally(() => {
         this.turnsPending--;
       });
+  }
+
+  private enabledLanguages(): string[] {
+    return this.ctx.clinic.clinic.languages as string[];
   }
 
   private pushUser(blocks: NonNullable<ConverseMessage["content"]>): void {
@@ -613,6 +725,7 @@ export class VoiceSession {
     language: string | undefined,
     epoch: number,
     speechEndAt: number,
+    sttMs: number | null,
     ac: AbortController,
   ): Promise<void> {
     if (this.ended) return;
@@ -631,7 +744,7 @@ export class VoiceSession {
       this.pushUser([{ text: userText }]);
       return;
     }
-    const turn: TurnInfo = { epoch, speechEndAt };
+    const turn: TurnInfo = { epoch, speechEndAt, sttMs };
     this.turn = turn;
     const live = () => !this.ended && epoch === this.epoch && !ac.signal.aborted;
 
@@ -657,11 +770,14 @@ export class VoiceSession {
         const speaking = (async () => {
           for await (const sentence of chunkSentences(queue)) {
             sentences.push(sentence);
+            turn.firstSentenceAt ??= this.ctx.now().getTime();
             this.enqueueSpeech(sentence, epoch, spoken);
           }
         })();
 
         let text = "";
+        let stopReason = "";
+        turn.llmStartAt ??= this.ctx.now().getTime();
         const calls: Array<{ id: string; name: ToolName; input: unknown }> = [];
         try {
           const stream = this.llm.stream({
@@ -674,10 +790,13 @@ export class VoiceSession {
             if (!live()) break;
             if (d.type === "text") {
               if (!d.text.trim() && !text) continue;
+              turn.llmFirstTokenAt ??= this.ctx.now().getTime();
               text += d.text;
               queue.push(d.text);
             } else if (d.type === "tool_call") {
               calls.push({ id: d.id, name: d.name, input: d.input });
+            } else if (d.type === "done") {
+              stopReason = d.stopReason;
             }
           }
         } catch (e) {
@@ -695,6 +814,11 @@ export class VoiceSession {
         }
         queue.close();
         await speaking;
+        if (stopReason === "max_tokens" && calls.length > 0) {
+          // A truncated tool block would parse as `{}`; do not run it.
+          this.log.warn("llm output truncated; dropping tool calls", { dropped: calls.length });
+          calls.length = 0;
+        }
 
         text = text.trim();
         // After a barge-in only the sentences whose audio actually started count as said.
@@ -727,11 +851,34 @@ export class VoiceSession {
         toolRoundsDone++;
 
         const results: NonNullable<ConverseMessage["content"]> = [];
-        for (const c of calls) {
+        const refused = (id: string, error: string) =>
+          results.push({
+            toolResult: {
+              toolUseId: id,
+              content: [{ text: JSON.stringify({ error }) }],
+              status: "error",
+            },
+          });
+        for (const [idx, c] of calls.entries()) {
+          // Every toolUse needs a toolResult; calls that must not run get a synthetic error.
+          if (idx >= MAX_TOOLS_PER_ROUND) {
+            refused(c.id, "too_many_tools");
+            continue;
+          }
+          if (!live()) {
+            refused(c.id, "interrupted");
+            continue;
+          }
           this.toolCalls++;
           this.transport.sendEvent({ type: "tool", name: c.name, status: "started", summary: "" });
+          // State-changing tools are counted before they run so a hang-up mid-transaction still
+          // records the outcome; a failure takes the mark back.
+          const mark = TOOL_OUTCOME[c.name];
+          const had = mark !== undefined && this.used.has(mark);
+          if (mark) this.used.add(mark);
           const out = await executeTool(this.db, this.toolCtx(), c.name, c.input);
           const failed = isError(out.result);
+          if (failed && mark && !had) this.used.delete(mark);
           this.transport.sendEvent({
             type: "tool",
             name: c.name,
@@ -786,6 +933,19 @@ export class VoiceSession {
       }
     } finally {
       await this.drain();
+      this.log.info("turn", {
+        turn: this.userTurns,
+        sttMs: turn.sttMs,
+        llmFirstTokenMs:
+          turn.llmFirstTokenAt !== undefined && turn.llmStartAt !== undefined
+            ? turn.llmFirstTokenAt - turn.llmStartAt
+            : null,
+        ttsFirstAudioMs:
+          turn.firstAudioAt !== undefined &&
+          (turn.firstSentenceAt ?? turn.llmFirstTokenAt) !== undefined
+            ? turn.firstAudioAt - (turn.firstSentenceAt ?? turn.llmFirstTokenAt!)
+            : null,
+      });
       for (const a of assistantSeqs) {
         const latencyMs =
           a === assistantSeqs[0] && turn.firstAudioAt !== undefined
@@ -815,11 +975,8 @@ export class VoiceSession {
   }
 
   private noteToolSuccess(name: ToolName, live: boolean): void {
-    if (name === "book_appointment") this.used.add("booked");
-    else if (name === "reschedule_appointment") this.used.add("rescheduled");
-    else if (name === "cancel_appointment") this.used.add("cancelled");
-    else if (name === "request_callback") this.used.add("callback");
-    else if (name === "transfer_to_staff") this.used.add("handoff");
+    const mark = TOOL_OUTCOME[name];
+    if (mark) this.used.add(mark);
     else if (name === "end_call" && live) this.endRequested = true;
   }
 

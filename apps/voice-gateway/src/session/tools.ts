@@ -155,6 +155,33 @@ export function normalizePhone(p: string): string {
   return r.success ? r.data : p;
 }
 
+/**
+ * Title-cases a Latin-script name as heard by STT ("meera RAO" -> "Meera Rao"). Names containing
+ * any non-Latin letter (Devanagari, Kannada, ...) are returned unchanged.
+ */
+export function titleCaseName(name: string): string {
+  const n = name.trim().replace(/\s+/g, " ");
+  // Any non-Latin letter (or no letters at all): leave untouched.
+  if (!/\p{L}/u.test(n) || /\p{L}/u.test(n.replace(/\p{Script=Latin}/gu, ""))) return n;
+  return n.replace(
+    /(^|[\s'’-])(\p{L})(\p{L}*)/gu,
+    (_m, sep: string, first: string, rest: string) =>
+      `${sep}${first.toUpperCase()}${rest.toLowerCase()}`,
+  );
+}
+
+/** Spoken-style guidance for a slot the engine refused, per caller language. */
+const SLOT_UNAVAILABLE_MESSAGE: Record<LanguageCode, string> = {
+  "en-IN": "That time is not available. Tell the caller, then offer to find other available slots.",
+  "hi-IN":
+    "वह समय उपलब्ध नहीं है। कॉल करने वाले को बताइए और दूसरे उपलब्ध स्लॉट खोजने की पेशकश कीजिए।",
+  "kn-IN": "ಆ ಸಮಯ ಲಭ್ಯವಿಲ್ಲ. ಕರೆ ಮಾಡಿದವರಿಗೆ ತಿಳಿಸಿ ಮತ್ತು ಇತರ ಲಭ್ಯ ಸಮಯಗಳನ್ನು ಹುಡುಕಲು ಸಲಹೆ ನೀಡಿ.",
+  "ta-IN":
+    "அந்த நேரம் கிடைக்கவில்லை. அழைப்பவரிடம் சொல்லி, வேறு நேரங்களைத் தேடித் தர முன்வாருங்கள்.",
+  "te-IN":
+    "ఆ సమయం అందుబాటులో లేదు. కాలర్‌కు చెప్పి, ఇతర అందుబాటులో ఉన్న స్లాట్‌లను వెతకమని ప్రతిపాదించండి.",
+};
+
 const VERIFICATION_MISMATCH: ToolOutcome = {
   result: {
     error: "verification_required",
@@ -284,12 +311,14 @@ async function run(db: Db, ctx: ToolContext, name: ToolName, input: unknown): Pr
           },
         };
       }
+      // STT-heard names never overwrite an existing record's name or language.
+      const existing = await findPatientByPhone(db, clinicId, normalizePhone(a.patient_phone));
       const apt = await bookAppointment(db, {
         clinicId,
         patient: {
           phone: a.patient_phone,
-          name: a.patient_name,
-          preferredLanguage: ctx.language,
+          ...(existing?.name ? {} : { name: titleCaseName(a.patient_name) }),
+          ...(existing ? {} : { preferredLanguage: ctx.language }),
         },
         doctorId: a.doctor_id,
         serviceId: a.service_id,
@@ -358,8 +387,15 @@ async function run(db: Db, ctx: ToolContext, name: ToolName, input: unknown): Pr
     case "request_callback": {
       const a = toolInputSchemas.request_callback.parse(input);
       // Unverified identity: still record the request, but never link it to a patient record.
-      const unverified = ctx.identityUnverifiable === true;
-      const patient = unverified ? null : await findPatientByPhone(db, clinicId, a.patient_phone);
+      // Link a patient only when the stated number is the one bound to this call.
+      const bound = ctx.verifiedPhone ?? ctx.callerPhone ?? ctx.claimedPhone;
+      const stated = normalizePhone(a.patient_phone);
+      const linkable =
+        ctx.identityUnverifiable !== true &&
+        bound !== undefined &&
+        normalizePhone(bound) === stated;
+      const unverified = !linkable;
+      const patient = linkable ? await findPatientByPhone(db, clinicId, stated) : null;
       const base = a.patient_name ? `${a.patient_name}: ${a.reason}` : a.reason;
       const reason = unverified ? `unverified: ${base}` : base;
       const cb = await createCallback(db, {
@@ -409,7 +445,18 @@ export async function executeTool(
   try {
     return await run(db, ctx, name, input);
   } catch (e) {
-    if (e instanceof CoreError) return { result: { error: e.code, message: e.message } };
+    if (e instanceof CoreError) {
+      if (e.code === "slot_unavailable") {
+        return {
+          result: {
+            error: "slot_unavailable",
+            message: SLOT_UNAVAILABLE_MESSAGE[ctx.language] ?? SLOT_UNAVAILABLE_MESSAGE["en-IN"],
+            ...(e.reason ? { reason: e.reason } : {}),
+          },
+        };
+      }
+      return { result: { error: e.code, message: e.message } };
+    }
     if (e instanceof Error && e.name === "ZodError") {
       const issues = (e as unknown as { issues: Array<{ path: PropertyKey[]; message: string }> })
         .issues;

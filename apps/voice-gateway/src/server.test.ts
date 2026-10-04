@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { createClinicForUser, loadDemoClinicData, upsertUser, usageMonth } from "@muxaris/core";
 import { createDb, newId, schema, type Db } from "@muxaris/db";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { FakeLlm, FakeStt, FakeTts } from "./providers/fakes.js";
 import { createServer, type ServerEnv } from "./server.js";
 
@@ -199,7 +199,12 @@ async function until<T>(
   it("serves /healthz", async () => {
     const { port } = await start();
     const res = await fetch(`http://127.0.0.1:${port}/healthz`);
-    expect(await res.json()).toEqual({ ok: true, service: "voice-gateway", version: "test" });
+    expect(await res.json()).toEqual({
+      ok: true,
+      service: "voice-gateway",
+      version: "test",
+      provider: "mock",
+    });
   });
 
   it("closes 4001 when no start frame arrives in time", async () => {
@@ -382,6 +387,40 @@ async function until<T>(
     const d = await open(port);
     d.ws.send(startFrame(member));
     await d.waitFor((e) => e.type === "ready");
+  });
+
+  it("releases the slot and closes the call row when session construction throws", async () => {
+    await db
+      .update(schema.plans)
+      .set({ maxConcurrentCalls: 1 })
+      .where(eq(schema.plans.id, plan.id));
+    let broken = true;
+    const providers = {
+      get stt(): FakeStt {
+        if (broken) throw new Error("boom");
+        return new FakeStt();
+      },
+      tts: new FakeTts(),
+      llm: new FakeLlm(),
+    };
+    const { port } = await start({ providers });
+    const c = await open(port);
+    c.ws.send(startFrame(member));
+    expect((await c.closed).code).toBe(1011);
+    broken = false;
+    const [row] = await until(async () => {
+      const rows = await db
+        .select()
+        .from(schema.calls)
+        .where(eq(schema.calls.clinicId, clinicId))
+        .orderBy(desc(schema.calls.startedAt))
+        .limit(1);
+      return rows[0]?.status === "failed" ? rows : null;
+    });
+    expect(row!.outcome).toBe("abandoned");
+    const d = await open(port);
+    d.ws.send(startFrame(member));
+    await d.waitFor((e) => e.type === "ready"); // the 1-call slot was released
   });
 
   it("terminates a client that stops answering heartbeat pings", async () => {
@@ -591,13 +630,16 @@ async function until<T>(
     const ready = await c.waitFor((e) => e.type === "ready");
     await c.waitFor((e) => e.type === "state");
     await server.shutdown();
-    expect(c.events.some((e) => e.type === "ended")).toBe(true);
+    expect(c.events.find((e) => e.type === "ended")).toMatchObject({
+      type: "ended",
+      reason: "server_shutdown",
+    });
     await c.closed;
     const [call] = await db
       .select()
       .from(schema.calls)
       .where(eq(schema.calls.id, ready.callId as string));
-    expect(call!.status).not.toBe("in_progress");
+    expect(call!.status).toBe("completed");
     expect((await ledger())[0]?.calls).toBe(1);
     // new connections are refused after shutdown
     await expect(

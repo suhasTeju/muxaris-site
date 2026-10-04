@@ -1,9 +1,21 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { bookAppointment } from "@muxaris/core";
+import { bookAppointment, CoreError, findAvailableSlots } from "@muxaris/core";
 import { schema } from "@muxaris/db";
-import { executeTool, type ToolContext } from "./tools.js";
+import { executeTool, titleCaseName, type ToolContext } from "./tools.js";
 import { dbReachable, firstOpenDay, makeDemoClinic, openDb } from "./test-helpers.js";
+
+// Core raises CoreError("slot_unavailable") from book/reschedule; stub it so these tests do not
+// depend on the engine's own rules.
+const stub = vi.hoisted(() => ({ reschedule: null as null | (() => never) }));
+vi.mock("@muxaris/core", async (orig) => {
+  const m = await orig<typeof import("@muxaris/core")>();
+  return {
+    ...m,
+    rescheduleAppointment: (...args: Parameters<typeof m.rescheduleAppointment>) =>
+      stub.reschedule ? stub.reschedule() : m.rescheduleAppointment(...args),
+  };
+});
 
 const { db, pool } = openDb();
 const reachable = await dbReachable();
@@ -203,5 +215,102 @@ const PHONE_B = "+919876500022";
     const [row] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, id));
     expect(row!.patientId).toBeNull();
     expect(row!.reason.startsWith("unverified:")).toBe(true);
+  });
+
+  it("maps a slot_unavailable CoreError on reschedule to a localized unavailable reply", async () => {
+    stub.reschedule = () => {
+      throw new CoreError("slot_unavailable", "internal detail", "outside_hours");
+    };
+    try {
+      for (const [language, needle] of [
+        ["en-IN", /not available/],
+        ["hi-IN", /उपलब्ध नहीं/],
+      ] as const) {
+        const out = await executeTool(
+          db,
+          ctxFor({ language, claimedPhone: PHONE_A }),
+          "reschedule_appointment",
+          { appointment_id: aptId, new_starts_at: `${day.date}T03:00:00+05:30` },
+        );
+        const r = out.result as { error: string; message: string; reason: string };
+        expect(r.error).toBe("slot_unavailable");
+        expect(r.message).toMatch(needle);
+        if (language === "en-IN") expect(r.message).toMatch(/find other available slots/);
+        expect(r.message).not.toMatch(/internal detail/);
+        expect(r.reason).toBe("outside_hours");
+      }
+    } finally {
+      stub.reschedule = null;
+    }
+  });
+
+  it("request_callback: caller id X cannot link patient Y", async () => {
+    const callId = await a.newCall();
+    const out = await executeTool(
+      db,
+      ctxFor({ callerPhone: PHONE_B, callId }),
+      "request_callback",
+      {
+        patient_phone: PHONE_A,
+        reason: "call me",
+      },
+    );
+    const id = (out.result as { callback_id: string }).callback_id;
+    const [row] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, id));
+    expect(row!.patientId).toBeNull();
+    expect(row!.phone).toBe(PHONE_A);
+  });
+
+  it("request_callback links the patient when the bound phone matches", async () => {
+    const callId = await a.newCall();
+    const out = await executeTool(
+      db,
+      ctxFor({ callerPhone: PHONE_A, callId }),
+      "request_callback",
+      {
+        patient_phone: PHONE_A,
+        reason: "call me",
+      },
+    );
+    const id = (out.result as { callback_id: string }).callback_id;
+    const [row] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, id));
+    expect(row!.patientId).not.toBeNull();
+    expect(row!.reason.startsWith("unverified:")).toBe(false);
+  });
+
+  it("book_appointment title-cases a new name and never renames an existing patient", async () => {
+    const book = async (phone: string, name: string) => {
+      const open = await findAvailableSlots(db, {
+        clinicId: a.clinicId,
+        date: day.date,
+        serviceId: day.service.id,
+        now,
+        forAssistant: true,
+      });
+      const slot = open[open.length - 1]!;
+      return executeTool(db, ctxFor(), "book_appointment", {
+        patient_name: name,
+        patient_phone: phone,
+        doctor_id: slot.doctorId,
+        service_id: day.service.id,
+        starts_at: slot.startsAt.toISOString(),
+      });
+    };
+    const fresh = "+919876500033";
+    expect((await book(fresh, "meera RAO")).result).toMatchObject({ booked: true });
+    const [p1] = await db.select().from(schema.patients).where(eq(schema.patients.phone, fresh));
+    expect(p1!.name).toBe("Meera Rao");
+    expect((await book(fresh, "Totally Different")).result).toMatchObject({ booked: true });
+    const [p2] = await db.select().from(schema.patients).where(eq(schema.patients.phone, fresh));
+    expect(p2!.name).toBe("Meera Rao");
+  });
+});
+
+describe("titleCaseName", () => {
+  it("title-cases Latin names and leaves other scripts alone", () => {
+    expect(titleCaseName("  meera  RAO ")).toBe("Meera Rao");
+    expect(titleCaseName("o'neil smith-jones")).toBe("O'Neil Smith-Jones");
+    expect(titleCaseName("मीरा राव")).toBe("मीरा राव");
+    expect(titleCaseName("Meera ರಾವ್")).toBe("Meera ರಾವ್");
   });
 });

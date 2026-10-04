@@ -182,7 +182,14 @@ export function createServer(deps: ServerDeps): GatewayServer {
   const server = http.createServer((req, res) => {
     if (req.url === "/healthz") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, service: "voice-gateway", version: deps.version }));
+      res.end(
+        JSON.stringify({
+          ok: true,
+          service: "voice-gateway",
+          version: deps.version,
+          provider: env.provider,
+        }),
+      );
       return;
     }
     res.writeHead(404);
@@ -480,92 +487,112 @@ export function createServer(deps: ServerDeps): GatewayServer {
       return;
     }
 
-    const transport = new WsTransport(ws);
-    ws.off("message", ctl.hold);
-    for (const f of ctl.early) transport.feed(f.data, f.isBinary);
-
-    const { disclosure, greeting } = openingUtterances(clinic.assistant, clinic.clinic, language);
-    const session = new VoiceSession({
-      transport,
-      stt: providers.stt,
-      tts: providers.tts,
-      llm: providers.llm,
-      db,
-      log: sessLog,
-      ctx: {
-        clinic,
-        callId,
-        language,
-        now,
-        maxDurationS: env.maxCallSeconds,
-        secondsRemaining,
-        channel: "browser",
-        callerPhone: undefined,
-        verifiedPhone: undefined,
-      },
-    });
-
-    // Settle the call exactly once: usage ledger + slot release. Triggered when the session
-    // closes the transport, or by the backstop below if the socket dropped and it never does.
-    let settledOnce = false;
-    let resolveSettled!: () => void;
-    const settled = new Promise<void>((r) => (resolveSettled = r));
-    const entry: LiveCall = { session, settled };
-    live.add(entry);
-    const settle = (finishRow: boolean) => {
-      if (settledOnce) return;
-      settledOnce = true;
-      const durationS = session.durationS;
-      void (async () => {
-        try {
-          if (finishRow) {
-            await finishCall(db, {
-              callId,
-              clinicId,
-              status: "failed",
-              outcome: "abandoned",
-              durationS,
-            });
-          }
-          await recordCallUsage(db, {
-            clinicId,
-            month: usageMonth(clinic.clinic.timezone, now()),
-            callSeconds: durationS,
-          });
-        } catch (e) {
-          sessLog.error("call settle failed", safeErr(e));
-        } finally {
-          releaseOnce();
-          live.delete(entry);
-          resolveSettled();
-          sessLog.info("call settled", { durationS });
-        }
-      })();
-    };
-    transport.onceClosed(() => settle(false));
-    // Backstop: if the socket closes and the session still has not closed out after a grace
-    // period (e.g. a hung DB write), settle anyway so the slot is never leaked.
-    const onSocketClose = () => {
-      const t = setTimeout(() => settle(true), closeGraceMs);
-      void settled.then(() => clearTimeout(t));
-    };
-    if (ws.readyState === ws.OPEN) ws.once("close", onSocketClose);
-    else onSocketClose();
-
-    transport.sendEvent({
-      type: "ready",
-      callId,
-      assistantName: clinic.assistant?.name ?? "the receptionist",
-      greeting: `${disclosure} ${greeting}`,
-      language,
-    });
-    sessLog.info("session accepted", { language });
-    ctl.done();
+    // From here a throw (transport, session construction, ...) must not leak the slot or leave
+    // the call row in progress.
+    let settleRef: ((finishRow: boolean) => void) | undefined;
     try {
-      await session.start();
+      const transport = new WsTransport(ws);
+      ws.off("message", ctl.hold);
+      for (const f of ctl.early) transport.feed(f.data, f.isBinary);
+
+      const { disclosure, greeting } = openingUtterances(clinic.assistant, clinic.clinic, language);
+      const session = new VoiceSession({
+        transport,
+        stt: providers.stt,
+        tts: providers.tts,
+        llm: providers.llm,
+        db,
+        log: sessLog,
+        ctx: {
+          clinic,
+          callId,
+          language,
+          now,
+          maxDurationS: env.maxCallSeconds,
+          secondsRemaining,
+          channel: "browser",
+          callerPhone: undefined,
+          verifiedPhone: undefined,
+        },
+      });
+
+      // Settle the call exactly once: usage ledger + slot release. Triggered when the session
+      // closes the transport, or by the backstop below if the socket dropped and it never does.
+      let settledOnce = false;
+      let resolveSettled!: () => void;
+      const settled = new Promise<void>((r) => (resolveSettled = r));
+      const entry: LiveCall = { session, settled };
+      live.add(entry);
+      const settle = (finishRow: boolean) => {
+        if (settledOnce) return;
+        settledOnce = true;
+        const durationS = session.durationS;
+        void (async () => {
+          try {
+            if (finishRow) {
+              await finishCall(db, {
+                callId,
+                clinicId,
+                status: "failed",
+                outcome: "abandoned",
+                durationS,
+              });
+            }
+            await recordCallUsage(db, {
+              clinicId,
+              month: usageMonth(clinic.clinic.timezone, now()),
+              callSeconds: durationS,
+            });
+          } catch (e) {
+            sessLog.error("call settle failed", safeErr(e));
+          } finally {
+            releaseOnce();
+            live.delete(entry);
+            resolveSettled();
+            sessLog.info("call settled", { durationS });
+          }
+        })();
+      };
+      settleRef = settle;
+      transport.onceClosed(() => settle(false));
+      // Backstop: if the socket closes and the session still has not closed out after a grace
+      // period (e.g. a hung DB write), settle anyway so the slot is never leaked.
+      const onSocketClose = () => {
+        const t = setTimeout(() => settle(true), closeGraceMs);
+        void settled.then(() => clearTimeout(t));
+      };
+      if (ws.readyState === ws.OPEN) ws.once("close", onSocketClose);
+      else onSocketClose();
+
+      transport.sendEvent({
+        type: "ready",
+        callId,
+        assistantName: clinic.assistant?.name ?? "the receptionist",
+        greeting: `${disclosure} ${greeting}`,
+        language,
+      });
+      sessLog.info("session accepted", { language });
+      ctl.done();
+      try {
+        await session.start();
+      } catch (e) {
+        sessLog.error("session start failed", safeErr(e));
+        await session.end("error");
+      }
     } catch (e) {
-      sessLog.error("session start failed", safeErr(e));
-      await session.end("error");
+      sessLog.error("session setup failed", safeErr(e));
+      if (settleRef) settleRef(true);
+      else {
+        releaseOnce();
+        await finishCall(db, {
+          callId,
+          clinicId,
+          status: "failed",
+          outcome: "abandoned",
+          durationS: 0,
+        }).catch(() => undefined);
+      }
+      rejectWith(ws, 1011, "internal", "session setup failed");
     }
   }
 
@@ -575,7 +602,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
     // Stop accepting connections; existing sockets are handled below.
     server.close();
     const pending = [...live];
-    for (const c of pending) void c.session.end("error");
+    for (const c of pending) void c.session.end("server_shutdown");
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
       Promise.allSettled(pending.map((c) => c.settled)),

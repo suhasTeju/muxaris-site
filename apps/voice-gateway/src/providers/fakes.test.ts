@@ -160,6 +160,24 @@ describe("FakeLlm", () => {
     ]);
   });
 
+  it("falls back to the keyed script, then the default reply, once per-turn scripts run out", async () => {
+    const llm = new FakeLlm({ keyed: [{ type: "text", text: "From the map." }] }, "Default.", 0, [
+      [{ type: "text", text: "Turn zero." }],
+    ]);
+    expect(await run(llm, "keyed")).toEqual([
+      { type: "text", text: "Turn zero." },
+      { type: "done", stopReason: "end_turn" },
+    ]);
+    expect(await run(llm, "keyed")).toEqual([
+      { type: "text", text: "From the map." },
+      { type: "done", stopReason: "end_turn" },
+    ]);
+    expect(await run(llm, "other")).toEqual([
+      { type: "text", text: "Default." },
+      { type: "done", stopReason: "end_turn" },
+    ]);
+  });
+
   it("stops when aborted", async () => {
     const ac = new AbortController();
     ac.abort();

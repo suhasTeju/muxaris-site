@@ -44,4 +44,28 @@ describe("voice-gateway loadEnv", () => {
       expect(() => loadEnv({ ...dev, VOICE_PORT: bad })).toThrow(/VOICE_PORT/);
     },
   );
+  describe("production providers", () => {
+    const prod = {
+      NODE_ENV: "production",
+      DATABASE_URL: "x",
+      COGNITO_USER_POOL_ID: "p",
+      COGNITO_CLIENT_ID: "c",
+    };
+    it("throws at boot without a Sarvam key", () => {
+      expect(() => loadEnv(prod)).toThrow(/SARVAM_TTS_API_KEY/);
+      expect(() => loadEnv({ ...prod, SARVAM_TTS_API_KEY: "  " })).toThrow(/SARVAM_TTS_API_KEY/);
+    });
+    it("throws on provider=mock even with a key", () => {
+      expect(() => loadEnv({ ...prod, SARVAM_TTS_API_KEY: "k", VOICE_PROVIDER: "mock" })).toThrow(
+        /mock/,
+      );
+    });
+    it("boots with a key, and allows mock outside production", () => {
+      expect(loadEnv({ ...prod, SARVAM_TTS_API_KEY: "k" }).provider).toBe("sarvam");
+      expect(loadEnv(dev).provider).toBe("mock");
+      expect(loadEnv({ ...dev, SARVAM_TTS_API_KEY: "k", VOICE_PROVIDER: "mock" }).provider).toBe(
+        "mock",
+      );
+    });
+  });
 });

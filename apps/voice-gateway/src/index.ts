@@ -29,7 +29,7 @@ function withTimeout(p: Promise<unknown>, ms: number, label: string): Promise<vo
 }
 
 let stopping = false;
-async function stop(signal: string) {
+async function stop(signal: string, failed = false) {
   if (stopping) return;
   stopping = true;
   console.log(JSON.stringify({ level: "info", msg: "signal received", signal }));
@@ -39,7 +39,7 @@ async function stop(signal: string) {
     process.exit(1);
   }, HARD_EXIT_MS);
   hardExit.unref();
-  let code = 0;
+  let code = failed ? 1 : 0;
   try {
     await server.shutdown();
   } catch (e) {
@@ -60,3 +60,19 @@ async function stop(signal: string) {
 }
 process.on("SIGTERM", () => void stop("SIGTERM"));
 process.on("SIGINT", () => void stop("SIGINT"));
+
+// A stray rejection must not drop every live call: log the error name only and keep running.
+process.on("unhandledRejection", (reason) => {
+  console.error(
+    JSON.stringify({
+      level: "error",
+      msg: "unhandled rejection",
+      err: (reason as Error | undefined)?.name ?? typeof reason,
+    }),
+  );
+});
+// State after an uncaught exception is unknown: drain live calls, then exit non-zero.
+process.on("uncaughtException", (e) => {
+  console.error(JSON.stringify({ level: "error", msg: "uncaught exception", err: e?.name }));
+  void stop("uncaughtException", true);
+});

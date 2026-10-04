@@ -54,7 +54,10 @@ describe("SarvamTts", () => {
 
   it("fails the iterable when the socket closes before final", async () => {
     const ws = new StubWs();
-    const u = new SarvamTts({ apiKey: "k", wsFactory: () => ws }).speak("Hi", opts);
+    const u = new SarvamTts({ apiKey: "k", wsFactory: () => ws, retryDelaysMs: [] }).speak(
+      "Hi",
+      opts,
+    );
     ws.emit("open");
     ws.emit("close");
     await expect(
@@ -66,7 +69,10 @@ describe("SarvamTts", () => {
 
   it("fails on error messages", async () => {
     const ws = new StubWs();
-    const u = new SarvamTts({ apiKey: "k", wsFactory: () => ws }).speak("Hi", opts);
+    const u = new SarvamTts({ apiKey: "k", wsFactory: () => ws, retryDelaysMs: [] }).speak(
+      "Hi",
+      opts,
+    );
     ws.emit("message", Buffer.from(JSON.stringify({ type: "error", data: { message: "bad" } })));
     await expect(
       (async () => {
@@ -114,7 +120,10 @@ describe("SarvamTts", () => {
     vi.useFakeTimers();
     try {
       const ws = new StubWs();
-      const u = new SarvamTts({ apiKey: "k", wsFactory: () => ws }).speak("Hi", opts);
+      const u = new SarvamTts({ apiKey: "k", wsFactory: () => ws, retryDelaysMs: [] }).speak(
+        "Hi",
+        opts,
+      );
       ws.emit("open");
       const assertion = expect(
         (async () => {
@@ -131,7 +140,10 @@ describe("SarvamTts", () => {
 
   it("error messages carry only a truncated message field", async () => {
     const ws = new StubWs();
-    const u = new SarvamTts({ apiKey: "k", wsFactory: () => ws }).speak("Hi", opts);
+    const u = new SarvamTts({ apiKey: "k", wsFactory: () => ws, retryDelaysMs: [] }).speak(
+      "Hi",
+      opts,
+    );
     ws.emit(
       "message",
       Buffer.from(
@@ -159,5 +171,98 @@ describe("SarvamTts", () => {
     ws.emit("message", audioMsg([3]));
     ws.emit("message", final);
     expect([...(await p)]).toEqual([1, 2, 3]);
+  });
+
+  describe("retry on connect failure", () => {
+    const drain = async (u: { audio: AsyncIterable<Buffer> }) => {
+      const got: number[][] = [];
+      for await (const c of u.audio) got.push([...c]);
+      return got;
+    };
+    const socks = (n: number) => Array.from({ length: n }, () => new StubWs());
+
+    it("retries twice on a fresh socket (300 ms, then 900 ms) before giving up", async () => {
+      vi.useFakeTimers();
+      try {
+        const all = socks(3);
+        let i = 0;
+        const factory = vi.fn(() => all[i++]!);
+        const u = new SarvamTts({ apiKey: "k", wsFactory: factory }).speak("Hi", opts);
+        const result = drain(u).then(
+          () => "ok",
+          (e: Error) => e.message,
+        );
+        all[0]!.emit("error", new Error("Unexpected server response: 503"));
+        await vi.advanceTimersByTimeAsync(299);
+        expect(factory).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(factory).toHaveBeenCalledTimes(2);
+        all[1]!.emit("error", new Error("Unexpected server response: 429"));
+        await vi.advanceTimersByTimeAsync(899);
+        expect(factory).toHaveBeenCalledTimes(2);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(factory).toHaveBeenCalledTimes(3);
+        all[2]!.emit("error", new Error("Unexpected server response: 503"));
+        expect(await result).toMatch(/503/);
+        expect(factory).toHaveBeenCalledTimes(3);
+        expect(all.every((w) => w.closed)).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("plays the retried utterance when a later socket works", async () => {
+      const all = socks(2);
+      let i = 0;
+      const u = new SarvamTts({
+        apiKey: "k",
+        wsFactory: () => all[i++]!,
+        retryDelaysMs: [1, 1],
+      }).speak("Hi", opts);
+      const result = drain(u);
+      all[0]!.emit("error", new Error("503"));
+      await vi.waitFor(() => expect(i).toBe(2));
+      all[1]!.emit("open");
+      all[1]!.emit("message", audioMsg([7, 8]));
+      all[1]!.emit("message", final);
+      expect(await result).toEqual([[7, 8]]);
+      expect(all[1]!.json()[1]).toEqual({ type: "text", data: { text: "Hi" } });
+    });
+
+    it("does not retry once audio has been produced", async () => {
+      const all = socks(2);
+      let i = 0;
+      const factory = vi.fn(() => all[i++]!);
+      const u = new SarvamTts({ apiKey: "k", wsFactory: factory, retryDelaysMs: [1, 1] }).speak(
+        "Hi",
+        opts,
+      );
+      const result = drain(u).then(
+        () => "ok",
+        (e: Error) => e.message,
+      );
+      all[0]!.emit("open");
+      all[0]!.emit("message", audioMsg([1]));
+      all[0]!.emit("close");
+      expect(await result).toMatch(/closed before final/);
+      expect(factory).toHaveBeenCalledTimes(1);
+    });
+
+    it("cancel during the backoff wait stops further attempts", async () => {
+      const all = socks(2);
+      let i = 0;
+      const factory = vi.fn(() => all[i++]!);
+      const u = new SarvamTts({ apiKey: "k", wsFactory: factory, retryDelaysMs: [50, 50] }).speak(
+        "Hi",
+        opts,
+      );
+      const result = drain(u);
+      all[0]!.emit("error", new Error("503"));
+      await new Promise((r) => setTimeout(r, 10));
+      u.cancel();
+      expect(await result).toEqual([]);
+      await new Promise((r) => setTimeout(r, 80));
+      expect(factory).toHaveBeenCalledTimes(1);
+    });
   });
 });

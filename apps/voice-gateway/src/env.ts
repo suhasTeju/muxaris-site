@@ -44,11 +44,21 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): VoiceEnv {
       "COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID are required when AUTH_MODE=cognito",
     );
   const sarvamKey = src.SARVAM_TTS_API_KEY?.trim() || null;
+  const forcedProvider = src.VOICE_PROVIDER?.trim();
+  if (forcedProvider && forcedProvider !== "mock" && forcedProvider !== "sarvam")
+    throw new Error(`VOICE_PROVIDER must be "sarvam" or "mock", got "${forcedProvider}"`);
+  if (src.NODE_ENV === "production") {
+    if (forcedProvider === "mock")
+      throw new Error('VOICE_PROVIDER "mock" is not allowed in production');
+    if (!sarvamKey) throw new Error("SARVAM_TTS_API_KEY is required in production");
+  }
+  const provider: "sarvam" | "mock" =
+    forcedProvider === "mock" ? "mock" : sarvamKey ? "sarvam" : "mock";
   return {
     port: positiveInt(src, "VOICE_PORT", 4100, 65535),
     databaseUrl,
     sarvamKey,
-    provider: sarvamKey ? "sarvam" : "mock",
+    provider,
     // Amazon Nova only (no Anthropic models on Bedrock)
     bedrockModelId: src.BEDROCK_MODEL_ID?.trim() || "global.amazon.nova-2-lite-v1:0",
     awsRegion: src.AWS_REGION?.trim() || "ap-south-1",
