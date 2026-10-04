@@ -1,0 +1,110 @@
+import { describe, expect, it } from "vitest";
+import type { Appointment } from "@muxaris/shared";
+import {
+  addDays,
+  computeKpis,
+  dayRange,
+  formatDuration,
+  formatTime,
+  groupByDoctor,
+  localDateKey,
+  maskPhone,
+  startOfLocalDay,
+} from "./dashboard";
+
+const appt = (id: string, doctorId: string, startsAt: string): Appointment =>
+  ({ id, doctorId, startsAt }) as Appointment;
+
+describe("time formatting", () => {
+  it("formats in the clinic timezone, 12-hour with lowercase am/pm", () => {
+    expect(formatTime("2026-10-06T04:00:00Z", "Asia/Kolkata")).toBe("9:30 am");
+    expect(formatTime("2026-10-06T12:15:00Z", "Asia/Kolkata")).toBe("5:45 pm");
+  });
+  it("defaults to Asia/Kolkata and survives a bad timezone", () => {
+    expect(formatTime("2026-10-06T04:00:00Z")).toBe("9:30 am");
+    expect(formatTime("2026-10-06T04:00:00Z", "Bogus/Zone")).toBe("9:30 am");
+  });
+  it("derives the local date and day boundaries", () => {
+    expect(localDateKey("2026-10-05T20:00:00Z", "Asia/Kolkata")).toBe("2026-10-06");
+    expect(startOfLocalDay("2026-10-06", "Asia/Kolkata").toISOString()).toBe(
+      "2026-10-05T18:30:00.000Z",
+    );
+    expect(dayRange("2026-10-06", 7, "Asia/Kolkata")).toEqual({
+      from: "2026-10-05T18:30:00.000Z",
+      to: "2026-10-12T18:30:00.000Z",
+    });
+    expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
+  });
+  it("formats durations and masks phones", () => {
+    expect(formatDuration(125)).toBe("2m 05s");
+    expect(formatDuration(42)).toBe("42s");
+    expect(formatDuration(null)).toBe("-");
+    expect(maskPhone("+919876543210")).toBe("•••• 3210");
+  });
+});
+
+describe("computeKpis", () => {
+  const now = new Date("2026-10-06T06:00:00Z");
+  const calls = [
+    { startedAt: "2026-10-06T03:00:00Z", outcome: "booked" as const },
+    { startedAt: "2026-10-06T05:00:00Z", outcome: "info" as const },
+    { startedAt: "2026-10-05T10:00:00Z", outcome: "booked" as const },
+  ];
+  it("counts today's calls and bookings in the clinic timezone", () => {
+    const k = computeKpis({
+      calls,
+      now,
+      tz: "Asia/Kolkata",
+      usage: {
+        month: "2026-10",
+        callSeconds: 610,
+        calls: 5,
+        includedCallMinutes: 100,
+        plan: "pilot",
+      },
+    });
+    expect(k).toMatchObject({
+      callsToday: 2,
+      bookedToday: 1,
+      minutesUsed: 11,
+      minutesIncluded: 100,
+    });
+    expect(k.usageRatio).toBeCloseTo(0.11);
+  });
+  it("handles missing usage and a local-midnight boundary", () => {
+    const k = computeKpis({
+      calls: [{ startedAt: "2026-10-05T19:00:00Z", outcome: "booked" }],
+      usage: null,
+      now,
+      tz: "Asia/Kolkata",
+    });
+    expect(k).toMatchObject({ callsToday: 1, bookedToday: 1, minutesUsed: 0, usageRatio: 0 });
+  });
+  it("caps the ratio at 1", () => {
+    const k = computeKpis({
+      calls: [],
+      usage: { month: "m", callSeconds: 99999, calls: 1, includedCallMinutes: 10, plan: "pilot" },
+    });
+    expect(k.usageRatio).toBe(1);
+  });
+});
+
+describe("groupByDoctor", () => {
+  it("groups in doctor order, sorts by time and appends unknown doctors", () => {
+    const groups = groupByDoctor(
+      [
+        appt("a3", "d2", "2026-10-06T06:00:00Z"),
+        appt("a1", "d1", "2026-10-06T08:00:00Z"),
+        appt("a2", "d1", "2026-10-06T04:00:00Z"),
+        appt("a4", "gone", "2026-10-06T05:00:00Z"),
+      ],
+      [
+        { id: "d1", name: "Dr. Rao", color: "#16a34a" },
+        { id: "d2", name: "Dr. Iyer", color: "#2563eb" },
+        { id: "d3", name: "Dr. Empty", color: "#000000" },
+      ],
+    );
+    expect(groups.map((g) => g.doctorName)).toEqual(["Dr. Rao", "Dr. Iyer", "Unassigned"]);
+    expect(groups[0]!.items.map((a) => a.id)).toEqual(["a2", "a1"]);
+  });
+});
