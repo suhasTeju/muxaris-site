@@ -12,7 +12,7 @@ import { PROJECT, WEB_ORIGINS } from "./config.js";
 
 export interface AuthStackProps extends StackProps {
   googleClientId?: string | undefined;
-  googleClientSecret?: string | undefined;
+  googleSecretName?: string | undefined;
 }
 
 export class AuthStack extends Stack {
@@ -56,11 +56,13 @@ export class AuthStack extends Stack {
       cognito.UserPoolClientIdentityProvider.COGNITO,
     ];
     let google: cognito.UserPoolIdentityProviderGoogle | undefined;
-    if (props.googleClientId && props.googleClientSecret) {
+    if (props.googleClientId && props.googleSecretName) {
       google = new cognito.UserPoolIdentityProviderGoogle(this, "Google", {
         userPool: this.userPool,
         clientId: props.googleClientId,
-        clientSecretValue: SecretValue.unsafePlainText(props.googleClientSecret),
+        clientSecretValue: SecretValue.secretsManager(props.googleSecretName, {
+          jsonField: "clientSecret",
+        }),
         scopes: ["openid", "email", "profile"],
         attributeMapping: {
           email: cognito.ProviderAttribute.GOOGLE_EMAIL,

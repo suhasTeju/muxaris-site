@@ -2,21 +2,30 @@
 # scripts/bootstrap-aws.sh — one-time (idempotent) setup of the secondary account.
 # Usage: scripts/bootstrap-aws.sh            # bootstrap CDK + deploy MuxarisAuth, print env lines
 set -euo pipefail
+command -v jq >/dev/null || { echo "jq required"; exit 1; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-source "$ROOT/scripts/lib/aws-guard.sh"
 if [[ -f "$ROOT/.env" ]]; then set -a; source "$ROOT/.env"; set +a; fi
-# .env may override AWS_PROFILE; re-assert the guard values.
-export AWS_PROFILE="aws-secondary-account" AWS_REGION="ap-south-1"
+# Guard runs after .env so its exports and account check have the final say.
+source "$ROOT/scripts/lib/aws-guard.sh"
 
+if [[ -n "${GOOGLE_OAUTH_CLIENT_SECRET:-}" ]]; then
+  echo "→ upsert Google OAuth secret in Secrets Manager"
+  SECRET_JSON="$(jq -cn --arg s "$GOOGLE_OAUTH_CLIENT_SECRET" '{clientSecret:$s}')"
+  if ! aws secretsmanager create-secret --name muxaris/google-oauth --secret-string "$SECRET_JSON" >/dev/null 2>&1; then
+    aws secretsmanager put-secret-value --secret-id muxaris/google-oauth --secret-string "$SECRET_JSON" >/dev/null
+  fi
+fi
+
+OUT="$(mktemp)"
 cd "$ROOT/infra"
 echo "→ cdk bootstrap"
-npx cdk bootstrap "aws://005533348545/ap-south-1" --require-approval never
+npx cdk bootstrap "aws://005533348545/ap-south-1"
 echo "→ deploy MuxarisAuth"
-npx cdk deploy MuxarisAuth --require-approval never --outputs-file /tmp/muxaris-auth-outputs.json
+npx cdk deploy MuxarisAuth --require-approval never --outputs-file "$OUT"
 
-POOL=$(jq -r '.MuxarisAuth.UserPoolId' /tmp/muxaris-auth-outputs.json)
-CLIENT=$(jq -r '.MuxarisAuth.UserPoolClientId' /tmp/muxaris-auth-outputs.json)
-DOMAIN=$(jq -r '.MuxarisAuth.UserPoolDomain' /tmp/muxaris-auth-outputs.json)
+POOL=$(jq -r '.MuxarisAuth.UserPoolId' "$OUT")
+CLIENT=$(jq -r '.MuxarisAuth.UserPoolClientId' "$OUT")
+DOMAIN=$(jq -r '.MuxarisAuth.UserPoolDomain' "$OUT")
 cat <<EOT
 
 Add these to .env and to Netlify environment variables:

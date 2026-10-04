@@ -6,6 +6,6 @@ const app = new App();
 new AuthStack(app, "MuxarisAuth", {
   env: ENV,
   googleClientId: process.env.GOOGLE_OAUTH_CLIENT_ID || undefined,
-  googleClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || undefined,
+  googleSecretName: process.env.GOOGLE_OAUTH_CLIENT_ID ? "muxaris/google-oauth" : undefined,
   description: "Muxaris: Cognito user pool for the web app",
 });
