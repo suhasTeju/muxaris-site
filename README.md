@@ -13,14 +13,15 @@ This is an npm-workspaces monorepo.
 | `apps/web`             | Next.js app: marketing site, Cognito auth, onboarding, dashboard        |
 | `apps/api`             | Hono REST API (Cognito-authenticated routes)  |
 | `apps/voice-gateway`   | WebSocket voice session engine: Sarvam STT/TTS, Bedrock, recorder       |
-| `workers/post-call`    | Call summary, outcome and sentiment (local SQS runner and Lambda handler)         |
+| `workers/post-call`    | Call summary, outcome and sentiment, stale-call sweep and 90-day purge (local SQS runner and Lambda handler) |
 | `workers/notifier`     | Lambda: dispatches notifications from a queue (planned)                           |
 | `workers/reminders`    | Lambda (cron): finds appointments due for reminders (planned)                     |
 | `packages/db`          | Drizzle schema, migrations, demo seed, typed client                     |
 | `packages/core`        | Domain services: scheduling, auth helpers      |
+| `packages/storage`     | S3 blob store (presigned URLs) and SQS queue clients, with test fakes   |
 | `packages/shared`      | Zod schemas, API types, tool definitions, constants                     |
 | `packages/voice-sdk`   | Browser client: mic capture, playback, barge-in, events, React hook                 |
-| `infra`                | AWS CDK app. Phase 1 has the Auth stack (Cognito) only; the rest lands in Phase 5 |
+| `infra`                | AWS CDK app. Auth stack (Cognito) and Storage stack (S3, SQS); the rest lands in Phase 5 |
 
 ## Local setup
 
@@ -118,7 +119,7 @@ gateway are not deployed by this config; infra for them arrives in Phase 5.
 
 ### Post-call worker
 
-`workers/post-call` consumes the `call.completed` messages the voice gateway sends to SQS. For each call it reads the turns from Postgres, asks Amazon Nova Pro on Bedrock (`apac.amazon.nova-pro-v1:0`) for a summary of at most 60 words, sentiment, entities and an outcome refinement, writes them back through core services (a staff or booking outcome is never overwritten) and creates a callback row when the caller asked for one and a phone number is known. It also runs the stale-call sweep every minute. Env keys: `POST_CALL_QUEUE_URL` (required to start), `POST_CALL_MODEL_ID`, `AWS_REGION`, `DATABASE_URL`. `src/lambda.ts` exports the SQS and schedule handlers for Phase 5.
+`workers/post-call` consumes the `call.completed` messages the voice gateway sends to SQS. For each call it reads the turns from Postgres, asks Amazon Nova Pro on Bedrock (`apac.amazon.nova-pro-v1:0`) for a summary of at most 60 words, sentiment, entities and an outcome refinement, writes them back through core services (a staff or booking outcome is never overwritten) and creates a callback row when the caller asked for one and a phone number is known. It also runs the stale-call sweep and the 90-day retention purge every minute. Env keys: `POST_CALL_QUEUE_URL` (required to start), `POST_CALL_MODEL_ID`, `AWS_REGION`, `DATABASE_URL`. `src/lambda.ts` exports the SQS and schedule handlers for Phase 5.
 
 ### Phase 2: call recordings and summaries
 
@@ -132,7 +133,8 @@ post-call worker. Deploy the bucket and queue once with
 - `POST_CALL_MODEL_ID`: Bedrock model for the summary (default `apac.amazon.nova-pro-v1:0`)
 
 Run the worker locally with `npm run workers:dev`. Clinics can turn recording off in Settings
-(`settings.recordCalls`); the assistant's opening note says calls may be recorded and transcribed.
+(`settings.recordCalls`); the assistant's opening note always says calls are transcribed, and says
+"recorded" only when recording is on for the clinic and storage is configured.
 To check the whole pipeline against real providers, run
 `E2E_WITH_WORKER=1 E2E_EXPECT_SUMMARY=1 bash scripts/e2e-voice.sh`; it also checks that the
 presigned recording URL serves a WAV. See [Architecture](docs/ARCHITECTURE.md).
