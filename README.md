@@ -90,6 +90,20 @@ Only the `aws-secondary-account` profile is ever used; see `scripts/lib/aws-guar
 - `scripts/bootstrap-aws.sh`: deploys the Auth stack and prints the Cognito ids
 - `scripts/gen-assets.sh`: generates landing-page imagery (Azure gpt-image)
 - `scripts/gen-audio.sh`: generates greeting and sample-call audio (Sarvam)
+- `scripts/e2e-voice.sh`: E2E voice smoke test (see below)
+
+### E2E voice smoke
+
+    bash scripts/e2e-voice.sh        # needs Postgres up, .env with SARVAM_TTS_API_KEY, AWS secondary profile
+
+Starts a second api (4001) and voice-gateway (4101) with `AUTH_MODE=dev` (the dev stack on
+3000/4000/4100 is untouched), creates a fresh clinic with demo data, synthesises a spoken request
+("I want a teeth cleaning tomorrow afternoon") with Sarvam TTS, streams it to the gateway at
+real-time pace, answers the assistant's follow-ups (name, phone, confirm) with further synthetic
+speech, then checks that an `ai_call` appointment row exists. It prints the masked event stream and
+the speech-end to first-reply-audio latency, and exits 0 on success. Output (`e2e-events.log`,
+`e2e-reply.wav`, api/gateway logs) goes to `E2E_OUT_DIR` (default `$TMPDIR/muxaris-e2e`). Overrides:
+`E2E_LANGUAGE`, `E2E_UTTERANCE`, `E2E_API_URL`, `E2E_WS_URL`. Uses real providers and costs a little.
 
 ## Docs
 
