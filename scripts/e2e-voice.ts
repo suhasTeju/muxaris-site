@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- manual smoke script; API/gateway JSON is inspected loosely on purpose */
 /**
  * End-to-end voice smoke test against the real providers (Sarvam STT/TTS, Bedrock Nova).
  * Synthetic input only. Run through scripts/e2e-voice.sh (starts a second api + gateway).
@@ -125,7 +126,9 @@ async function main(): Promise<void> {
   const sub = `e2e-${Date.now()}`;
   const token = `dev:${sub}:${sub}@example.com`;
   const me = await api("/v1/me", token);
-  log(`/v1/me ok user=${me.user?.id ? "present" : "missing"} memberships=${me.memberships?.length}`);
+  log(
+    `/v1/me ok user=${me.user?.id ? "present" : "missing"} memberships=${me.memberships?.length}`,
+  );
   const created = await api("/v1/clinics", token, {
     method: "POST",
     body: JSON.stringify({ name: `E2E Clinic ${sub}`, city: "Bengaluru" }),
@@ -192,7 +195,9 @@ async function main(): Promise<void> {
         break;
       case "booking":
         bookingId = ev.appointmentId;
-        log(`booking id=${ev.appointmentId} doctor=${ev.doctorName} service=${ev.serviceName} at=${ev.startsAt}`);
+        log(
+          `booking id=${ev.appointmentId} doctor=${ev.doctorName} service=${ev.serviceName} at=${ev.startsAt}`,
+        );
         break;
       case "ended":
         ended = true;
@@ -316,7 +321,8 @@ async function main(): Promise<void> {
   const ai = (appts.appointments as any[]).filter((a) => a.source === "ai_call");
   const match = bookingId ? ai.find((a) => a.id === bookingId) : ai[0];
   log(`appointments in window: ${appts.appointments.length}, ai_call: ${ai.length}`);
-  if (match) log(`appointment FOUND id=${match.id} status=${match.status} startsAt=${match.startsAt}`);
+  if (match)
+    log(`appointment FOUND id=${match.id} status=${match.status} startsAt=${match.startsAt}`);
   log(`assistant turns: ${assistantTurns.length}; tools: ${toolSeen.join(", ") || "none"}`);
   if (latencies.length) log(`latencies ms: ${latencies.join(", ")}`);
   const ok = Boolean(match);
