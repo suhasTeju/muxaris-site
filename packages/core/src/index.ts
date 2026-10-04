@@ -6,3 +6,4 @@ export * from "./services/scheduling.js";
 export * from "./services/patients.js";
 export * from "./services/calls.js";
 export * from "./services/demo.js";
+export * from "./auth/verifier.js";

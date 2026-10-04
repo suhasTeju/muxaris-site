@@ -15,9 +15,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1146.0",
     "@date-fns/tz": "^1.5.0",
     "@muxaris/db": "*",
     "@muxaris/shared": "*",
+    "aws-jwt-verify": "^5.2.1",
     "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.3",
     "pg": "^8"

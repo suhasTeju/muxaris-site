@@ -49,10 +49,15 @@ export const workingHoursBody = z.object({
           startTime: timeStr,
           endTime: endTimeStr,
         })
-        .refine((h) => h.endTime === "00:00" || h.endTime === "24:00" || h.endTime > h.startTime, {
-          message: "endTime must be after startTime",
-          path: ["endTime"],
-        }),
+        .refine(
+          (h) =>
+            h.endTime === "24:00" ||
+            (h.endTime === "00:00" ? h.startTime !== "00:00" : h.endTime > h.startTime),
+          {
+            message: "endTime must be after startTime",
+            path: ["endTime"],
+          },
+        ),
     )
     .max(21),
 });

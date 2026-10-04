@@ -12,8 +12,11 @@
   },
   "dependencies": {
     "@hono/node-server": "^1",
+    "@hono/zod-validator": "^0.9.1",
+    "@muxaris/core": "^0.1.0",
     "@muxaris/db": "*",
     "@muxaris/shared": "*",
+    "drizzle-orm": "^0.45.3",
     "hono": "^4",
     "zod": "^4"
   },

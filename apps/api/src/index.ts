@@ -1,9 +1,25 @@
 import { serve } from "@hono/node-server";
+import { createDb } from "@muxaris/db";
+import { createCognitoVerifier, createDevVerifier } from "@muxaris/core";
 import { createApp } from "./app.js";
 import { loadEnv } from "./env.js";
 
 const env = loadEnv();
 if (env.provider === "mock")
   console.warn("SARVAM_TTS_API_KEY not set: running with mock voice providers");
-const app = createApp({ version: process.env.GIT_SHA || "dev", corsOrigins: env.corsOrigins });
+const { db } = createDb(env.databaseUrl);
+const verifier =
+  env.authMode === "dev"
+    ? createDevVerifier()
+    : createCognitoVerifier({
+        userPoolId: env.cognitoUserPoolId!,
+        clientId: env.cognitoClientId!,
+      });
+if (env.authMode === "dev") console.warn("AUTH_MODE=dev: accepting dev:<sub>:<email> tokens");
+const app = createApp({
+  version: process.env.GIT_SHA || "dev",
+  corsOrigins: env.corsOrigins,
+  db,
+  verifier,
+});
 serve({ fetch: app.fetch, port: env.port }, () => console.log(`api listening on :${env.port}`));

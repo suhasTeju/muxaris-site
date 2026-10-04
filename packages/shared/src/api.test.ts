@@ -64,6 +64,7 @@ describe("api bodies", () => {
     expect(workingHoursBody.safeParse(h(1, "09:00", "17:00")).success).toBe(true);
     expect(workingHoursBody.safeParse(h(1, "18:00", "24:00")).success).toBe(true);
     expect(workingHoursBody.safeParse(h(1, "18:00", "00:00")).success).toBe(true);
+    expect(workingHoursBody.safeParse(h(1, "00:00", "00:00")).success).toBe(false);
     expect(workingHoursBody.safeParse(h(7, "09:00", "17:00")).success).toBe(false);
     expect(workingHoursBody.safeParse(h(1, "9:00", "17:00")).success).toBe(false);
     expect(workingHoursBody.safeParse(h(1, "99:99", "17:00")).success).toBe(false);

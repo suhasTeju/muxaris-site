@@ -92,10 +92,27 @@ export async function getUserByCognitoSub(db: Db, sub: string) {
   return row ?? null;
 }
 
+/**
+ * Identity is keyed on `cognitoSub` only (never matched or merged by email). When `email` is
+ * undefined (e.g. unverified) the stored email is kept; a brand-new user then needs one.
+ */
 export async function upsertUser(
   db: Db,
-  input: { cognitoSub: string; email: string; name?: string },
+  input: { cognitoSub: string; email?: string | undefined; name?: string },
 ) {
+  if (!input.email) {
+    const existing = await getUserByCognitoSub(db, input.cognitoSub);
+    if (!existing) throw new CoreError("validation", "a verified email is required");
+    if (input.name && input.name !== existing.name) {
+      const [row] = await db
+        .update(users)
+        .set({ name: input.name })
+        .where(eq(users.cognitoSub, input.cognitoSub))
+        .returning();
+      return row!;
+    }
+    return existing;
+  }
   const [row] = await db
     .insert(users)
     .values({
