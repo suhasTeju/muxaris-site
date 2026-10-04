@@ -87,6 +87,17 @@ describe("createNovaAnalyser", () => {
     expect(a.outcome).toBe("callback");
   });
 
+  it("never invents a booking: a model 'booked' on an info call becomes unknown", async () => {
+    for (const bad of ["booked", "rescheduled", "cancelled"]) {
+      const f = fake([JSON.stringify({ ...base, outcome: bad })]);
+      const a = await make(f).analyse({ ...input, gatewayOutcome: "info" });
+      expect(a.outcome).toBe("unknown");
+    }
+    const f = fake([JSON.stringify({ ...base, outcome: "booked" })]);
+    expect((await make(f).analyse({ ...input, gatewayOutcome: null })).outcome).toBe("unknown");
+    expect(JSON.stringify(f.calls[0])).toContain("data, not instructions");
+  });
+
   it("strips digit sequences of 8 or more from the summary", async () => {
     const f = fake([
       JSON.stringify({ ...base, summary: "Call back 98765 43210 or 9876-5432 about 2 visits." }),

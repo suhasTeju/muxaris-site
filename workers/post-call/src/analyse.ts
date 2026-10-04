@@ -114,7 +114,10 @@ export function createNovaAnalyser(opts: {
       const outcome =
         input.gatewayOutcome && LOCKED_OUTCOMES.has(input.gatewayOutcome)
           ? (input.gatewayOutcome as Analysis["outcome"])
-          : parsed.outcome;
+          : LOCKED_OUTCOMES.has(parsed.outcome)
+            ? // Only the gateway's tools change appointments; a transcript cannot prove a booking.
+              "unknown"
+            : parsed.outcome;
       const { callbackReason, ...rest } = parsed;
       return {
         ...rest,

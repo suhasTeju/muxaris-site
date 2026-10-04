@@ -1,5 +1,5 @@
 import { createDb } from "@muxaris/db";
-import { sweepStaleCalls } from "@muxaris/core";
+import { purgeExpiredCalls, sweepStaleCalls } from "@muxaris/core";
 import { postCallMessageSchema } from "@muxaris/shared";
 import { createNovaAnalyser } from "./analyse.js";
 import { loadEnv } from "./env.js";
@@ -41,5 +41,10 @@ export const handler = async (event: {
   return { batchItemFailures };
 };
 
-/** For a Phase 5 EventBridge schedule. */
-export const sweepHandler = async () => sweepStaleCalls(getDeps().db);
+/** For a Phase 5 EventBridge schedule: stale-call sweep plus the 90-day retention purge. */
+export const sweepHandler = async () => {
+  const { db } = getDeps();
+  const swept = await sweepStaleCalls(db);
+  const { purged } = await purgeExpiredCalls(db);
+  return { ...swept, purged };
+};
