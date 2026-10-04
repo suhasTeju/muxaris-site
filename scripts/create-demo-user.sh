@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Create (or reset) a confirmed Cognito user for local/demo sign-in.
 # Usage: bash scripts/create-demo-user.sh <email>
-# The password is read from the terminal (never echoed, never logged) and set as permanent,
+# The password is read from the terminal (never echoed, never logged) or from DEMO_PASSWORD and set as permanent,
 # so no verification email is needed. Uses the secondary AWS account only (aws-guard).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,7 +12,14 @@ POOL="$(grep -E '^COGNITO_USER_POOL_ID=' "$ROOT/.env" | cut -d= -f2-)"
 [[ -n "$POOL" ]] || { echo "COGNITO_USER_POOL_ID is empty in .env" >&2; exit 1; }
 EMAIL="${1:-}"
 [[ "$EMAIL" == *@* ]] || { echo "usage: $0 <email>" >&2; exit 1; }
-read -r -s -p "Password for $EMAIL (min 8 chars, upper, lower, number): " PASSWORD; echo
+if [[ -n "${DEMO_PASSWORD:-}" ]]; then
+  PASSWORD="$DEMO_PASSWORD"
+elif [[ -t 0 ]]; then
+  read -r -s -p "Password for $EMAIL (min 8 chars, upper, lower, number): " PASSWORD; echo
+else
+  echo "no terminal for the password prompt: run this in an interactive shell, or set DEMO_PASSWORD in the environment" >&2
+  exit 1
+fi
 [[ ${#PASSWORD} -ge 8 ]] || { echo "password too short" >&2; exit 1; }
 if ! aws cognito-idp admin-get-user --user-pool-id "$POOL" --username "$EMAIL" >/dev/null 2>&1; then
   aws cognito-idp admin-create-user --user-pool-id "$POOL" --username "$EMAIL" \
