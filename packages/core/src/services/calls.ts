@@ -199,6 +199,13 @@ async function loadCall(db: Db, clinicId: string, callId: string): Promise<CallR
   return row;
 }
 
+/** Callback as exposed by core reads: the raw phone never leaves this module. */
+export type CallbackView = Omit<CallbackRow, "phone"> & { phoneMasked: string };
+export function toCallbackView(row: CallbackRow): CallbackView {
+  const { phone, ...rest } = row;
+  return { ...rest, phoneMasked: maskPhone(phone) };
+}
+
 export async function getCall(db: Db, clinicId: string, callId: string) {
   const call = await loadCall(db, clinicId, callId);
   const turns = await db
@@ -211,7 +218,7 @@ export async function getCall(db: Db, clinicId: string, callId: string) {
     .from(callbacks)
     .where(and(eq(callbacks.callId, callId), eq(callbacks.clinicId, clinicId)))
     .orderBy(asc(callbacks.createdAt));
-  return { call, turns, callbacks: cbs };
+  return { call, turns, callbacks: cbs.map(toCallbackView) };
 }
 
 export async function setCallRecording(
@@ -252,7 +259,7 @@ export async function updateCallAnalysis(
     model: string;
   },
 ): Promise<{ applied: boolean }> {
-  const refinable = sql`outcome_source IS DISTINCT FROM 'staff' AND (outcome IS NULL OR outcome IN ('info','unknown','abandoned'))`;
+  const refinable = sql`(outcome_source IS NULL OR outcome_source = 'gateway') AND (outcome IS NULL OR outcome IN ('info','unknown','abandoned'))`;
   const rows = await db
     .update(calls)
     .set({
@@ -343,7 +350,7 @@ export async function listCallbacks(
   clinicId: string,
   f: { status: "open" | "done" | "all"; callId?: string; limit: number; offset: number },
 ): Promise<{
-  callbacks: Array<Omit<CallbackRow, "phone"> & { phoneMasked: string }>;
+  callbacks: CallbackView[];
   total: number;
 }> {
   const where = and(
@@ -363,10 +370,7 @@ export async function listCallbacks(
     .from(callbacks)
     .where(where);
   return {
-    callbacks: rows.map(({ phone, ...rest }) => ({
-      ...rest,
-      phoneMasked: maskPhone(phone),
-    })),
+    callbacks: rows.map(toCallbackView),
     total: t?.n ?? 0,
   };
 }
@@ -380,7 +384,7 @@ export async function updateCallback(
     assignedTo?: string | null;
     note?: string;
   },
-): Promise<CallbackRow> {
+): Promise<CallbackView> {
   const [row] = await db
     .update(callbacks)
     .set({
@@ -393,7 +397,7 @@ export async function updateCallback(
     .where(and(eq(callbacks.id, input.callbackId), eq(callbacks.clinicId, input.clinicId)))
     .returning();
   if (!row) throw new CoreError("not_found", "callback not found");
-  return row;
+  return toCallbackView(row);
 }
 
 export async function getOverviewStats(

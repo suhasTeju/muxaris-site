@@ -107,6 +107,8 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
     const r = await getCall(db, a.clinic.id, c.id);
     expect(r.turns.map((t) => t.seq)).toEqual([1, 2]);
     expect(r.callbacks).toHaveLength(1);
+    expect(r.callbacks[0]).toHaveProperty("phoneMasked");
+    expect(r.callbacks[0]).not.toHaveProperty("phone");
     await expect(getCall(db, b.clinic.id, c.id)).rejects.toMatchObject({ code: "not_found" });
   });
 
@@ -184,6 +186,20 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
       outcomeSource: "staff",
       summary: "sc",
     });
+
+    // A second worker run must not overwrite an already worker-refined outcome.
+    await updateCallAnalysis(db, {
+      clinicId: a.clinic.id,
+      callId: A,
+      summary: "sa2",
+      sentiment: "neutral",
+      analysis: analysis(),
+      outcome: "handoff",
+      model: "m",
+    });
+    const ca2 = (await getCall(db, a.clinic.id, A)).call;
+    expect(ca2).toMatchObject({ outcome: "callback", outcomeSource: "worker", summary: "sa2" });
+    expect(ca2.analysedAt!.getTime()).toBeGreaterThanOrEqual(ca.analysedAt!.getTime());
 
     const other = await updateCallAnalysis(db, {
       clinicId: b.clinic.id,
@@ -278,6 +294,8 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
         status: "done",
         note: "called",
       });
+      expect(done).toHaveProperty("phoneMasked");
+      expect(done).not.toHaveProperty("phone");
       expect(done.status).toBe("done");
       expect(done.doneAt).toBeInstanceOf(Date);
       expect(done.note).toBe("called");
