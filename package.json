@@ -14,7 +14,7 @@
     "infra"
   ],
   "scripts": {
-    "build:packages": "npm run build -w @muxaris/shared && npm run build -w @muxaris/db",
+    "build:packages": "npm run build -w @muxaris/shared && npm run build -w @muxaris/db && npm run build -w @muxaris/core",
     "build": "npm run build:packages && npm run build --if-present -w @muxaris/api -w @muxaris/voice-gateway -w @muxaris/web -w @muxaris/infra",
     "pretypecheck": "npm run build:packages",
     "typecheck": "npm run typecheck --workspaces --if-present",
