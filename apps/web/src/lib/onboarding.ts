@@ -1,5 +1,4 @@
 import type { BulbulV3Speaker, LanguageCode } from "@muxaris/shared";
-import { CLINIC_COOKIE } from "./clinic";
 
 export const STEPS = ["basics", "doctors", "services", "assistant", "review", "done"] as const;
 export type OnboardingStep = (typeof STEPS)[number];
@@ -36,10 +35,7 @@ export function resumeStep(serverStep: unknown, hasClinic: boolean): OnboardingS
   return isStep(serverStep) ? serverStep : "basics";
 }
 
-export function writeActiveClinicCookie(id: string) {
-  const secure = location.protocol === "https:" ? "; Secure" : "";
-  document.cookie = `${CLINIC_COOKIE}=${encodeURIComponent(id)}; Path=/; SameSite=Lax; max-age=31536000${secure}`;
-}
+export { writeClinicCookie as writeActiveClinicCookie } from "./clinic";
 
 // ---- Greetings ----
 

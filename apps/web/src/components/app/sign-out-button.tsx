@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { signOut } from "aws-amplify/auth";
-import { CLINIC_COOKIE } from "@/lib/clinic";
+import { clearClinicCookie } from "@/lib/clinic";
+import { clearClientStore } from "@/lib/client-store";
 
 export function SignOutButton() {
   const router = useRouter();
@@ -11,9 +12,17 @@ export function SignOutButton() {
   async function onClick() {
     setBusy(true);
     try {
-      await signOut();
+      // Global sign-out revokes the refresh token server-side; fall back to local if that fails.
+      try {
+        await signOut({ global: true });
+      } catch {
+        await signOut();
+      }
+    } catch {
+      /* the local session is cleared below regardless */
     } finally {
-      document.cookie = `${CLINIC_COOKIE}=; path=/; max-age=0; samesite=lax`;
+      clearClinicCookie();
+      clearClientStore();
       router.replace("/sign-in");
       router.refresh();
     }

@@ -21,13 +21,20 @@ export function AppointmentsView() {
 
 function AppointmentsInner() {
   const api = useApi();
-  const { clinic, tz, failed: profileFailed, retry: retryProfile } = useClinicProfile();
+  const {
+    clinic,
+    tz,
+    failed: profileFailed,
+    failure: profileFailure,
+    retry: retryProfile,
+  } = useClinicProfile();
   const ready = clinic !== null;
   const [mode, setMode] = useState<Mode>("day");
   // null means "today in the clinic's timezone".
   const [picked, setPicked] = useState<string | null>(null);
   const date = picked ?? localDateKey(new Date(), tz);
-  const [data, setData] = useState<{
+  const [loaded, setLoaded] = useState<{
+    key: string;
     appointments: Appointment[];
     doctors: Doctor[];
     services: Service[];
@@ -35,6 +42,9 @@ function AppointmentsInner() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const rangeKey = `${date}|${mode}|${tz}`;
+  // Rows from another date or mode must not sit under the new header while the response is in flight.
+  const data = loaded && loaded.key === rangeKey ? loaded : null;
   const [creating, setCreating] = useState(false);
   const [cancelling, setCancelling] = useState<Appointment | null>(null);
   const [rescheduling, setRescheduling] = useState<Appointment | null>(null);
@@ -53,7 +63,8 @@ function AppointmentsInner() {
     ])
       .then(([a, d, s, p]) => {
         if (!live) return;
-        setData({
+        setLoaded({
+          key: rangeKey,
           appointments: a.appointments,
           doctors: d.doctors,
           services: s.services,
@@ -66,7 +77,7 @@ function AppointmentsInner() {
     return () => {
       live = false;
     };
-  }, [api, date, mode, tz, ready, nonce]);
+  }, [api, date, mode, tz, ready, nonce, rangeKey]);
 
   const reload = () => setNonce((n) => n + 1);
 
@@ -152,7 +163,7 @@ function AppointmentsInner() {
 
       {profileFailed && !ready ? (
         <p role="alert" className="text-danger">
-          Could not load the clinic profile.{" "}
+          {profileFailure ?? "Could not load the clinic profile."}{" "}
           <button type="button" className="underline" onClick={retryProfile}>
             Retry
           </button>

@@ -30,7 +30,13 @@ export function formatRemaining(seconds: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/** Keyed by clinic so switching clinics mid-call ends the live call instead of orphaning it. */
 export function TryCall() {
+  const { activeClinic } = useClinic();
+  return <TryCallInner key={activeClinic.id} />;
+}
+
+function TryCallInner() {
   const { activeClinic } = useClinic();
   const { clinic, tz } = useClinicProfile();
   const languages = useMemo(
@@ -56,6 +62,8 @@ export function TryCall() {
     language,
   });
   const { phase, state, lines, tools, booking, secondsRemaining, error, start, stop } = call;
+  // errorCode ships with the voice SDK; wording is the fallback when it is absent.
+  const errorCode = (call as { errorCode?: string | null }).errorCode ?? null;
 
   // Start only after the freshly fetched token has been rendered into the hook's options.
   useEffect(() => {
@@ -114,7 +122,7 @@ export function TryCall() {
             body: "Check your connection and try again.",
           }
         : failure !== null
-          ? CALL_ERROR_COPY[classifyCallError(failure)]
+          ? CALL_ERROR_COPY[classifyCallError(failure, errorCode)]
           : null;
 
   return (
@@ -200,7 +208,7 @@ export function TryCall() {
               <p className="mt-1 text-sm">{errorCopy.body}</p>
               {startError !== "network" &&
                 failure !== null &&
-                classifyCallError(failure) === "auth_failed" && (
+                classifyCallError(failure, errorCode) === "auth_failed" && (
                   <a href="/sign-in?next=/app/assistant/try" className={`${ghostBtn} mt-3`}>
                     Sign in again
                   </a>

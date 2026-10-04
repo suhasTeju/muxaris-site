@@ -89,6 +89,26 @@ describe("AppointmentsView", () => {
     expect(screen.getByText(/Cleaning B/)).toBeTruthy();
   });
 
+  it("hides the previous range's rows while a new date is loading", async () => {
+    const calls: Deferred<unknown>[] = [];
+    state.api.mockImplementation((path: string) => {
+      if (path.startsWith("/v1/appointments?")) {
+        const d = defer<unknown>();
+        calls.push(d);
+        return d.promise;
+      }
+      return Promise.resolve(catalog(path));
+    });
+    render(<AppointmentsView />);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await act(async () => calls[0]!.resolve({ appointments: [appt("a1", "sA")] }));
+    await screen.findByText(/Cleaning A/);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(screen.queryByText(/Cleaning A/)).toBeNull();
+    expect(screen.getByText("Loading appointments…")).toBeTruthy();
+  });
+
   it("does not fetch until the clinic profile has loaded", async () => {
     state.profileReady = false;
     state.api.mockImplementation((path: string) =>

@@ -109,6 +109,7 @@ export function Wizard({
 
   async function go(to: OnboardingStep, id = clinicId) {
     await callFor(id)("/v1/onboarding/step", { method: "PUT", body: { step: to } });
+    setNavError(null); // a stale Back/Edit error must not outlive a later success
     setStep(to);
     window.scrollTo?.({ top: 0 });
   }
@@ -148,14 +149,19 @@ export function Wizard({
     const info = toInfo(res.clinic);
     if (!info.languages.length) info.languages = [...SUNRISE_BASICS.languages];
     await activate(info);
-    setDemoFailed(true);
     await loadDemo(info.id);
   }
 
   async function loadDemo(id: string) {
-    await callFor(id)("/v1/demo/load", { method: "POST" });
-    await go("review", id);
-    setDemoFailed(false);
+    try {
+      await callFor(id)("/v1/demo/load", { method: "POST" });
+      await go("review", id);
+      setDemoFailed(false);
+    } catch (e) {
+      // Only a failed load (never the first, in-flight one) shows the retry panel.
+      setDemoFailed(true);
+      throw e;
+    }
   }
 
   async function onFinish() {

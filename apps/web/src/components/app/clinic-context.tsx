@@ -16,11 +16,7 @@ interface ClinicCtx {
 }
 
 const Ctx = createContext<ClinicCtx | null>(null);
-import { CLINIC_COOKIE as COOKIE } from "@/lib/clinic";
-
-export function writeClinicCookie(id: string) {
-  document.cookie = `${COOKIE}=${encodeURIComponent(id)}; path=/; max-age=31536000; samesite=lax`;
-}
+import { writeClinicCookie } from "@/lib/clinic";
 
 export function ClinicProvider({
   clinics,

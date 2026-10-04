@@ -1,13 +1,35 @@
 export type CallErrorKind = "mic" | "auth_failed" | "busy" | "quota" | "provider" | "generic";
 
+/** Error codes the voice SDK attaches to failures (`@muxaris/voice-sdk` errorCode). */
+export type CallErrorCode = "auth" | "busy" | "quota" | "unsupported" | "network" | "internal";
+
+const MIC_WORDING =
+  /microphone|notallowed|permission|denied|notfound|requested device|getusermedia/;
+
 /**
- * The voice SDK surfaces only the gateway's error message, so the kind is recovered from its
- * wording (messages are defined in apps/voice-gateway) plus browser microphone failures.
+ * Prefers the SDK's `errorCode`; falls back to the gateway's wording (messages are defined in
+ * apps/voice-gateway) and browser microphone failures when no code is present.
  */
-export function classifyCallError(message: string | null | undefined): CallErrorKind {
+export function classifyCallError(
+  message: string | null | undefined,
+  code?: string | null,
+): CallErrorKind {
   const m = (message ?? "").toLowerCase();
-  if (/microphone|notallowed|permission|denied|notfound|requested device|getusermedia/.test(m))
-    return "mic";
+  switch (code) {
+    case "auth":
+      return "auth_failed";
+    case "busy":
+      return "busy";
+    case "quota":
+      return "quota";
+    case "internal":
+      return "provider";
+    case "network":
+      return "generic";
+    case "unsupported":
+      return MIC_WORDING.test(m) ? "mic" : "generic";
+  }
+  if (MIC_WORDING.test(m)) return "mic";
   if (/provider|service unavailable|unavailable/.test(m)) return "provider";
   if (/concurrent|busy/.test(m)) return "busy";
   if (/quota|minutes|exhausted/.test(m)) return "quota";

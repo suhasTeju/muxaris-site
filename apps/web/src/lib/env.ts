@@ -11,7 +11,7 @@ const raw = (): RawEnv => ({
   voiceWsUrl: process.env.NEXT_PUBLIC_VOICE_WS_URL,
 });
 
-const LOCAL_HOSTS = ["localhost", "127.0.0.1"];
+const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]", "::1", "0.0.0.0"];
 
 /**
  * Throws a clear Error when a production browser session (not on localhost) is missing

@@ -125,4 +125,52 @@ describe("Wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/Could not save/));
   });
+
+  it("does not show the demo-failed panel while the first demo load is still in flight", async () => {
+    let release!: () => void;
+    setApi({
+      "POST /v1/demo/load": () =>
+        new Promise((res) => {
+          release = () => res({ ok: true });
+        }),
+    });
+    render(<Wizard initialClinic={null} cookieStale={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Load demo clinic" }));
+    await waitFor(() => expect(calls).toContain("POST /v1/demo/load"));
+    expect(screen.queryByRole("button", { name: "Retry loading demo data" })).toBeNull();
+    expect(screen.queryByText(/did not finish loading/)).toBeNull();
+    release();
+    await heading("Ready to go");
+  });
+
+  it("moves focus to the new step heading when the step changes", async () => {
+    setApi();
+    render(<Wizard initialClinic={null} cookieStale={false} />);
+    fireEvent.change(screen.getByLabelText("Clinic name"), { target: { value: "Test Clinic" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const h1 = await heading("Who sees patients?");
+    await waitFor(() => expect(document.activeElement).toBe(h1));
+  });
+
+  it("clears a stale Back error after a later step change succeeds", async () => {
+    let failNext = true;
+    setApi({
+      "GET /v1/onboarding": { step: "doctors" },
+      "GET /v1/clinics/c1": { clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN"] } },
+      "PUT /v1/onboarding/step": () => {
+        if (failNext) {
+          failNext = false;
+          throw new ApiError(500, "x", "Could not save");
+        }
+        return {};
+      },
+    });
+    render(<Wizard initialClinic={{ id: "c1", name: "Test Clinic" }} cookieStale={false} />);
+    await heading("Who sees patients?");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/Could not save/));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await heading("Tell us about your clinic");
+    expect(screen.queryByText(/Could not save/)).toBeNull();
+  });
 });

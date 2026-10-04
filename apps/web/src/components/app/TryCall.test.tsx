@@ -178,4 +178,10 @@ describe("TryCall", () => {
     expect(getAccessToken).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
+
+  it("classifies a failure by the SDK errorCode before its wording", () => {
+    hook.value = { ...base, phase: "error", error: "something opaque", errorCode: "quota" };
+    render(<TryCall />);
+    expect(screen.getByRole("alert").textContent).toMatch(/Monthly call minutes used up/);
+  });
 });
