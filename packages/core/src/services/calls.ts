@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { schema, newId, type Db } from "@muxaris/db";
 import { maskPhone } from "@muxaris/shared";
 import { CoreError } from "./errors.js";
@@ -54,6 +54,8 @@ export async function appendTurn(
     toolArgs?: unknown;
     toolResult?: unknown;
     latencyMs?: number;
+    /** When the turn began on the call timeline (speech start / first audio / tool start). */
+    startedAt?: Date;
   },
 ) {
   await assertCall(db, input.clinicId, input.callId);
@@ -70,6 +72,7 @@ export async function appendTurn(
       toolArgs: input.toolArgs ?? null,
       toolResult: input.toolResult ?? null,
       latencyMs: input.latencyMs ?? null,
+      ...(input.startedAt ? { startedAt: input.startedAt } : {}),
     })
     .onConflictDoNothing({ target: [callTurns.callId, callTurns.seq] })
     .returning();
@@ -88,8 +91,21 @@ export async function finishCall(
     durationS: number;
     languageDetected?: string;
     metrics?: Record<string, number>;
+    /**
+     * When the gateway's recorder timeline began. Stored as `metrics.recorderT0Ms`, its offset
+     * from the call's start, so consumers can align turn times with the recording.
+     */
+    recorderStartedAt?: Date;
   },
 ) {
+  const metrics =
+    input.metrics || input.recorderStartedAt
+      ? sql`${JSON.stringify(input.metrics ?? {})}::jsonb${
+          input.recorderStartedAt
+            ? sql` || jsonb_build_object('recorderT0Ms', round(extract(epoch FROM (${input.recorderStartedAt.toISOString()}::timestamptz - ${calls.startedAt})) * 1000)::int)`
+            : sql``
+        }`
+      : undefined;
   const [row] = await db
     .update(calls)
     .set({
@@ -99,7 +115,7 @@ export async function finishCall(
       durationS: input.durationS,
       endedAt: new Date(),
       ...(input.languageDetected ? { languageDetected: input.languageDetected } : {}),
-      ...(input.metrics ? { metrics: input.metrics } : {}),
+      ...(metrics ? { metrics } : {}),
     })
     .where(
       and(
@@ -243,6 +259,8 @@ export async function setCallRecording(
   if (rows.length === 0) throw new CoreError("not_found", "call not found");
 }
 
+const GATEWAY_ONLY_OUTCOMES: CallOutcome[] = ["booked", "rescheduled", "cancelled"];
+
 /**
  * Writes the post-call analysis. The outcome is refined only when it is still the gateway's weak
  * guess (null/info/unknown/abandoned) and never when staff edited it.
@@ -259,6 +277,10 @@ export async function updateCallAnalysis(
     model: string;
   },
 ): Promise<{ applied: boolean }> {
+  // The worker only reads a transcript; it cannot create or undo a state change, so it may never
+  // move a call to booked/rescheduled/cancelled (only the gateway's tools do).
+  const outcome =
+    input.outcome && !GATEWAY_ONLY_OUTCOMES.includes(input.outcome) ? input.outcome : undefined;
   const refinable = sql`(outcome_source IS NULL OR outcome_source = 'gateway') AND (outcome IS NULL OR outcome IN ('info','unknown','abandoned'))`;
   const rows = await db
     .update(calls)
@@ -267,9 +289,9 @@ export async function updateCallAnalysis(
       sentiment: input.sentiment,
       analysis: { ...input.analysis, model: input.model },
       analysedAt: new Date(),
-      ...(input.outcome
+      ...(outcome
         ? {
-            outcome: sql`CASE WHEN ${refinable} THEN ${input.outcome}::call_outcome ELSE outcome END`,
+            outcome: sql`CASE WHEN ${refinable} THEN ${outcome}::call_outcome ELSE outcome END`,
             outcomeSource: sql`CASE WHEN ${refinable} THEN 'worker' ELSE outcome_source END`,
           }
         : {}),
@@ -345,6 +367,9 @@ export async function getCallTranscript(
   callId: string,
 ): Promise<TranscriptJson> {
   const { call, turns } = await getCall(db, clinicId, callId);
+  // Turn times are stamped on the call clock; the recording starts `recorderT0Ms` after it.
+  const origin = call.startedAt.getTime() + (call.metrics["recorderT0Ms"] ?? 0);
+  let prev = 0;
   return {
     callId: call.id,
     clinicId: call.clinicId,
@@ -356,7 +381,8 @@ export async function getCallTranscript(
       role: t.role,
       ...(t.text ? { text: t.text } : {}),
       ...(t.toolName ? { toolName: t.toolName } : {}),
-      offsetMs: t.startedAt.getTime() - call.startedAt.getTime(),
+      // Never negative, never going backwards in seq order.
+      offsetMs: (prev = Math.max(prev, t.startedAt.getTime() - origin)),
     })),
   };
 }
@@ -459,6 +485,8 @@ export async function getOverviewStats(
   };
 }
 
+const MAX_CALL_S = 1200;
+
 /** Maintenance sweep run by the worker; deliberately not clinic-scoped. */
 export async function sweepStaleCalls(
   db: Db,
@@ -477,7 +505,8 @@ export async function sweepStaleCalls(
       outcome: sql`COALESCE(${calls.outcome}, 'abandoned'::call_outcome)`,
       outcomeSource: sql`COALESCE(${calls.outcomeSource}, 'gateway')`,
       endedAt: sql`COALESCE(${calls.endedAt}, ${now.toISOString()}::timestamptz)`,
-      durationS: sql`COALESCE(${calls.durationS}, EXTRACT(EPOCH FROM (${now.toISOString()}::timestamptz - ${calls.startedAt}))::int)`,
+      // A swept call really ended long ago; never record more than the maximum call length.
+      durationS: sql`COALESCE(${calls.durationS}, LEAST(${MAX_CALL_S}, EXTRACT(EPOCH FROM (${now.toISOString()}::timestamptz - ${calls.startedAt}))::int))`,
     })
     .where(
       and(
@@ -498,4 +527,50 @@ export async function sweepStaleCalls(
     )
     .returning({ id: calls.id });
   return { abandoned: abandoned.length, recordingsFailed: failed.length };
+}
+
+/**
+ * Retention: deletes transcript text, tool payloads, summary and recording references of calls
+ * that ended more than `retentionDays` ago (the recording objects expire via the bucket's
+ * lifecycle rule). Maintenance job, deliberately not clinic-scoped; idempotent via
+ * `metrics.purgedAt`. Handles up to 500 calls per run.
+ */
+export async function purgeExpiredCalls(
+  db: Db,
+  opts: { now?: Date; retentionDays?: number } = {},
+): Promise<{ purged: number }> {
+  const now = opts.now ?? new Date();
+  const cutoff = new Date(now.getTime() - (opts.retentionDays ?? 90) * 86_400_000);
+  return db.transaction(async (tx) => {
+    const due = await tx
+      .select({ id: calls.id })
+      .from(calls)
+      .where(
+        and(
+          sql`${calls.endedAt} IS NOT NULL`,
+          lt(calls.endedAt, cutoff),
+          sql`NOT (${calls.metrics} ? 'purgedAt')`,
+        ),
+      )
+      .limit(500)
+      .for("update", { skipLocked: true });
+    if (due.length === 0) return { purged: 0 };
+    const ids = due.map((d) => d.id);
+    await tx
+      .update(callTurns)
+      .set({ text: null, toolArgs: null, toolResult: null })
+      .where(inArray(callTurns.callId, ids));
+    await tx
+      .update(calls)
+      .set({
+        summary: null,
+        analysis: sql`jsonb_strip_nulls(jsonb_build_object('model', ${calls.analysis}->>'model', 'purged', true, 'entities', '{}'::jsonb, 'needsCallback', false))`,
+        recordingS3Key: null,
+        transcriptS3Key: null,
+        recordingStatus: "none",
+        metrics: sql`${calls.metrics} || jsonb_build_object('purgedAt', ${now.getTime()}::bigint)`,
+      })
+      .where(inArray(calls.id, ids));
+    return { purged: ids.length };
+  });
 }

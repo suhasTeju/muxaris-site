@@ -516,6 +516,45 @@ afterAll(async () => {
     await session.recorder!.discard();
   });
 
+  it("persists turn start times from the speech/audio timeline, not the insert time", async () => {
+    const tts = new FakeTts({ chunks: 3, delayMs: 15 });
+    const { transport, stt, session, callId } = await setup({
+      llm: new FakeLlm({}, "Here is the answer."),
+      tts,
+      recordCalls: true,
+    });
+    const audioAt: number[] = [];
+    const orig = transport.sendAudio.bind(transport);
+    transport.sendAudio = (b: Buffer) => {
+      audioAt.push(Date.now());
+      orig(b);
+    };
+    const tSpeech = Date.now();
+    stt.push({ type: "speech_start" });
+    await sleep(60);
+    stt.push({ type: "speech_end" });
+    const tFinal = Date.now();
+    stt.push({ type: "transcript", text: "what are your hours", language: "en-IN" });
+    await waitFor(() => transport.ofType("state").at(-1)?.state === "listening", 4000);
+    await waitFor(() => audioAt.some((t) => t >= tFinal), 4000, "reply audio");
+    await session.end("caller");
+    const rows = await db
+      .select()
+      .from(schema.callTurns)
+      .where(eq(schema.callTurns.callId, callId))
+      .orderBy(schema.callTurns.seq);
+    const user = rows.find((r) => r.role === "user")!;
+    expect(user.startedAt.getTime()).toBeGreaterThanOrEqual(tSpeech);
+    expect(user.startedAt.getTime()).toBeLessThanOrEqual(tFinal);
+    const reply = rows.find((r) => r.role === "assistant" && r.seq > user.seq)!;
+    const firstReplyAudio = audioAt.find((t) => t >= tFinal)!;
+    expect(reply.startedAt.getTime()).toBeGreaterThanOrEqual(tFinal);
+    expect(reply.startedAt.getTime()).toBeLessThanOrEqual(firstReplyAudio);
+    const [call] = await db.select().from(schema.calls).where(eq(schema.calls.id, callId));
+    expect(typeof call!.metrics["recorderT0Ms"]).toBe("number");
+    await session.recorder!.discard();
+  });
+
   it("recorder unavailable: session still starts with the transcription-only disclosure", async () => {
     const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");

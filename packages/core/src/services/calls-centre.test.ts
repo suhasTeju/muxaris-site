@@ -12,6 +12,7 @@ import {
   listCallbacks,
   listCalls,
   markCallAnalysed,
+  purgeExpiredCalls,
   setCallOutcomeByStaff,
   setCallRecording,
   sweepStaleCalls,
@@ -390,7 +391,7 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
         outcomeSource: "gateway",
       });
       expect(o.endedAt).not.toBeNull();
-      expect(o.durationS).toBeGreaterThanOrEqual(31 * 60);
+      expect(o.durationS).toBe(1200); // capped at the maximum call length
       expect((await getCall(db, t.clinic.id, newC.id)).call.status).toBe("in_progress");
     } finally {
       await t.cleanup();
@@ -422,6 +423,150 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
       expect(r.recordingsFailed).toBeGreaterThanOrEqual(1);
       expect((await getCall(db, t.clinic.id, stale)).call.recordingStatus).toBe("failed");
       expect((await getCall(db, t.clinic.id, fresh)).call.recordingStatus).toBe("pending");
+    } finally {
+      await t.cleanup();
+    }
+  });
+  it("updateCallAnalysis never lets the worker invent a booking, reschedule or cancellation", async () => {
+    for (const bad of ["booked", "rescheduled", "cancelled"] as const) {
+      const id = await finished(a.clinic.id, "info");
+      const r = await updateCallAnalysis(db, {
+        clinicId: a.clinic.id,
+        callId: id,
+        summary: "s",
+        sentiment: "neutral",
+        analysis: analysis(),
+        outcome: bad,
+        model: "m",
+      });
+      expect(r.applied).toBe(true);
+      expect((await getCall(db, a.clinic.id, id)).call).toMatchObject({
+        outcome: "info",
+        outcomeSource: "gateway",
+        summary: "s",
+      });
+    }
+  });
+
+  it("getCallTranscript offsets are never negative, monotonic in seq, and honour recorderT0Ms", async () => {
+    const c = await createCall(db, { clinicId: a.clinic.id, channel: "browser" });
+    const t0 = c.startedAt.getTime();
+    const at = (ms: number) => new Date(t0 + ms);
+    // Stamped out of order on purpose (an assistant row persisted after a later tool row).
+    const stamps = [500, 4000, 3000, 6000];
+    for (const [i, ms] of stamps.entries()) {
+      await appendTurn(db, {
+        callId: c.id,
+        clinicId: a.clinic.id,
+        seq: i,
+        role: i === 1 ? "tool" : "user",
+        text: i === 1 ? "" : "x",
+        startedAt: at(ms),
+      });
+    }
+    await finishCall(db, {
+      callId: c.id,
+      clinicId: a.clinic.id,
+      status: "completed",
+      durationS: 7,
+      metrics: { userTurns: 3 },
+      recorderStartedAt: at(1000),
+    });
+    const t = await getCallTranscript(db, a.clinic.id, c.id);
+    const offs = t.turns.map((x) => x.offsetMs);
+    // The DB keeps microseconds, JS only milliseconds: allow 1 ms of rounding.
+    [0, 3000, 3000, 5000].forEach((want, i) =>
+      expect(Math.abs(offs[i]! - want)).toBeLessThanOrEqual(1),
+    );
+    expect(offs.every((o, i) => o >= 0 && (i === 0 || o >= offs[i - 1]!))).toBe(true);
+    const { call } = await getCall(db, a.clinic.id, c.id);
+    expect(call.metrics).toMatchObject({ userTurns: 3 });
+    expect(Math.abs(call.metrics["recorderT0Ms"]! - 1000)).toBeLessThanOrEqual(1);
+  });
+
+  it("sweep caps the recorded duration at the maximum call length", async () => {
+    const t = await makeTestClinic(db, "cc-sweep3");
+    try {
+      const now = new Date();
+      const c = await createCall(db, { clinicId: t.clinic.id, channel: "phone" });
+      await db
+        .update(schema.calls)
+        .set({ startedAt: new Date(now.getTime() - 5 * 3600_000) })
+        .where(eq(schema.calls.id, c.id));
+      await sweepStaleCalls(db, { now });
+      expect((await getCall(db, t.clinic.id, c.id)).call.durationS).toBe(1200);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("purgeExpiredCalls wipes calls older than 90 days and leaves recent ones", async () => {
+    const t = await makeTestClinic(db, "cc-purge");
+    try {
+      const now = new Date();
+      const mk = async (daysAgo: number) => {
+        const c = await createCall(db, { clinicId: t.clinic.id, channel: "browser" });
+        await appendTurn(db, {
+          callId: c.id,
+          clinicId: t.clinic.id,
+          seq: 0,
+          role: "tool",
+          text: "private words",
+          toolName: "request_callback",
+          toolArgs: { phone: "9876543210" },
+          toolResult: { ok: true },
+        });
+        await finishCall(db, {
+          callId: c.id,
+          clinicId: t.clinic.id,
+          status: "completed",
+          durationS: 5,
+          metrics: { userTurns: 1 },
+        });
+        await updateCallAnalysis(db, {
+          clinicId: t.clinic.id,
+          callId: c.id,
+          summary: "a summary",
+          sentiment: "neutral",
+          analysis: analysis(),
+          model: "m",
+        });
+        await setCallRecording(db, {
+          clinicId: t.clinic.id,
+          callId: c.id,
+          status: "ready",
+          recordingS3Key: "k/rec.wav",
+          transcriptS3Key: "k/t.json",
+        });
+        await db
+          .update(schema.calls)
+          .set({ endedAt: new Date(now.getTime() - daysAgo * 86_400_000) })
+          .where(eq(schema.calls.id, c.id));
+        return c.id;
+      };
+      const old = await mk(91);
+      const recent = await mk(10);
+      const r = await purgeExpiredCalls(db, { now });
+      expect(r.purged).toBeGreaterThanOrEqual(1);
+      const o = await getCall(db, t.clinic.id, old);
+      expect(o.call).toMatchObject({
+        summary: null,
+        recordingS3Key: null,
+        transcriptS3Key: null,
+        recordingStatus: "none",
+      });
+      expect(o.call.analysis).toMatchObject({ model: "m", purged: true });
+      expect(o.call.metrics["purgedAt"]).toBe(now.getTime());
+      expect(o.call.metrics["userTurns"]).toBe(1);
+      expect(o.turns[0]).toMatchObject({ text: null, toolArgs: null, toolResult: null });
+      const n = await getCall(db, t.clinic.id, recent);
+      expect(n.call.summary).toBe("a summary");
+      expect(n.call.recordingStatus).toBe("ready");
+      expect(n.turns[0]!.text).toBe("private words");
+      // Idempotent: a second run does not touch it again.
+      const again = await purgeExpiredCalls(db, { now: new Date(now.getTime() + 1000) });
+      expect((await getCall(db, t.clinic.id, old)).call.metrics["purgedAt"]).toBe(now.getTime());
+      expect(again.purged).toBe(0);
     } finally {
       await t.cleanup();
     }

@@ -207,6 +207,11 @@ export class Recorder {
     this.right.truncate(this.nowIndex());
   }
 
+  /** Wall-clock ms (per the injected clock) of the recording's timeline origin. */
+  get startedAtMs(): number {
+    return this.t0;
+  }
+
   /** Samples dropped at the per-track cap (both tracks). */
   get droppedSamples(): number {
     return this.left.dropped + this.right.dropped;
@@ -227,7 +232,10 @@ export class Recorder {
     if (t - this.lastSpoolAt < this.spoolEveryMs) return;
     this.lastSpoolAt = t;
     const upTo = this.nowIndex();
-    for (const track of [this.left, this.right]) this.enqueueWrite(track, upTo - track.spooled);
+    // The caller track is never truncated, so it is spooled to its very end (a fast client cannot
+    // pile audio up in memory); only the assistant track is held back for barge-in truncation.
+    this.enqueueWrite(this.left, this.left.end - this.left.spooled);
+    this.enqueueWrite(this.right, upTo - this.right.spooled);
   }
 
   private enqueueWrite(track: Track, samples: number): void {

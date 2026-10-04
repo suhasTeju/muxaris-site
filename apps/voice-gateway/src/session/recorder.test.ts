@@ -137,6 +137,21 @@ describe("Recorder", () => {
     expect(left.every((s) => s === 7)).toBe(true);
   });
 
+  it("spools the caller track to its end so a fast client cannot pile up memory", async () => {
+    let t = 1_000_000;
+    const r = new Recorder({ spoolDir: tmp, now: () => t, spoolEveryMs: 1000 });
+    // 5 s of caller audio arrives instantly (50 x 100 ms chunks).
+    for (let i = 0; i < 50; i++) r.caller(tone(1600, 5));
+    expect(r.bufferedBytes).toBeGreaterThan(100_000);
+    t += 1100;
+    r.caller(tone(160, 5));
+    await r.settled();
+    expect(r.bufferedBytes).toBeLessThan(1_000_000);
+    expect(r.bufferedBytes).toBe(0);
+    const res = await r.finish();
+    expect(res).not.toBeNull();
+  });
+
   it("zero-fills a long gap across a spool boundary", async () => {
     let t = 0;
     const r = new Recorder({ spoolDir: tmp, now: () => t, spoolEveryMs: 1000 });

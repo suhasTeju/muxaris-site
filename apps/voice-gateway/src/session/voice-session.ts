@@ -166,12 +166,21 @@ class TextQueue implements AsyncIterable<string> {
   }
 }
 
+/** Shared per-round speech bookkeeping: sentences started, and when the round's audio began. */
+interface SpokenRound {
+  /** Sentences whose audio actually started. */
+  started: number;
+  /** When the round's first sentence was queued (fallback turn start). */
+  enqueuedAt?: number;
+  /** When the round's first audio chunk was handed to the transport. */
+  firstAudioAt?: number;
+}
+
 interface SpeechItem {
   text: string;
   disclosure?: boolean;
   epoch: number;
-  /** Shared per-round counter of sentences whose audio actually started. */
-  spoken?: { started: number } | undefined;
+  spoken?: SpokenRound | undefined;
 }
 
 interface TurnInfo {
@@ -221,6 +230,10 @@ export class VoiceSession {
   private turnChain: Promise<void> = Promise.resolve();
   private turn: TurnInfo | null = null;
   private speechEndAt: number | null = null;
+  /** When the current utterance began (STT speech_start); stamps the persisted user turn. */
+  private speechStartAt: number | null = null;
+  /** Deferred row writes (spoken-turn start times) flushed at call end. */
+  private readonly pendingRows = new Set<() => void>();
   private endRequested = false;
   /** End forced by a fallback (tool cap); unlike a normal end_call it survives barge-in. */
   private forcedEnd = false;
@@ -353,7 +366,10 @@ export class VoiceSession {
   }
 
   private attachStt(stt: SttStream): void {
-    stt.on("speech_start", () => this.onSpeechStart());
+    stt.on("speech_start", () => {
+      this.speechStartAt ??= this.ctx.now().getTime();
+      this.onSpeechStart();
+    });
     stt.on("speech_end", () => {
       this.speechEndAt = this.ctx.now().getTime();
     });
@@ -418,10 +434,17 @@ export class VoiceSession {
     this.interrupt();
     const line = STT_TROUBLE[this.language];
     this.assistantTurns++;
-    this.persist({ seq: this.seq++, role: "assistant", text: line });
+    const troubleSeq = this.seq++;
+    const trouble: SpokenRound = { started: 0 };
     this.transport.sendEvent({ type: "transcript", role: "assistant", text: line, final: true });
-    this.enqueueSpeech(line, this.epoch);
+    this.enqueueSpeech(line, this.epoch, trouble);
     await this.drain();
+    this.persist({
+      seq: troubleSeq,
+      role: "assistant",
+      text: line,
+      startedAt: this.spokenAt(trouble),
+    });
     this.providerError("stt");
   }
 
@@ -468,6 +491,7 @@ export class VoiceSession {
       ]);
       this.timers.clearTimeout(timer);
     }
+    for (const flush of [...this.pendingRows]) flush();
     await this.persistChain;
     const outcome = this.outcome();
     const durationS = this.durationS;
@@ -481,6 +505,7 @@ export class VoiceSession {
         durationS,
         ...(this.detectedLanguage ? { languageDetected: this.detectedLanguage } : {}),
         metrics: this.metrics(),
+        ...(this.recorder ? { recorderStartedAt: new Date(this.recorder.startedAtMs) } : {}),
       });
     } catch (e) {
       this.log.error("finishCall failed", { code: errCode(e) });
@@ -548,6 +573,7 @@ export class VoiceSession {
     toolArgs?: unknown;
     toolResult?: unknown;
     latencyMs?: number;
+    startedAt?: Date;
   }): void {
     this.persistChain = this.persistChain.then(async () => {
       try {
@@ -572,13 +598,19 @@ export class VoiceSession {
     );
   }
 
+  /** When a spoken turn began: its first audio chunk, else when it was queued, else now. */
+  private spokenAt(r: SpokenRound): Date {
+    return new Date(r.firstAudioAt ?? r.enqueuedAt ?? this.ctx.now().getTime());
+  }
+
   private enqueueSpeech(
     text: string,
     epoch: number,
-    spoken?: { started: number },
+    spoken?: SpokenRound,
     disclosure = false,
   ): void {
     if (this.ended || epoch !== this.epoch || !text.trim()) return;
+    if (spoken) spoken.enqueuedAt ??= this.ctx.now().getTime();
     this.speechQueue.push({
       text,
       epoch,
@@ -603,6 +635,7 @@ export class VoiceSession {
         continue;
       }
       this.setState("speaking");
+      const round = item.spoken;
       let utt: TtsUtterance | null = null;
       let carry: Buffer | null = null; // PCM16 needs even byte lengths; hold a split sample
       try {
@@ -629,6 +662,7 @@ export class VoiceSession {
           }
           if (out.length === 0) continue;
           this.noteAudioSent(out.length);
+          if (round) round.firstAudioAt ??= this.ctx.now().getTime();
           this.transport.sendAudio(out);
           this.recorder?.assistant(out);
         }
@@ -660,13 +694,29 @@ export class VoiceSession {
       { recorded: this.recorder !== null },
     );
     const epoch = this.epoch;
-    this.persist({ seq: this.seq++, role: "assistant", text: `${disclosure} ${greeting}` });
+    const seq = this.seq++;
+    const opening: SpokenRound = { started: 0 };
+    let written = false;
+    const write = () => {
+      if (written) return;
+      written = true;
+      this.pendingRows.delete(write);
+      this.persist({
+        seq,
+        role: "assistant",
+        text: `${disclosure} ${greeting}`,
+        startedAt: this.spokenAt(opening),
+      });
+    };
+    // Written once the audio has played (so it is stamped with the first chunk), or at call end.
+    this.pendingRows.add(write);
     this.assistantTurns++;
     // The disclosure is a privacy promise: barge-in is ignored until it has been sent.
     this.disclosurePending = true;
-    this.enqueueSpeech(disclosure, epoch, undefined, true);
-    this.enqueueSpeech(greeting, epoch);
+    this.enqueueSpeech(disclosure, epoch, opening, true);
+    this.enqueueSpeech(greeting, epoch, opening);
     void this.drain().then(() => {
+      write();
       if (!this.ended && epoch === this.epoch) this.setState("listening");
     });
   }
@@ -716,7 +766,10 @@ export class VoiceSession {
   private onTranscript(t: { text: string; language?: string }): void {
     if (this.ended) return;
     const text = t.text.trim();
-    if (!text) return; // silence or noise: stay listening, no LLM call
+    if (!text) {
+      this.speechStartAt = null;
+      return; // silence or noise: stay listening, no LLM call
+    }
     if (isLanguageCode(t.language) && this.enabledLanguages().includes(t.language)) {
       this.language = t.language;
       this.detectedLanguage = t.language;
@@ -728,11 +781,13 @@ export class VoiceSession {
     const ac = new AbortController();
     this.turnAbort = ac;
     const speechEndAt = this.speechEndAt ?? now;
+    const speechStartAt = Math.min(this.speechStartAt ?? now, now);
+    this.speechStartAt = null;
     const sttMs = this.speechEndAt !== null ? now - this.speechEndAt : null;
     this.speechEndAt = null;
     this.turnsPending++;
     this.turnChain = this.turnChain
-      .then(() => this.runTurn(text, t.language, epoch, speechEndAt, sttMs, ac))
+      .then(() => this.runTurn(text, t.language, epoch, speechEndAt, speechStartAt, sttMs, ac))
       .catch(() => this.providerError("turn"))
       .finally(() => {
         this.turnsPending--;
@@ -766,6 +821,7 @@ export class VoiceSession {
     language: string | undefined,
     epoch: number,
     speechEndAt: number,
+    speechStartAt: number,
     sttMs: number | null,
     ac: AbortController,
   ): Promise<void> {
@@ -774,7 +830,12 @@ export class VoiceSession {
       // Superseded by a newer utterance before it started: keep the context (history, transcript,
       // persistence) but do not call the LLM; the newer turn answers both.
       this.userTurns++;
-      this.persist({ seq: this.seq++, role: "user", text: userText });
+      this.persist({
+        seq: this.seq++,
+        role: "user",
+        text: userText,
+        startedAt: new Date(speechStartAt),
+      });
       this.transport.sendEvent({
         type: "transcript",
         role: "user",
@@ -791,7 +852,12 @@ export class VoiceSession {
 
     this.setState("thinking");
     this.userTurns++;
-    this.persist({ seq: this.seq++, role: "user", text: userText });
+    this.persist({
+      seq: this.seq++,
+      role: "user",
+      text: userText,
+      startedAt: new Date(speechStartAt),
+    });
     this.transport.sendEvent({
       type: "transcript",
       role: "user",
@@ -801,13 +867,13 @@ export class VoiceSession {
     });
     this.pushUser([{ text: userText }]);
 
-    const assistantSeqs: Array<{ seq: number; text: string }> = [];
+    const assistantSeqs: Array<{ seq: number; text: string; round: SpokenRound }> = [];
     let toolRoundsDone = 0;
     try {
       for (let round = 0; round < MAX_TOOL_ROUNDS && live(); round++) {
         const queue = new TextQueue();
         const sentences: string[] = [];
-        const spoken = { started: 0 };
+        const spoken: SpokenRound = { started: 0 };
         const speaking = (async () => {
           for await (const sentence of chunkSentences(queue)) {
             sentences.push(sentence);
@@ -883,7 +949,7 @@ export class VoiceSession {
         if (text) {
           const seq = this.seq++;
           this.assistantTurns++;
-          assistantSeqs.push({ seq, text });
+          assistantSeqs.push({ seq, text, round: spoken });
           if (!this.ended && epoch === this.epoch) {
             this.transport.sendEvent({ type: "transcript", role: "assistant", text, final: true });
           }
@@ -911,6 +977,7 @@ export class VoiceSession {
             continue;
           }
           this.toolCalls++;
+          const toolStartedAt = this.ctx.now();
           this.transport.sendEvent({ type: "tool", name: c.name, status: "started", summary: "" });
           // State-changing tools are counted before they run so a hang-up mid-transaction still
           // records the outcome; a failure takes the mark back.
@@ -934,6 +1001,7 @@ export class VoiceSession {
             toolName: c.name,
             toolArgs: c.input,
             toolResult: out.result,
+            startedAt: toolStartedAt,
           });
           results.push({
             toolResult: {
@@ -966,11 +1034,12 @@ export class VoiceSession {
           toolResult: { transferred: true, automatic: true },
         });
         this.assistantTurns++;
-        assistantSeqs.push({ seq: this.seq++, text: fb });
+        const fbRound: SpokenRound = { started: 0 };
+        assistantSeqs.push({ seq: this.seq++, text: fb, round: fbRound });
         this.transport.sendEvent({ type: "transcript", role: "assistant", text: fb, final: true });
         this.endRequested = true;
         this.forcedEnd = true;
-        this.enqueueSpeech(fb, epoch);
+        this.enqueueSpeech(fb, epoch, fbRound);
       }
     } finally {
       await this.drain();
@@ -997,6 +1066,7 @@ export class VoiceSession {
           seq: a.seq,
           role: "assistant",
           text: a.text,
+          startedAt: this.spokenAt(a.round),
           ...(latencyMs !== undefined ? { latencyMs } : {}),
         });
       }

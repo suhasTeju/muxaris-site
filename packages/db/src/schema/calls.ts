@@ -62,6 +62,8 @@ export const calls = pgTable(
       callbackReason?: string;
       model: string;
       skipped?: string;
+      /** Set by the retention purge: summary and transcript were deleted. */
+      purged?: boolean;
     }>(),
     analysedAt: timestamp("analysed_at", { withTimezone: true }),
   },
