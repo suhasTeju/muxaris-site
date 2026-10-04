@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useApi } from "@/lib/api-client";
 
 export const NAV = [
   { href: "/app", label: "Overview", match: (p: string) => p === "/app" },
@@ -12,6 +14,11 @@ export const NAV = [
   },
   { href: "/app/calls", label: "Calls", match: (p: string) => p.startsWith("/app/calls") },
   {
+    href: "/app/callbacks",
+    label: "Callbacks",
+    match: (p: string) => p.startsWith("/app/callbacks"),
+  },
+  {
     href: "/app/assistant/try",
     label: "Assistant",
     match: (p: string) => p.startsWith("/app/assistant"),
@@ -21,6 +28,22 @@ export const NAV = [
 
 export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
   const pathname = usePathname() ?? "";
+  const api = useApi();
+  const [openCallbacks, setOpenCallbacks] = useState(0);
+  // Refreshed on navigation; a failure simply leaves no badge.
+  useEffect(() => {
+    let live = true;
+    api<{ total: number }>("/v1/callbacks?status=open&limit=1")
+      .then((r) => {
+        if (live) setOpenCallbacks(r.total);
+      })
+      .catch(() => {
+        if (live) setOpenCallbacks(0);
+      });
+    return () => {
+      live = false;
+    };
+  }, [api, pathname]);
   return (
     <nav
       id="app-sidebar"
@@ -43,6 +66,14 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                 }`}
               >
                 {item.label}
+                {item.href === "/app/callbacks" && openCallbacks > 0 ? (
+                  <span
+                    aria-label={`${openCallbacks} open`}
+                    className="bg-accent text-on-accent ml-auto rounded-full px-2 py-0.5 text-xs tabular-nums"
+                  >
+                    {openCallbacks}
+                  </span>
+                ) : null}
               </Link>
             </li>
           );

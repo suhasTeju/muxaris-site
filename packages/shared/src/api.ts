@@ -277,10 +277,12 @@ export interface Call {
   recordingStatus: "none" | "pending" | "ready" | "failed";
   outcomeSource: "gateway" | "worker" | "staff" | null;
   analysis: {
-    entities: Record<string, unknown>;
-    needsCallback: boolean;
+    entities?: Record<string, unknown>;
+    needsCallback?: boolean;
     callbackReason?: string;
-    model: string;
+    model?: string;
+    /** Set by the worker when there was nothing to analyse (e.g. "no_turns"). */
+    skipped?: string;
   } | null;
   analysedAt: Iso | null;
 }
