@@ -1,0 +1,277 @@
+import { LANGUAGES } from "@muxaris/shared";
+
+export const SITE_URL = "https://muxaris.com";
+export const CONTACT_EMAIL = "hello@muxaris.com";
+export const LEGAL_UPDATED = "4 October 2026";
+
+export const NAV_LINKS = [
+  { href: "/#how", label: "How it works" },
+  { href: "/#languages", label: "Languages" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/faq", label: "FAQ" },
+] as const;
+
+export const HERO = {
+  eyebrow: "AI voice receptionist for Indian clinics",
+  title: "Your front desk misses calls. Muxaris doesn’t.",
+  sub: "Muxaris answers every call in the caller’s own language, books the appointment into your clinic’s real calendar, and sends a confirmation by WhatsApp or email before the patient hangs up.",
+  note: "Built for dental clinics first. Free 30-day pilot for the first 10 Bengaluru clinics.",
+} as const;
+
+/** Real greeting clips, generated with the clinic greeting per language. */
+export const GREETINGS = LANGUAGES.map((l) => {
+  const short = l.code.slice(0, 2);
+  const greeting: Record<string, string> = {
+    en: "Hello, Sunrise Dental Care. How may I help you today?",
+    hi: "नमस्ते, सनराइज़ डेंटल केयर। हम आपकी कैसे मदद कर सकते हैं?",
+    kn: "ನಮಸ್ಕಾರ, ಸನ್‌ರೈಸ್ ಡೆಂಟಲ್ ಕೇರ್. ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಲಿ?",
+    ta: "வணக்கம், சன்ரைஸ் டென்டல் கேர். நான் உங்களுக்கு எப்படி உதவலாம்?",
+    te: "నమస్కారం, సన్‌రైజ్ డెంటల్ కేర్. నేను మీకు ఎలా సహాయం చేయగలను?",
+  };
+  return {
+    code: l.code,
+    label: l.label,
+    native: l.native,
+    greeting: greeting[short]!,
+    audio: `/audio/greet-${short}.m4a`,
+  };
+});
+
+export const PROBLEM = {
+  title: "A missed call is a missed patient.",
+  aside: "Not because anyone is careless.",
+  moments: [
+    {
+      when: "Mid-procedure",
+      text: "Your assistant has gloves on and a patient in the chair. The phone rings out.",
+    },
+    {
+      when: "After hours",
+      text: "Someone with a toothache calls at 8 pm. They book with whoever picks up next.",
+    },
+    {
+      when: "In a language the desk doesn’t share",
+      text: "A caller who thinks in Kannada gets hurried English, and hangs up unsure.",
+    },
+  ],
+} as const;
+
+export const STEPS = [
+  {
+    n: "01",
+    title: "The call comes in",
+    text: "Muxaris picks up on the first ring, announces itself, and talks with the caller in their language. It asks what they need, in plain conversation.",
+    img: "/img/step-call.webp",
+    alt: "A woman on a phone call outdoors, looking relieved",
+  },
+  {
+    n: "02",
+    title: "It books the slot",
+    text: "It checks your doctors’ real availability, offers times that are free, and books one. No double-bookings, no back-and-forth.",
+    img: "/img/step-calendar.webp",
+    alt: "A dentist’s appointment calendar on a tablet",
+  },
+  {
+    n: "03",
+    title: "The patient is confirmed",
+    text: "A confirmation goes out by WhatsApp or email with the doctor, date and time. You see the call, transcript and booking in your dashboard.",
+    img: "/img/step-confirm.webp",
+    alt: "A hand holding a phone showing a message confirmation",
+  },
+] as const;
+
+export const DEMO_STAGES = [
+  { id: "answered", title: "Call answered", text: "First ring, in the caller’s language", at: 0 },
+  { id: "booked", title: "Slot booked", text: "Doctor Rao, tomorrow, 4:30 pm", at: 13.6 },
+  { id: "sent", title: "Confirmation sent", text: "WhatsApp or email, within seconds", at: 18 },
+] as const;
+
+/** Timestamps (seconds) into /audio/sample-call.m4a (about 20.4 s). */
+export const SAMPLE_CALL_DURATION = 20.4;
+export const TRANSCRIPT = [
+  {
+    at: 0,
+    who: "caller",
+    text: "Hi, I have a bad toothache since last night. Can I see the doctor tomorrow?",
+  },
+  {
+    at: 4.3,
+    who: "muxaris",
+    text: "I’m sorry to hear that. Doctor Rao has a slot tomorrow at four thirty in the afternoon. Shall I book it for you?",
+  },
+  { at: 10.8, who: "caller", text: "Yes please, four thirty works. My name is Ananya." },
+  {
+    at: 13.6,
+    who: "muxaris",
+    text: "Done, Ananya. You’re booked at Sunrise Dental Care for tomorrow at four thirty. You’ll get a confirmation message shortly.",
+  },
+] as const;
+
+export const CAPABILITIES = [
+  {
+    title: "Books against the real calendar",
+    text: "Reads each doctor’s working hours, leave and existing appointments, and only offers slots that are genuinely free.",
+    span: "lg:col-span-2",
+  },
+  {
+    title: "Five languages",
+    text: "English, Hindi, Kannada, Tamil and Telugu, including callers who mix them mid-sentence.",
+    span: "",
+  },
+  {
+    title: "Emergencies go to a human",
+    text: "Severe pain, bleeding or trauma are transferred to your staff instead of being booked.",
+    span: "",
+  },
+  {
+    title: "Reschedules and cancellations",
+    text: "Patients can move or cancel an appointment by phone, and the slot goes back into the calendar.",
+    span: "",
+  },
+  {
+    title: "Callbacks queue",
+    text: "When a caller wants a person, or a question is outside what Muxaris knows, a callback request lands in your queue with the context.",
+    span: "lg:col-span-2",
+  },
+  {
+    title: "Knows your clinic",
+    text: "Services, fees, timings, directions and the answers you write: it only says what you have told it.",
+    span: "",
+  },
+  {
+    title: "Every call on record",
+    text: "Transcript, outcome and booking for each call in your dashboard, with retention you control.",
+    span: "",
+  },
+  {
+    title: "Consent at the start",
+    text: "Each call opens by telling the caller it is an AI assistant and that the call is recorded.",
+    span: "",
+  },
+] as const;
+
+export const SPECIALTY_CARDS = [
+  {
+    key: "dental",
+    title: "Dental",
+    text: "Where we started. Check-ups, cleanings, root canals, aligners.",
+    img: "/img/spec-dental.webp",
+    status: "Available now",
+  },
+  {
+    key: "skin",
+    title: "Skin and hair",
+    text: "Consultations and recurring treatment sessions.",
+    img: "/img/spec-skin.webp",
+    status: "In pilot",
+  },
+  {
+    key: "eye",
+    title: "Eye care",
+    text: "Eye tests, follow-ups and procedure bookings.",
+    img: "/img/spec-eye.webp",
+    status: "In pilot",
+  },
+  {
+    key: "physio",
+    title: "Physiotherapy",
+    text: "Multi-session plans and recurring slots.",
+    img: "/img/spec-physio.webp",
+    status: "In pilot",
+  },
+  {
+    key: "diagnostics",
+    title: "Diagnostics",
+    text: "Sample collection and report-pickup scheduling.",
+    img: "/img/spec-diagnostic.webp",
+    status: "In pilot",
+  },
+] as const;
+
+export interface Plan {
+  id: "pilot" | "standard";
+  name: string;
+  price: string;
+  cadence: string;
+  blurb: string;
+  features: readonly string[];
+  cta: string;
+  highlight: boolean;
+}
+
+export const PLANS: readonly Plan[] = [
+  {
+    id: "pilot",
+    name: "Pilot",
+    price: "₹0",
+    cadence: "for 30 days",
+    blurb: "For the first 10 Bengaluru clinics. Try it on your real phone traffic, no card needed.",
+    features: [
+      "Up to 500 calls",
+      "All 5 languages",
+      "Booking against your calendar",
+      "Confirmation by WhatsApp or email",
+      "Dashboard and callbacks queue",
+      "Hands-on set-up with us",
+    ],
+    cta: "Apply for the pilot",
+    highlight: false,
+  },
+  {
+    id: "standard",
+    name: "Standard",
+    price: "₹4,999",
+    cadence: "per month",
+    blurb: "For a clinic that wants every call answered, every day.",
+    features: [
+      "Up to 3,000 call-minutes",
+      "Unlimited bookings",
+      "5 languages",
+      "Email and WhatsApp confirmations",
+      "Dashboard",
+      "Callbacks queue",
+    ],
+    cta: "Book a demo",
+    highlight: true,
+  },
+];
+
+export const PRICING_NOTE =
+  "Prices are in Indian rupees. GST is charged extra where applicable. Calls beyond your included minutes are billed at a per-minute rate we agree with you up front; you are never cut off mid-call.";
+
+export const FAQS = [
+  {
+    q: "Which languages does Muxaris speak?",
+    a: "English, Hindi, Kannada, Tamil and Telugu. The assistant greets in the language you set for your clinic and switches to whichever language the caller uses.",
+  },
+  {
+    q: "Does it understand accents and mixed languages?",
+    a: "Yes. Callers in Bengaluru often speak Kannada and English in the same sentence, and Muxaris is built to follow that. Speech recognition is by Sarvam AI, trained on Indian languages and accents. It is not perfect, so anything it is unsure about is confirmed back to the caller or sent to your callbacks queue.",
+  },
+  {
+    q: "What happens in an emergency?",
+    a: "If a caller describes severe pain, heavy bleeding, facial swelling or an accident, Muxaris does not try to book. It tells the caller it is connecting them to the clinic and transfers the call to the staff number you configure.",
+  },
+  {
+    q: "Where is our data stored?",
+    a: "In India. Call data lives on Amazon Web Services in Mumbai (ap-south-1). Recordings are kept for 90 days by default and you can change that. Patient data belongs to your clinic, and we never sell it.",
+  },
+  {
+    q: "How does booking work with our calendar?",
+    a: "You set each doctor’s working hours, services and leave in Muxaris. During a call it reads those rules plus the existing appointments, offers only free slots, and writes the booking straight into the same calendar your front desk sees. Staff can move or cancel anything from the dashboard.",
+  },
+  {
+    q: "How is pricing structured? What about overage?",
+    a: "The Pilot is free for 30 days for the first 10 Bengaluru clinics, up to 500 calls. Standard is ₹4,999 per month and includes up to 3,000 call-minutes. If you go beyond that, we bill a per-minute rate agreed in advance and tell you before it happens. No lock-in: cancel any month.",
+  },
+  {
+    q: "How long does set-up take?",
+    a: "Under 30 minutes. You add your clinic, doctors, services and hours in a guided set-up, try a test call from your browser, and you are ready.",
+  },
+  {
+    q: "Can it answer our existing clinic phone number?",
+    a: "Phone numbers and number porting are coming soon. Today you can take calls from your browser, which is the best way to hear Muxaris in your own clinic’s setup. Join the pilot and we will tell you the day dedicated numbers are ready.",
+  },
+] as const;
+
+export const FOOTER_LANGUAGES = "English · हिन्दी · ಕನ್ನಡ · தமிழ் · తెలుగు";

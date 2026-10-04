@@ -9,6 +9,7 @@ import { meRoutes } from "./routes/me.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { appointmentRoutes } from "./routes/appointments.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
+import { demoRequestRoutes } from "./routes/demo-requests.js";
 
 export type { AppDeps } from "./deps.js";
 
@@ -26,6 +27,9 @@ export function createApp(deps: AppDeps) {
     }),
   );
   app.get("/healthz", (c) => c.json({ ok: true, service: "api", version: deps.version }));
+
+  // Public intake route: registered before the authenticated v1 group.
+  app.route("/v1", demoRequestRoutes(deps.db));
 
   const v1 = new Hono<AppEnv>();
   v1.use("*", requireUser(deps.db, deps.verifier));

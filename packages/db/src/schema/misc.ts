@@ -6,6 +6,8 @@ export const demoRequests = pgTable("demo_requests", {
   phone: text("phone").notNull(),
   city: text("city").notNull(),
   specialty: text("specialty").notNull(),
+  email: text("email"),
+  language: text("language"),
   status: text("status").notNull().default("new"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

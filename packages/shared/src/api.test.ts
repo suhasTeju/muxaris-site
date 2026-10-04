@@ -3,6 +3,7 @@ import {
   appointmentBody,
   assistantProfileBody,
   createClinicBody,
+  demoRequestBody,
   doctorBody,
   indianPhone,
   memberRoleBody,
@@ -159,5 +160,25 @@ describe("api bodies", () => {
     expect(memberRoleBody.safeParse({ role: "owner" }).success).toBe(true);
     expect(memberRoleBody.safeParse({ role: "front_desk" }).success).toBe(true);
     expect(memberRoleBody.safeParse({ role: "admin" }).success).toBe(false);
+  });
+});
+
+describe("demoRequestBody", () => {
+  const ok = {
+    name: "Dr Asha",
+    clinic: "Sunrise Dental",
+    city: "Bengaluru",
+    phone: "98765 43210",
+    email: "asha@example.com",
+    specialty: "dental",
+    language: "kn-IN",
+  };
+  it("accepts a valid request and normalises the phone", async () => {
+    expect(demoRequestBody.parse(ok).phone).toBe("+919876543210");
+  });
+  it("rejects bad phone, email and city", async () => {
+    expect(demoRequestBody.safeParse({ ...ok, phone: "12345" }).success).toBe(false);
+    expect(demoRequestBody.safeParse({ ...ok, email: "nope" }).success).toBe(false);
+    expect(demoRequestBody.safeParse({ ...ok, city: "Paris" }).success).toBe(false);
   });
 });
