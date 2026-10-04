@@ -9,6 +9,9 @@ import { requireUser } from "./auth/middleware.js";
 import { meRoutes } from "./routes/me.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { appointmentRoutes } from "./routes/appointments.js";
+import { callRoutes } from "./routes/calls.js";
+import { callbackRoutes } from "./routes/callbacks.js";
+import { statsRoutes } from "./routes/stats.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { demoRequestRoutes } from "./routes/demo-requests.js";
 
@@ -53,6 +56,9 @@ export function createApp(deps: AppDeps) {
   v1.route("/", catalogRoutes(deps.db));
   v1.route("/", appointmentRoutes(deps.db));
   v1.route("/", onboardingRoutes(deps.db));
+  v1.route("/", callRoutes(deps.db, { blobs: deps.blobs ?? null }));
+  v1.route("/", callbackRoutes(deps.db));
+  v1.route("/", statsRoutes(deps.db));
   app.route("/v1", v1);
 
   app.notFound((c) => c.json({ error: { code: "not_found", message: "route not found" } }, 404));

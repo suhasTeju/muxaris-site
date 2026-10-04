@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createDb } from "@muxaris/db";
 import { createCognitoVerifier, createDevVerifier } from "@muxaris/core";
+import { createS3BlobStore } from "@muxaris/storage";
 import { createApp } from "./app.js";
 import { loadEnv } from "./env.js";
 
@@ -21,5 +22,8 @@ const app = createApp({
   corsOrigins: env.corsOrigins,
   db,
   verifier,
+  blobs: env.storageDisabled
+    ? null
+    : createS3BlobStore({ bucket: env.callsBucket, region: env.awsRegion }),
 });
 serve({ fetch: app.fetch, port: env.port }, () => console.log(`api listening on :${env.port}`));

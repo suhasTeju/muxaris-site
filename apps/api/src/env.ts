@@ -7,6 +7,9 @@ export interface ApiEnv {
   authMode: "cognito" | "dev";
   cognitoUserPoolId: string | null;
   cognitoClientId: string | null;
+  callsBucket: string;
+  awsRegion: string;
+  storageDisabled: boolean;
 }
 
 export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
@@ -29,7 +32,11 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
       "COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID are required when AUTH_MODE=cognito",
     );
   const sarvamKey = src.SARVAM_TTS_API_KEY?.trim() || null;
+  const callsBucket = src.CALLS_BUCKET?.trim() ?? "";
   return {
+    callsBucket,
+    awsRegion: src.AWS_REGION?.trim() || "ap-south-1",
+    storageDisabled: src.STORAGE_DISABLED === "1" || !callsBucket,
     port: Number(src.API_PORT ?? 4000),
     databaseUrl,
     sarvamKey,

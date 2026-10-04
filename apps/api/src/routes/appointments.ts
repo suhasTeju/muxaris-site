@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { and, desc, eq, gte, ilike, inArray, lt, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
 import {
   bookAppointment,
@@ -32,7 +32,6 @@ const listQuery = z.object({
 });
 const cancelBody = z.object({ reason: z.string().trim().min(1).max(300).optional() });
 const patientsQuery = z.object({ q: z.string().trim().min(1).max(100).optional(), ...page });
-const callsQuery = z.object({ from: isoOffset.optional(), to: isoOffset.optional(), ...page });
 
 /** Adds `patient: { name, phoneMasked }` (clinic-scoped join) to appointment rows. */
 async function attachPatients<T extends { patientId: string }>(
@@ -190,36 +189,5 @@ export function appointmentRoutes(db: Db) {
     return c.json({ patients });
   });
 
-  r.get("/calls", member, v("query", callsQuery), async (c) => {
-    const q = c.req.valid("query");
-    const calls = await db
-      .select()
-      .from(schema.calls)
-      .where(
-        and(
-          eq(schema.calls.clinicId, c.get("clinic").id),
-          q.from ? gte(schema.calls.startedAt, new Date(q.from)) : undefined,
-          q.to ? lt(schema.calls.startedAt, new Date(q.to)) : undefined,
-        ),
-      )
-      .orderBy(desc(schema.calls.startedAt), desc(schema.calls.id))
-      .limit(q.limit)
-      .offset(q.offset);
-    return c.json({ calls });
-  });
-  r.get("/calls/:id", member, async (c) => {
-    const clinicId = c.get("clinic").id;
-    const [call] = await db
-      .select()
-      .from(schema.calls)
-      .where(and(eq(schema.calls.id, c.req.param("id")), eq(schema.calls.clinicId, clinicId)));
-    if (!call) throw new CoreError("not_found", "call not found");
-    const turns = await db
-      .select()
-      .from(schema.callTurns)
-      .where(and(eq(schema.callTurns.callId, call.id), eq(schema.callTurns.clinicId, clinicId)))
-      .orderBy(schema.callTurns.seq);
-    return c.json({ call, turns });
-  });
   return r;
 }
