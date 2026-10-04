@@ -276,7 +276,20 @@ ALTER TABLE calls ADD CONSTRAINT calls_sentiment_chk CHECK (sentiment IS NULL OR
 ALTER TABLE callbacks ADD COLUMN note text;
 CREATE INDEX IF NOT EXISTS callbacks_call_idx ON callbacks (call_id);
 CREATE INDEX IF NOT EXISTS calls_clinic_outcome_idx ON calls (clinic_id, outcome);
+ALTER TYPE call_status ADD VALUE IF NOT EXISTS 'abandoned';
 ```
+
+`calls.status` is the pg enum `call_status` (`in_progress | completed | failed`); add `"abandoned"` to `callStatusEnum` in `schema/calls.ts` and to the shared `callStatusEnum`/`CallStatus` DTO. The new value is not referenced elsewhere in the same migration (Postgres forbids using a value added in the same transaction).
+
+Also produce the stale-call sweep (parked from Phase 1):
+
+```ts
+export function sweepStaleCalls(db, opts: { now?: Date; inProgressOlderThanMin?: number /* 30 */; recordingPendingOlderThanMin?: number /* 10 */ }): Promise<{ abandoned: number; recordingsFailed: number }>;
+// 1. UPDATE calls SET status='abandoned', outcome=COALESCE(outcome,'abandoned'), outcome_source=COALESCE(outcome_source,'gateway'), ended_at=COALESCE(ended_at, now), duration_s=COALESCE(duration_s, EXTRACT(EPOCH FROM now - started_at)::int) WHERE status='in_progress' AND started_at < now - 30 min
+// 2. UPDATE calls SET recording_status='failed' WHERE recording_status='pending' AND ended_at IS NOT NULL AND ended_at < now - 10 min
+// Not clinic-scoped on purpose: it is a maintenance job run by the worker (Task 4), never from a request handler.
+```
+Tests: "sweep abandons a 31-minute-old in_progress call but not a 5-minute-old one"; "sweep fails a recording pending for 11 minutes after end, leaves a 2-minute-old one".
 Mirror in `schema/calls.ts` (`recordingStatus: text("recording_status").notNull().default("none")`, etc.). Append the journal entry; run `npm run db:migrate` locally (and `npm run db:generate` only to confirm it reports no diff — do not commit a generated duplicate).
 
 - [ ] **Step 2: Write the failing core tests** (Postgres-gated with `openDb`/`makeTestClinic`)
@@ -323,6 +336,7 @@ it("getOverviewStats counts calls and bookings inside the day window only", ...)
     constructor(opts: { sampleRate?: 16000; spoolDir: string; spoolEveryMs?: number /* default 30_000 */; now?: () => number });
     caller(pcm16k: Buffer): void;      // left channel, 16 kHz
     assistant(pcm24k: Buffer): void;   // right channel, downsampled 24k→16k (stateful 3:2 decimation with linear interpolation)
+    truncateAssistant(): void;        // barge-in: drop assistant samples beyond the current wall-clock index (the client discarded them on flush_playback); the session calls this wherever it sends flush_playback
     async finish(): Promise<{ wavPath: string; durationMs: number; bytes: number } | null>; // null when both tracks are empty
     async discard(): Promise<void>;    // removes spool files
   }
@@ -344,7 +358,8 @@ it("getOverviewStats counts calls and bookings inside the day window only", ...)
   - kn-IN: "ಈ ಕರೆಗೆ AI ಸಹಾಯಕ ಉತ್ತರಿಸುತ್ತಿದೆ ಮತ್ತು ಇದನ್ನು ರೆಕಾರ್ಡ್ ಮತ್ತು ಲಿಪ್ಯಂತರ ಮಾಡಬಹುದು."
   - ta-IN: "இந்த அழைப்பிற்கு ஒரு AI உதவியாளர் பதிலளிக்கிறது; இது பதிவு செய்யப்பட்டு எழுத்துருவாக்கப்படலாம்."
   - te-IN: "ఈ కాల్‌కు ఒక AI సహాయకుడు సమాధానమిస్తున్నారు; ఇది రికార్డ్ చేయబడి, లిప్యంతరీకరించబడవచ్చు."
-- `SessionContext` gains `recordCalls: boolean` (server reads `clinic.clinic.settings.recordCalls !== false && !env.storageDisabled`); when true the session constructs a `Recorder` (spoolDir `os.tmpdir()/muxaris-rec`) and taps both audio paths; `finish()` no longer closes the recorder — `settle` does, via `completeCall`, after `finishCall` has run.
+- `SessionContext` gains `recordCalls: boolean`. The server computes it as `clinic.clinic.settings.recordCalls !== false && storage.blobs !== null`, where `storage` is the resolved `{ blobs, queue }` pair — injected through `ServerDeps.storage` in tests, or built from env by `createProviders` (null when `STORAGE_DISABLED=1` or `CALLS_BUCKET` is empty). It never reads the env flag directly, so a test that injects fakes with no bucket env still records. When true the session constructs a `Recorder` (spoolDir `os.tmpdir()/muxaris-rec`) and taps both audio paths; `finish()` no longer closes the recorder — `settle` does, via `completeCall`, after `finishCall` has run.
+- Shutdown drain: `server.ts` keeps `inFlightCompletions: Set<Promise<void>>`; `settle` adds the `completeCall` promise and removes it on settle. `server.shutdown()` waits for `Promise.allSettled([...inFlightCompletions])` inside the existing grace window (10 s drain, 20 s hard exit in `index.ts`) — `completeCall` therefore takes `signal?: AbortSignal`; on shutdown the server aborts outstanding completions after the grace deadline and `completeCall` marks the row `recording_status = 'failed'` when aborted before the WAV upload finished. Test: "shutdown waits for an in-flight upload" (fake blob store with a deferred `put`; `shutdown()` resolves only after the deferred resolves) and "aborted completion marks failed".
 
 - [ ] **Step 1: Write the failing recorder tests**
 
@@ -366,6 +381,15 @@ it("spools after 30 s with silence padding and keeps memory bounded", async () =
 it("downsamples 24k to 16k statefully (no drift across chunk boundaries)", () => { /* 1 s of 24k in 7 odd-sized chunks → exactly 16000 samples (±1) */ });
 it("finish on empty recorder returns null and leaves no files", ...);
 it("overlapping late chunk is appended, not overwritten", ...);
+it("truncateAssistant drops audio pumped ahead of real time", async () => {
+  let t = 0; const r = new Recorder({ spoolDir: tmp, now: () => t });
+  r.assistant(tone(24000 * 2, 2000)); // 2 s of TTS delivered instantly at t=0
+  t = 500; r.truncateAssistant();     // caller barged in after 500 ms
+  t = 1000; const out = await r.finish();
+  const { right } = readWav(out!.wavPath);
+  expect(right.slice(0, 8000).every((s) => s === 2000)).toBe(true);
+  expect(right.slice(8000).every((s) => s === 0)).toBe(true);
+});
 // wav.ts
 it("writes a valid 44-byte header for 16 kHz stereo PCM16", ...);
 ```
@@ -374,7 +398,7 @@ it("writes a valid 44-byte header for 16 kHz stereo PCM16", ...);
 
 - [ ] **Step 4: Write the failing post-call tests** with `FakeBlobStore` + `FakeQueue` and a Postgres-gated call row: "uploads transcript and wav, marks ready, enqueues once"; "abandoned call records nothing"; "upload failure marks failed and still enqueues"; "recordCalls false: transcript yes, WAV no". **Step 5: implement `post-call.ts`.**
 
-- [ ] **Step 6: Wire the session and server** — session: in `start()` tap `transport.onInboundAudio` → `this.recorder?.caller(pcm)`; in `pump()` after `transport.sendAudio(out)` → `this.recorder?.assistant(out)`; expose `session.recorder` and `session.userTurns`. Server: on `createCall` success and `recordCalls` → `setCallRecording({ status: "pending" })`; in `settle()`, after `recordCallUsage`, `void completeCall(...)` (do not await inside the socket close path; it has its own timeout). `env.ts`: `callsBucket = src.CALLS_BUCKET ?? ""`, `postCallQueueUrl = src.POST_CALL_QUEUE_URL ?? ""`, `storageDisabled = src.STORAGE_DISABLED === "1" || !callsBucket`; `createProviders` builds `blobs`/`queue` or `null`. Disclosure test: `ready.greeting` starts with the recorded variant when `recordCalls` is true. Server test: with fakes injected via `ServerDeps.storage?: { blobs, queue }`, a happy-path call leaves one transcript object, one WAV object and one queue message.
+- [ ] **Step 6: Wire the session and server** — session: in `start()` tap `transport.onInboundAudio` → `this.recorder?.caller(pcm)`; in `pump()` after `transport.sendAudio(out)` → `this.recorder?.assistant(out)`; at both `flush_playback` send sites in `voice-session.ts` (barge-in ~l.652 and ~l.665) → `this.recorder?.truncateAssistant()`; expose `session.recorder` and `session.userTurns`. Server: on `createCall` success and `recordCalls` → `setCallRecording({ status: "pending" })`; in `settle()`, after `recordCallUsage`, `void completeCall(...)` (do not await inside the socket close path; it has its own timeout). `env.ts`: `callsBucket = src.CALLS_BUCKET ?? ""`, `postCallQueueUrl = src.POST_CALL_QUEUE_URL ?? ""`, `storageDisabled = src.STORAGE_DISABLED === "1" || !callsBucket`; `createProviders` builds `blobs`/`queue` or `null`. Disclosure test: `ready.greeting` starts with the recorded variant when `recordCalls` is true. Server test: with fakes injected via `ServerDeps.storage?: { blobs, queue }`, a happy-path call leaves one transcript object, one WAV object and one queue message.
 
 - [ ] **Step 7: Run gateway tests, root typecheck, eslint, prettier → PASS.** Run `bash scripts/e2e-voice.sh` once with real providers: the script now polls `GET /v1/calls/:id` after `ended` until `call.recordingStatus === "ready"` (≤ 20 s, fail otherwise) and asserts `call.transcriptS3Key` is set. The presigned-URL HEAD check is added in Task 7 once the Task 5 route exists.
 
@@ -411,16 +435,19 @@ it("writes a valid 44-byte header for 16 kHz stereo PCM16", ...);
     // getCall → if turns with role user === 0 → "skipped_no_turns" (write analysed_at anyway so it is not retried)
     // if call.analysedAt and (now − analysedAt) < 24 h → "skipped_already"
     // analyse → updateCallAnalysis({ summary, sentiment, analysis: { entities, needsCallback, callbackReason, model }, outcome })
-    // if needsCallback and listCallbacks(db, clinicId, { status: "all", callId, limit: 1, offset: 0 }).total === 0 → createCallback({ clinicId, callId, phone: call.callerPhone ?? "unknown", reason: callbackReason ?? "Follow-up requested", priority: "normal" })
+    // phone = call.callerPhone ?? (call.patientId ? patient.phone looked up via db.select from patients where id = patientId and clinicId : null)
+    // if needsCallback and phone and listCallbacks(db, clinicId, { status: "all", callId, limit: 1, offset: 0 }).total === 0 → createCallback({ clinicId, callId, ...(call.patientId ? { patientId } : {}), phone, reason: callbackReason ?? "Follow-up requested", priority: "normal" })
+    // if needsCallback and no phone: create nothing; analysis.needsCallback stays true for the detail page to surface ("Caller asked for a callback but left no number")
     // errors → log { callId, err: name } and return "failed" (message stays on the queue for retry/DLQ)
   export async function runOnce(deps, queue: JobQueue<PostCallMessage>): Promise<number>; // receive(max 5, wait 20) → processMessage each → delete on any result except "failed"
   // lambda.ts: export const handler = async (event: { Records: Array<{ body: string; messageId: string }> }) => { for each record: processMessage; return { batchItemFailures: [...failed messageIds] } }
-  // dev.ts: loop runOnce until SIGINT; logs counts only
+  // dev.ts: loop runOnce until SIGINT; every 60 s also run sweepStaleCalls(db) (Task 2) and log { abandoned, recordingsFailed } counts only
+  // lambda.ts also exports `sweepHandler = async () => sweepStaleCalls(db)` for a Phase 5 EventBridge schedule
   ```
 
 - [ ] **Step 1: Write the failing analyser tests** (fake Bedrock client returning `{ output: { message: { content: [{ text }] } } }`): "parses fenced JSON", "truncates summary to 60 words", "retries once on invalid JSON then throws", "keeps booked outcome from the gateway even if the model says info" (enforced in code after parse, not only by prompt), "strips digits sequences ≥ 8 long from summary" (PII guard).
 - [ ] **Step 2: Run → FAIL. Step 3: implement `prompt.ts`, `analyse.ts`.**
-- [ ] **Step 4: Write the failing handler tests** (Postgres-gated; `FakeQueue`; stub analyser): "analyses, writes summary and creates one callback"; "second delivery is a no-op (skipped_already) and creates no second callback"; "staff outcome is never overwritten"; "worker skips calls without user turns and deletes the message"; "failed analysis leaves the message in flight".
+- [ ] **Step 4: Write the failing handler tests** (Postgres-gated; `FakeQueue`; stub analyser): "analyses, writes summary and creates one callback (phone from callerPhone)"; "callback phone falls back to the linked patient"; "needsCallback with no phone creates no row and keeps analysis.needsCallback true"; "second delivery is a no-op (skipped_already) and creates no second callback"; "staff outcome is never overwritten"; "worker skips calls without user turns and deletes the message"; "failed analysis leaves the message in flight".
 - [ ] **Step 5: Implement `handler.ts`, `lambda.ts`, `dev.ts`, `env.ts`** (`POST_CALL_QUEUE_URL`, `POST_CALL_MODEL_ID` default `apac.amazon.nova-pro-v1:0`, `AWS_REGION`, `DATABASE_URL`). `dev.ts` must exit non-zero with a clear message when the queue URL is empty.
 - [ ] **Step 6: Run worker tests, root typecheck/lint/prettier → PASS.** Start `npm run workers:dev` in a second terminal, run `bash scripts/e2e-voice.sh`, and confirm `GET /v1/calls/:id` shows a `summary` within 60 s (the e2e script polls for `analysedAt` when `E2E_EXPECT_SUMMARY=1`).
 - [ ] **Step 7: Commit** — `git add workers/post-call package.json package-lock.json scripts/dev.sh .env.example README.md scripts/e2e-voice.ts && git commit -m "feat(worker): post-call analysis worker with Nova Pro, local runner and Lambda handler"`.
@@ -457,7 +484,8 @@ it("writes a valid 44-byte header for 16 kHz stereo PCM16", ...);
 
 **Interfaces:**
 - Consumes: Task 5 routes; `serverApi`, `useApi`, `requireActiveClinic`, `Badge`/`OutcomeBadge`/`CallStatusBadge`, `EmptyState`, `Modal`, `formatDateTime`/`formatDuration` (clinic tz), `ToolTimeline` (reuse for tool chips).
-- Produces: URL-driven filters on `/app/calls?outcome=&status=&from=&to=` (server component reads `searchParams`, passes to `/v1/calls`), the detail page composed as header → `CallPlayer` → two columns (`SyncedTranscript` | `AnalysisCard` + `OutcomeEditor` + linked callbacks) → footer meta; recording states: `pending` → "Recording is being saved…" (poll every 5 s up to 2 min), `failed` → "Recording unavailable", `none` → no player.
+- Produces: URL-driven filters on `/app/calls?outcome=&status=&from=&to=` (server component reads `searchParams`, passes to `/v1/calls`), the detail page composed as header → `CallPlayer` → two columns (`SyncedTranscript` | `AnalysisCard` + `OutcomeEditor` + linked callbacks) → footer meta; recording states: `pending` → "Recording is being saved…" (poll every 5 s up to 2 min, then show "Recording unavailable"), `failed` → "Recording unavailable", `none` → no player.
+- Parked from Phase 1, done here: `AppointmentList.tsx`, `AppointmentsView.tsx` and `OverviewView.tsx` stop fetching `/v1/patients?limit=200` to label appointments and read `appointment.patient.name` / `appointment.patient.phoneMasked` from the appointment DTO (added in Phase 1) instead; drop the `patients` prop from `AppointmentList`. Test: `AppointmentList.test.tsx` renders name and masked phone from the DTO with no patients prop.
 
 - [ ] **Step 1: Write the failing component tests** (Testing Library, mocked `useApi`): filters update the URL and reset offset; `CallPlayer` requests the URL once and shows an inline error on 409 pending; `SyncedTranscript` highlights the right turn for `currentTimeMs` and seeks on click; `OutcomeEditor` PATCHes and shows the staff badge; `CallbacksQueue` marks done and moves the row to the Done tab.
 - [ ] **Step 2: Run → FAIL. Step 3: implement**, keeping all strings honest ("Recording" only when `recordingStatus === "ready"`), masked phones everywhere, keyboard-operable transcript (turns are buttons), `aria-live` on the pending/polling messages, reduced-motion safe.
