@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { VoiceClient } from "./client.js";
-import { FakeSocket, readyEvent } from "./test-helpers.js";
+import { FakeSocket, openWhenReady, readyEvent } from "./test-helpers.js";
 
 function make(over: Partial<ConstructorParameters<typeof VoiceClient>[0]> = {}) {
   const sock = new FakeSocket();
@@ -30,7 +30,7 @@ describe("VoiceClient", () => {
   it("rejects when the socket closes before ready", async () => {
     const { client, sock } = make();
     const p = client.connect();
-    sock.open();
+    await openWhenReady(sock);
     sock.close(1006);
     await expect(p).rejects.toThrow(/closed before ready/);
   });
@@ -38,36 +38,80 @@ describe("VoiceClient", () => {
   it("closes the socket when the gateway errors before ready", async () => {
     const { client, sock, mic } = make();
     const p = client.connect();
-    sock.open();
+    await openWhenReady(sock);
     sock.emit({ type: "error", code: "auth_failed", message: "bad token" });
     await expect(p).rejects.toThrow("bad token");
     expect(sock.closeCode).not.toBeNull();
     expect(mic.stop).toHaveBeenCalled();
   });
 
-  it("sends end and closes the socket when the mic fails after ready", async () => {
+  it("asks for the microphone before connecting; a denied mic never opens a socket", async () => {
     const mic = {
       start: vi.fn(async () => {
         throw new Error("denied");
       }),
       stop: vi.fn(),
     };
-    const { client, sock } = make({ mediaFactory: () => mic });
+    const wsFactory = vi.fn(() => new FakeSocket());
+    const { client } = make({ mediaFactory: () => mic, wsFactory });
     const errors: string[] = [];
     client.on("error", (e) => errors.push(e.message));
-    const p = client.connect();
-    sock.open();
-    sock.emit(readyEvent);
-    await expect(p).rejects.toThrow("denied");
-    expect(sock.sentEvents().map((e) => e.type)).toEqual(["start", "end"]);
-    expect(sock.closeCode).toBe(1011);
+    await expect(client.connect()).rejects.toMatchObject({
+      message: "denied",
+      errorCode: "unsupported",
+    });
+    expect(wsFactory).not.toHaveBeenCalled();
+    expect(mic.stop).toHaveBeenCalled();
     expect(errors).toEqual(["denied"]);
+  });
+
+  it("does not send mic frames before ready", async () => {
+    const { client, sock, mic } = make();
+    const p = client.connect();
+    await openWhenReady(sock);
+    const onFrame = (mic.start.mock.calls as unknown as Array<[(f: ArrayBuffer) => void]>)[0]![0];
+    onFrame(new ArrayBuffer(4));
+    expect(sock.sent).toHaveLength(1); // only the start frame
+    sock.emit(readyEvent);
+    await p;
+    onFrame(new ArrayBuffer(4));
+    expect(sock.sent).toHaveLength(2);
+  });
+
+  it.each([
+    ["auth_failed", "auth"],
+    ["forbidden", "auth"],
+    ["busy", "busy"],
+    ["quota", "quota"],
+    ["not_implemented", "unsupported"],
+    ["provider", "internal"],
+    ["internal", "internal"],
+  ] as const)("maps gateway error %s to errorCode %s", async (code, errorCode) => {
+    const { client, sock } = make();
+    const p = client.connect();
+    await openWhenReady(sock);
+    sock.emit({ type: "error", code, message: "m" });
+    await expect(p).rejects.toMatchObject({ message: "m", errorCode });
+  });
+
+  it.each([
+    [4001, "auth"],
+    [4003, "auth"],
+    [4029, "busy"],
+    [1011, "internal"],
+    [1006, "network"],
+  ] as const)("maps close code %s before ready to errorCode %s", async (code, errorCode) => {
+    const { client, sock } = make();
+    const p = client.connect();
+    await openWhenReady(sock);
+    sock.close(code);
+    await expect(p).rejects.toMatchObject({ errorCode });
   });
 
   it("end() is idempotent", async () => {
     const { client, sock } = make();
     const p = client.connect();
-    sock.open();
+    await openWhenReady(sock);
     sock.emit(readyEvent);
     await p;
     client.end();
@@ -78,14 +122,14 @@ describe("VoiceClient", () => {
   it("end() after a failure is safe and does not resend", async () => {
     const { client, sock } = make();
     const p = client.connect();
-    sock.open();
+    await openWhenReady(sock);
     sock.emit({ type: "error", code: "auth_failed", message: "bad token" });
     await expect(p).rejects.toThrow("bad token");
     expect(() => client.end()).not.toThrow();
     expect(sock.sentEvents().map((e) => e.type)).toEqual(["start"]);
   });
 
-  it("does not time out while the mic permission prompt is pending", async () => {
+  it("does not start the connect timer while the mic permission prompt is pending", async () => {
     vi.useFakeTimers();
     try {
       let grant!: () => void;
@@ -93,13 +137,15 @@ describe("VoiceClient", () => {
         start: vi.fn(() => new Promise<void>((r) => (grant = r))),
         stop: vi.fn(),
       };
-      const { client, sock } = make({ mediaFactory: () => mic });
+      const wsFactory = vi.fn(() => sock);
+      const { client, sock } = make({ mediaFactory: () => mic, wsFactory });
       const p = client.connect();
-      sock.open();
-      await vi.advanceTimersByTimeAsync(1000);
-      sock.emit(readyEvent);
-      await vi.advanceTimersByTimeAsync(14_000);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(wsFactory).not.toHaveBeenCalled();
       grant();
+      await vi.advanceTimersByTimeAsync(0);
+      sock.open();
+      sock.emit(readyEvent);
       await expect(p).resolves.toBeUndefined();
       expect(sock.closeCode).toBeNull();
     } finally {
@@ -112,7 +158,10 @@ describe("VoiceClient", () => {
     try {
       const { client, sock } = make({ connectTimeoutMs: 50 });
       const p = client.connect();
-      const assertion = expect(p).rejects.toThrow(/Timed out/);
+      const assertion = expect(p).rejects.toMatchObject({
+        message: expect.stringMatching(/Timed out/),
+        errorCode: "network",
+      });
       await vi.advanceTimersByTimeAsync(60);
       await assertion;
       expect(sock.closeCode).not.toBeNull();
@@ -135,13 +184,10 @@ describe("VoiceClient", () => {
       }),
       stop: vi.fn(),
     };
-    const { client, sock } = make({ mediaFactory: () => mic });
+    const { client } = make({ mediaFactory: () => mic });
     const seen = vi.fn();
     client.on("error", seen);
-    const p = client.connect();
-    sock.open();
-    sock.emit(readyEvent);
-    await expect(p).rejects.toThrow(/below/);
+    await expect(client.connect()).rejects.toThrow(/below/);
     expect(seen).toHaveBeenCalled();
   });
 });

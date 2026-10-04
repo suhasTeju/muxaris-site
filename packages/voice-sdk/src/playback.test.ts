@@ -21,13 +21,13 @@ function fakeCtx() {
 const chunk = (samples: number) => new Int16Array(samples).buffer; // 2400 samples = 0.1 s
 
 describe("PcmPlayer", () => {
-  it("schedules chunks back to back, starting 20 ms ahead", () => {
+  it("schedules chunks back to back, starting 80 ms ahead", () => {
     const { ctx, sources } = fakeCtx();
     const p = new PcmPlayer(() => ctx);
     p.enqueue(chunk(2400));
     p.enqueue(chunk(2400));
-    expect(sources[0]!.start).toHaveBeenCalledWith(expect.closeTo(1.02, 6));
-    expect(sources[1]!.start).toHaveBeenCalledWith(expect.closeTo(1.12, 6));
+    expect(sources[0]!.start).toHaveBeenCalledWith(expect.closeTo(1.08, 6));
+    expect(sources[1]!.start).toHaveBeenCalledWith(expect.closeTo(1.18, 6));
     expect(ctx.createBuffer).toHaveBeenCalledWith(1, 2400, 24000);
   });
   it("catches up when the queue ran dry", () => {
@@ -36,7 +36,7 @@ describe("PcmPlayer", () => {
     p.enqueue(chunk(2400));
     ctx.currentTime = 5;
     p.enqueue(chunk(2400));
-    expect(sources[1]!.start).toHaveBeenCalledWith(expect.closeTo(5.02, 6));
+    expect(sources[1]!.start).toHaveBeenCalledWith(expect.closeTo(5.08, 6));
   });
   it("flush stops all live sources and resets the clock", () => {
     const { ctx, sources } = fakeCtx();
@@ -47,7 +47,7 @@ describe("PcmPlayer", () => {
     expect(sources[0]!.stop).toHaveBeenCalled();
     expect(sources[1]!.stop).toHaveBeenCalled();
     p.enqueue(chunk(2400));
-    expect(sources[2]!.start).toHaveBeenCalledWith(expect.closeTo(1.02, 6));
+    expect(sources[2]!.start).toHaveBeenCalledWith(expect.closeTo(1.08, 6));
   });
   it("ignores empty chunks", () => {
     const { ctx } = fakeCtx();

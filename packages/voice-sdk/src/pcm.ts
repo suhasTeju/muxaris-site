@@ -37,20 +37,21 @@ export class Resampler {
     all.set(this.buf);
     all.set(src, this.buf.length);
 
-    const out: number[] = [];
+    const out = new Float32Array(Math.ceil(all.length / this.ratio) + 1);
+    let n = 0;
     let pos = this.pos;
     while (Math.floor(pos) + 1 < all.length) {
       const idx = Math.floor(pos);
       const frac = pos - idx;
       const a = all[idx] ?? 0;
       const b = all[idx + 1] ?? a;
-      out.push(a + (b - a) * frac);
+      out[n++] = a + (b - a) * frac;
       pos += this.ratio;
     }
     const drop = Math.min(Math.floor(pos), all.length);
     this.buf = all.slice(drop);
     this.pos = pos - drop;
-    return Float32Array.from(out);
+    return out.subarray(0, n);
   }
 }
 

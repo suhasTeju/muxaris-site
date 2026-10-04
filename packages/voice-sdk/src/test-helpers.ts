@@ -37,3 +37,9 @@ export const readyEvent = {
   greeting: "hi",
   language: "en-IN",
 } as const;
+
+/** The client asks for the microphone before it connects; let that settle, then open the socket. */
+export async function openWhenReady(sock: FakeSocket): Promise<void> {
+  await new Promise((r) => setTimeout(r, 0));
+  sock.open();
+}

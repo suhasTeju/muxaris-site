@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GatewayEvent } from "@muxaris/shared";
-import { VoiceClient, type VoiceClientOptions } from "./client.js";
+import {
+  VoiceClient,
+  errorCodeFromGateway,
+  type VoiceClientOptions,
+  type VoiceError,
+  type VoiceErrorCode,
+} from "./client.js";
 
 export type CallPhase = "idle" | "connecting" | "live" | "ended" | "error";
 export type CallState = "listening" | "thinking" | "speaking" | null;
@@ -23,6 +29,8 @@ export interface UseVoiceCall {
   booking: BookingEvent | null;
   secondsRemaining: number | null;
   error: string | null;
+  /** Coarse category of `error` (auth, busy, quota, unsupported, network, internal). */
+  errorCode: VoiceErrorCode | null;
   start(): Promise<void>;
   stop(): void;
 }
@@ -37,6 +45,7 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
   const [booking, setBooking] = useState<BookingEvent | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<VoiceErrorCode | null>(null);
   const clientRef = useRef<VoiceClient | null>(null);
   const stoppedRef = useRef<VoiceClient | null>(null);
   const optsRef = useRef(opts);
@@ -51,6 +60,7 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
     setBooking(null);
     setSecondsRemaining(null);
     setError(null);
+    setErrorCode(null);
 
     const client = new VoiceClient(optsRef.current);
     clientRef.current = client;
@@ -79,8 +89,11 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
     client.on("booking", (e) => current() && setBooking(e));
     client.on("usage", (e) => current() && setSecondsRemaining(e.secondsRemaining));
     client.on("state", (e) => current() && setState(e.state));
+    let gotEnded = false;
+    let isLive = false;
     client.on("ended", () => {
       if (!current()) return;
+      gotEnded = true;
       setPhase((p) => (p === "error" ? p : "ended"));
       setState(null);
       client.end();
@@ -88,18 +101,33 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
     client.on("error", (e) => {
       if (!current()) return;
       setError(e.message);
+      setErrorCode(errorCodeFromGateway(e.code));
       setPhase("error");
     });
-    client.on("close", () => {
-      if (current()) setPhase((p) => (p === "live" || p === "connecting" ? "ended" : p));
+    client.on("close", (ev) => {
+      if (!current()) return;
+      // A close without `ended` that we did not ask for (drop, gateway restart) is not a hang-up.
+      const lost = isLive && !gotEnded && stoppedRef.current !== client && ev.code !== 1000;
+      setPhase((p) => {
+        if (p === "live" && lost) return "error";
+        return p === "live" || p === "connecting" ? "ended" : p;
+      });
+      if (lost) {
+        setError((prev) => prev ?? "Connection lost");
+        setErrorCode((prev) => prev ?? "network");
+      }
     });
 
     try {
       await client.connect();
-      if (current()) setPhase("live");
+      if (current()) {
+        isLive = true;
+        setPhase("live");
+      }
     } catch (e) {
       if (current() && stoppedRef.current !== client) {
         setError((prev) => prev ?? (e instanceof Error ? e.message : String(e)));
+        setErrorCode((prev) => prev ?? (e as Partial<VoiceError>).errorCode ?? "internal");
         setPhase("error");
       }
     }
@@ -122,5 +150,5 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
     [],
   );
 
-  return { phase, state, lines, tools, booking, secondsRemaining, error, start, stop };
+  return { phase, state, lines, tools, booking, secondsRemaining, error, errorCode, start, stop };
 }

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { parseGatewayEvent } from "./client.js";
-import { FakeSocket, readyEvent } from "./test-helpers.js";
+import { FakeSocket, openWhenReady, readyEvent } from "./test-helpers.js";
 import { useVoiceCall } from "./use-voice-call.js";
 
 function setup() {
@@ -40,7 +40,7 @@ describe("useVoiceCall", () => {
       p = hook.result.current.start();
     });
     expect(hook.result.current.phase).toBe("connecting");
-    act(() => sock.open());
+    await act(async () => openWhenReady(sock));
     expect(JSON.parse(sock.sent[0] as string)).toEqual({
       type: "start",
       token: "tok",
@@ -83,7 +83,7 @@ describe("useVoiceCall", () => {
     act(() => {
       p = hook.result.current.start();
     });
-    act(() => sock.open());
+    await act(async () => openWhenReady(sock));
     await act(async () => {
       sock.emit({ type: "error", code: "auth_failed", message: "bad token" });
       await p;
@@ -97,7 +97,7 @@ describe("useVoiceCall", () => {
     act(() => {
       p = h.hook.result.current.start();
     });
-    act(() => h.sock.open());
+    await act(async () => openWhenReady(h.sock));
     await act(async () => {
       h.sock.emit(ready);
       await p;
@@ -110,7 +110,7 @@ describe("useVoiceCall", () => {
     act(() => {
       p = h.hook.result.current.start();
     });
-    act(() => h.sock.open());
+    await act(async () => openWhenReady(h.sock));
     await act(async () => {
       h.hook.result.current.stop();
       await p;
@@ -162,5 +162,46 @@ describe("useVoiceCall", () => {
       { name: "find_slots", status: "done", summary: "1d" },
       { name: "find_slots", status: "failed", summary: "2f" },
     ]);
+  });
+
+  it("exposes errorCode for gateway errors", async () => {
+    const h = setup();
+    await goLive(h);
+    act(() => h.sock.emit({ type: "error", code: "quota", message: "out of minutes" }));
+    expect(h.hook.result.current.error).toBe("out of minutes");
+    expect(h.hook.result.current.errorCode).toBe("quota");
+  });
+
+  it("exposes errorCode when connecting is refused by close code", async () => {
+    const h = setup();
+    let p!: Promise<void>;
+    act(() => {
+      p = h.hook.result.current.start();
+    });
+    await act(async () => {
+      await openWhenReady(h.sock);
+      h.sock.close(4001);
+      await p;
+    });
+    expect(h.hook.result.current.phase).toBe("error");
+    expect(h.hook.result.current.errorCode).toBe("auth");
+  });
+
+  it("treats a socket drop without an ended event as an error, not a hang-up", async () => {
+    const h = setup();
+    await goLive(h);
+    act(() => h.sock.close(1006));
+    expect(h.hook.result.current.phase).toBe("error");
+    expect(h.hook.result.current.error).toBe("Connection lost");
+    expect(h.hook.result.current.errorCode).toBe("network");
+  });
+
+  it("a normal close after ended stays ended", async () => {
+    const h = setup();
+    await goLive(h);
+    act(() => h.sock.emit({ type: "ended", reason: "assistant" }));
+    act(() => h.sock.close(1000));
+    expect(h.hook.result.current.phase).toBe("ended");
+    expect(h.hook.result.current.error).toBeNull();
   });
 });

@@ -25,6 +25,43 @@ export interface VoiceClientOptions {
   connectTimeoutMs?: number;
 }
 
+/** Coarse, stable error category for UI branching (the `message` stays human readable). */
+export type VoiceErrorCode = "auth" | "busy" | "quota" | "unsupported" | "network" | "internal";
+
+/** Error thrown by `connect()`; `errorCode` classifies the failure. */
+export class VoiceError extends Error {
+  constructor(
+    message: string,
+    readonly errorCode: VoiceErrorCode,
+  ) {
+    super(message);
+    this.name = "VoiceError";
+  }
+}
+
+export function errorCodeFromGateway(code: string): VoiceErrorCode {
+  switch (code) {
+    case "auth_failed":
+    case "forbidden":
+      return "auth";
+    case "busy":
+      return "busy";
+    case "quota":
+      return "quota";
+    case "not_implemented":
+      return "unsupported";
+    default:
+      return "internal"; // provider, internal
+  }
+}
+
+export function errorCodeFromClose(code: number): VoiceErrorCode {
+  if (code === 4001 || code === 4003) return "auth";
+  if (code === 4029) return "busy";
+  if (code === 1011) return "internal";
+  return "network"; // 1006 abnormal, 1001 going away, ...
+}
+
 export type VoiceClientEvents = {
   [K in GatewayEvent["type"]]: Extract<GatewayEvent, { type: K }>;
 } & { audio: ArrayBuffer; close: { code: number; reason: string } };
@@ -39,6 +76,7 @@ export class VoiceClient {
   private ended = false;
   private socketClosed = false;
   private gotReady = false;
+  private connecting = false;
   private readonly listeners = new Map<string, Set<Listener>>();
 
   constructor(private readonly opts: VoiceClientOptions) {}
@@ -60,11 +98,39 @@ export class VoiceClient {
   }
 
   connect(): Promise<void> {
-    if (this.ws) return Promise.reject(new Error("already connected"));
+    if (this.ws || this.connecting) return Promise.reject(new Error("already connected"));
+    this.connecting = true;
     const { url, token, clinicId, language } = this.opts;
     this.player = (this.opts.playerFactory ?? (() => new PcmPlayer()))();
     this.player.prepare?.();
     this.mic = (this.opts.mediaFactory ?? createMicCapture)();
+    return this.open(url, token, clinicId, language);
+  }
+
+  private async open(
+    url: string,
+    token: string,
+    clinicId: string,
+    language: LanguageCode,
+  ): Promise<void> {
+    // Ask for the microphone before touching the network, so a pending or denied permission
+    // prompt never leaves a half-started call on the gateway.
+    try {
+      await this.mic?.start((frame) => {
+        if (this.gotReady && this.ws && this.ws.readyState === OPEN && !this.ended) {
+          this.ws.send(frame);
+        }
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.teardown();
+      this.emit("error", { type: "error", code: "internal", message });
+      throw new VoiceError(message, "unsupported");
+    }
+    if (this.ended) {
+      this.teardown();
+      throw new VoiceError("Call ended before it started", "internal");
+    }
     const ws = (this.opts.wsFactory ?? ((u: string) => new WebSocket(u) as unknown as SocketLike))(
       url,
     );
@@ -85,18 +151,23 @@ export class VoiceClient {
         this.shutdown(this.gotReady, 1011);
       };
       const timer = setTimeout(
-        () => fail(new Error("Timed out waiting for the gateway")),
+        () => fail(new VoiceError("Timed out waiting for the gateway", "network")),
         this.opts.connectTimeoutMs ?? 10_000,
       );
 
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "start", token, clinicId, language }));
       };
-      ws.onerror = () => fail(new Error("WebSocket error"));
+      ws.onerror = () => fail(new VoiceError("WebSocket error", "network"));
       ws.onclose = (ev) => {
         this.socketClosed = true;
         this.teardown();
-        settle(new Error(`Connection closed before ready (${ev.code})`));
+        settle(
+          new VoiceError(
+            `Connection closed before ready (${ev.code})`,
+            errorCodeFromClose(ev.code),
+          ),
+        );
         this.emit("close", { code: ev.code, reason: ev.reason });
       };
       ws.onmessage = (ev) => {
@@ -108,20 +179,9 @@ export class VoiceClient {
           this.emit(event.type, event as never);
           if (event.type === "ready" && !this.gotReady) {
             this.gotReady = true;
-            clearTimeout(timer);
-            this.startMic().then(
-              () => {
-                if (this.ended) settle(new Error("Call ended before it started"));
-                else settle();
-              },
-              (e: unknown) => {
-                const message = e instanceof Error ? e.message : String(e);
-                this.emit("error", { type: "error", code: "internal", message });
-                fail(e instanceof Error ? e : new Error(message));
-              },
-            );
+            settle();
           } else if (event.type === "error") {
-            settle(new Error(event.message));
+            settle(new VoiceError(event.message, errorCodeFromGateway(event.code)));
             this.shutdown(false, 1000);
           }
         } else if (data instanceof ArrayBuffer) {
@@ -130,12 +190,6 @@ export class VoiceClient {
           this.emit("audio", data);
         }
       };
-    });
-  }
-
-  private async startMic(): Promise<void> {
-    await this.mic?.start((frame) => {
-      if (this.ws && this.ws.readyState === OPEN && !this.ended) this.ws.send(frame);
     });
   }
 

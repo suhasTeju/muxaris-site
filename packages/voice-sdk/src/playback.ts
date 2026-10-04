@@ -1,7 +1,8 @@
 import { pcm16ToFloat } from "./pcm.js";
 
 export const PLAYBACK_RATE = 24000;
-const LEAD_SECONDS = 0.02;
+/** Jitter buffer for the first chunk after idle/flush; later chunks queue back to back. */
+const LEAD_SECONDS = 0.08;
 
 interface SourceLike {
   buffer: unknown;
@@ -62,7 +63,8 @@ export class PcmPlayer implements PcmPlayerLike {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
-    const startAt = Math.max(ctx.currentTime + LEAD_SECONDS, this.nextTime);
+    const idle = this.nextTime <= ctx.currentTime;
+    const startAt = idle ? ctx.currentTime + LEAD_SECONDS : this.nextTime;
     this.nextTime = startAt + buffer.duration;
     this.live.add(source);
     source.onended = () => this.live.delete(source);
