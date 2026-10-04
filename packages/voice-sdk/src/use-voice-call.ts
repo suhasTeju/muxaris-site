@@ -38,6 +38,7 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<VoiceClient | null>(null);
+  const stoppedRef = useRef<VoiceClient | null>(null);
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
@@ -97,7 +98,7 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
       await client.connect();
       if (current()) setPhase("live");
     } catch (e) {
-      if (current()) {
+      if (current() && stoppedRef.current !== client) {
         setError((prev) => prev ?? (e instanceof Error ? e.message : String(e)));
         setPhase("error");
       }
@@ -107,6 +108,7 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
   const stop = useCallback(() => {
     const client = clientRef.current;
     if (!client) return;
+    stoppedRef.current = client;
     client.end();
     setState(null);
     setPhase((p) => (p === "error" ? p : "ended"));

@@ -1,22 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { downsampleTo16k, floatToPcm16, FrameChunker } from "./pcm.js";
+import { downsampleTo16k, floatToPcm16, FrameChunker, Resampler } from "./pcm.js";
 
-describe("downsampleTo16k", () => {
+function stream(inRate: number, fn: (t: number) => number, block = 128): Float32Array[] {
+  const out: Float32Array[] = [];
+  const r = new Resampler(inRate);
+  for (let i = 0; i < inRate; i += block) {
+    const n = Math.min(block, inRate - i);
+    out.push(r.push(new Float32Array(n).map((_, k) => fn((i + k) / inRate))));
+  }
+  return out;
+}
+const concat = (parts: Float32Array[]) => {
+  const o = new Float32Array(parts.reduce((a, p) => a + p.length, 0));
+  let off = 0;
+  for (const p of parts) {
+    o.set(p, off);
+    off += p.length;
+  }
+  return o;
+};
+
+describe("Resampler", () => {
   it("passes through 16 kHz", () => {
     const f = new Float32Array([0.1, 0.2]);
     expect(downsampleTo16k(f, 16000)).toBe(f);
   });
-  it("averages integer ratios (48k -> 16k)", () => {
-    const out = downsampleTo16k(new Float32Array([0, 0.3, 0.6, 1, 1, 1]), 48000);
-    expect(out.length).toBe(2);
-    expect(out[0]).toBeCloseTo(0.3);
-    expect(out[1]).toBeCloseTo(1);
+  it.each([48000, 44100])("yields 16000 samples per second from %i in 128 blocks", (rate) => {
+    const total = concat(stream(rate, () => 0.5)).length;
+    expect(Math.abs(total - 16000)).toBeLessThanOrEqual(1);
   });
-  it("interpolates non-integer ratios (44.1k)", () => {
-    const input = new Float32Array(4410).map((_, i) => i / 4410);
-    const out = downsampleTo16k(input, 44100);
-    expect(out.length).toBe(Math.floor(4410 / 2.75625));
-    expect(out[10]).toBeCloseTo((10 * 2.75625) / 4410, 4);
+  it.each([48000, 44100])("preserves a 1 kHz sine at %i", (rate) => {
+    const out = concat(stream(rate, (t) => Math.sin(2 * Math.PI * 1000 * t)));
+    // 2-tap filter delays the input by half an input sample
+    const delay = rate > 24000 ? 0.5 / rate : 0;
+    let maxErr = 0;
+    for (let k = 20; k < out.length - 20; k++) {
+      const expected = Math.sin(2 * Math.PI * 1000 * (k / 16000 - delay));
+      maxErr = Math.max(maxErr, Math.abs((out[k] ?? 0) - expected));
+    }
+    expect(maxErr).toBeLessThan(0.05);
+  });
+  it("is independent of block size", () => {
+    const fn = (t: number) => Math.sin(2 * Math.PI * 300 * t);
+    const a = concat(stream(48000, fn, 128));
+    const b = concat(stream(48000, fn, 1000));
+    for (let i = 0; i < Math.min(a.length, b.length) - 2; i++)
+      expect(a[i]).toBeCloseTo(b[i] ?? NaN, 5);
+  });
+  it("throws at construction below 16 kHz", () => {
+    expect(() => new Resampler(8000)).toThrow();
   });
 });
 

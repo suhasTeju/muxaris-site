@@ -20,9 +20,12 @@ export interface AudioContextLike {
   createBuffer(channels: number, length: number, rate: number): BufferLike;
   createBufferSource(): SourceLike;
   close?(): Promise<void>;
+  resume?(): Promise<void> | void;
 }
 
 export interface PcmPlayerLike {
+  /** Creates and resumes the audio context (call from a user-gesture-initiated path). */
+  prepare?(): void;
   enqueue(pcm24k: ArrayBuffer): void;
   flush(): void;
   close(): void;
@@ -37,10 +40,22 @@ export class PcmPlayer implements PcmPlayerLike {
     this.ctx = null;
   }
 
+  prepare(): void {
+    this.ensure();
+  }
+
+  private ensure(): AudioContextLike {
+    if (!this.ctx) {
+      this.ctx = this.ctxFactory();
+      void Promise.resolve(this.ctx.resume?.()).catch(() => undefined);
+    }
+    return this.ctx;
+  }
+
   enqueue(pcm24k: ArrayBuffer): void {
     const samples = Math.floor(pcm24k.byteLength / 2);
     if (samples === 0) return;
-    const ctx = (this.ctx ??= this.ctxFactory());
+    const ctx = this.ensure();
     const pcm = new Int16Array(pcm24k.slice(0, samples * 2));
     const buffer = ctx.createBuffer(1, samples, PLAYBACK_RATE);
     buffer.copyToChannel(pcm16ToFloat(pcm), 0);

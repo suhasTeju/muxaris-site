@@ -1,31 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { parseGatewayEvent, type SocketLike } from "./client.js";
+import { parseGatewayEvent } from "./client.js";
+import { FakeSocket, readyEvent } from "./test-helpers.js";
 import { useVoiceCall } from "./use-voice-call.js";
-
-class FakeSocket implements SocketLike {
-  binaryType = "blob";
-  readyState = 0;
-  onopen: SocketLike["onopen"] = null;
-  onmessage: SocketLike["onmessage"] = null;
-  onerror: SocketLike["onerror"] = null;
-  onclose: SocketLike["onclose"] = null;
-  sent: unknown[] = [];
-  send(d: unknown) {
-    this.sent.push(d);
-  }
-  close(code = 1000) {
-    this.readyState = 3;
-    this.onclose?.({ code, reason: "" });
-  }
-  open() {
-    this.readyState = 1;
-    this.onopen?.({});
-  }
-  emit(e: object) {
-    this.onmessage?.({ data: JSON.stringify(e) });
-  }
-}
 
 function setup() {
   const sock = new FakeSocket();
@@ -44,13 +21,7 @@ function setup() {
   );
   return { sock, mic, player, hook };
 }
-const ready = {
-  type: "ready",
-  callId: "k",
-  assistantName: "Asha",
-  greeting: "hi",
-  language: "en-IN",
-};
+const ready = readyEvent;
 
 describe("parseGatewayEvent", () => {
   it("accepts valid and ignores invalid", () => {
@@ -119,5 +90,77 @@ describe("useVoiceCall", () => {
     });
     await waitFor(() => expect(hook.result.current.phase).toBe("error"));
     expect(hook.result.current.error).toBe("bad token");
+  });
+
+  async function goLive(h: ReturnType<typeof setup>) {
+    let p!: Promise<void>;
+    act(() => {
+      p = h.hook.result.current.start();
+    });
+    act(() => h.sock.open());
+    await act(async () => {
+      h.sock.emit(ready);
+      await p;
+    });
+  }
+
+  it("stop() while connecting ends cleanly, not error", async () => {
+    const h = setup();
+    let p!: Promise<void>;
+    act(() => {
+      p = h.hook.result.current.start();
+    });
+    act(() => h.sock.open());
+    await act(async () => {
+      h.hook.result.current.stop();
+      await p;
+    });
+    expect(h.hook.result.current.phase).toBe("ended");
+    expect(h.hook.result.current.error).toBeNull();
+  });
+
+  it("ended event moves phase to ended and closes", async () => {
+    const h = setup();
+    await goLive(h);
+    act(() => h.sock.emit({ type: "ended", reason: "assistant" }));
+    expect(h.hook.result.current.phase).toBe("ended");
+    expect(h.sock.closeCode).toBe(1000);
+  });
+
+  it("mid-call error tears down mic and socket", async () => {
+    const h = setup();
+    await goLive(h);
+    act(() => h.sock.emit({ type: "error", code: "quota", message: "out of minutes" }));
+    expect(h.hook.result.current.phase).toBe("error");
+    expect(h.hook.result.current.error).toBe("out of minutes");
+    expect(h.mic.stop).toHaveBeenCalled();
+    expect(h.sock.closeCode).not.toBeNull();
+  });
+
+  it("unmount cleans up", async () => {
+    const h = setup();
+    await goLive(h);
+    h.hook.unmount();
+    expect(h.mic.stop).toHaveBeenCalled();
+    expect(h.player.close).toHaveBeenCalled();
+    expect(h.sock.closeCode).toBe(1000);
+  });
+
+  it("tracks repeated same-name tools separately", async () => {
+    const h = setup();
+    await goLive(h);
+    act(() => {
+      for (const [status, summary] of [
+        ["started", "1"],
+        ["done", "1d"],
+        ["started", "2"],
+        ["failed", "2f"],
+      ] as const)
+        h.sock.emit({ type: "tool", name: "find_slots", status, summary });
+    });
+    expect(h.hook.result.current.tools).toEqual([
+      { name: "find_slots", status: "done", summary: "1d" },
+      { name: "find_slots", status: "failed", summary: "2f" },
+    ]);
   });
 });

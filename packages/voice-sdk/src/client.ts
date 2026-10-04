@@ -21,6 +21,8 @@ export interface VoiceClientOptions {
   wsFactory?: (url: string) => SocketLike;
   mediaFactory?: () => MicCapture;
   playerFactory?: () => PcmPlayerLike;
+  /** Max wait for the gateway `ready` event. Default 10000 ms. */
+  connectTimeoutMs?: number;
 }
 
 export type VoiceClientEvents = {
@@ -35,6 +37,8 @@ export class VoiceClient {
   private mic: MicCapture | null = null;
   private player: PcmPlayerLike | null = null;
   private ended = false;
+  private socketClosed = false;
+  private gotReady = false;
   private readonly listeners = new Map<string, Set<Listener>>();
 
   constructor(private readonly opts: VoiceClientOptions) {}
@@ -56,8 +60,10 @@ export class VoiceClient {
   }
 
   connect(): Promise<void> {
+    if (this.ws) return Promise.reject(new Error("already connected"));
     const { url, token, clinicId, language } = this.opts;
     this.player = (this.opts.playerFactory ?? (() => new PcmPlayer()))();
+    this.player.prepare?.();
     this.mic = (this.opts.mediaFactory ?? createMicCapture)();
     const ws = (this.opts.wsFactory ?? ((u: string) => new WebSocket(u) as unknown as SocketLike))(
       url,
@@ -67,42 +73,58 @@ export class VoiceClient {
 
     return new Promise<void>((resolve, reject) => {
       let settled = false;
-      const fail = (err: Error) => {
+      const settle = (err?: Error) => {
         if (settled) return;
         settled = true;
-        this.teardown();
-        reject(err);
+        clearTimeout(timer);
+        if (err) reject(err);
+        else resolve();
       };
+      const fail = (err: Error) => {
+        settle(err);
+        this.shutdown(this.gotReady, 1011);
+      };
+      const timer = setTimeout(
+        () => fail(new Error("Timed out waiting for the gateway")),
+        this.opts.connectTimeoutMs ?? 10_000,
+      );
 
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "start", token, clinicId, language }));
       };
       ws.onerror = () => fail(new Error("WebSocket error"));
       ws.onclose = (ev) => {
-        fail(new Error(`Connection closed before ready (${ev.code})`));
+        this.socketClosed = true;
         this.teardown();
+        settle(new Error(`Connection closed before ready (${ev.code})`));
         this.emit("close", { code: ev.code, reason: ev.reason });
       };
       ws.onmessage = (ev) => {
         const data = ev.data;
         if (typeof data === "string") {
           const event = parseGatewayEvent(data);
-          if (!event) return;
+          if (!event || this.ended) return;
           if (event.type === "flush_playback") this.player?.flush();
           this.emit(event.type, event as never);
-          if (event.type === "ready" && !settled) {
+          if (event.type === "ready" && !this.gotReady) {
+            this.gotReady = true;
             this.startMic().then(
               () => {
-                if (settled) return;
-                settled = true;
-                resolve();
+                if (this.ended) settle(new Error("Call ended before it started"));
+                else settle();
               },
-              (e: unknown) => fail(e instanceof Error ? e : new Error(String(e))),
+              (e: unknown) => {
+                const message = e instanceof Error ? e.message : String(e);
+                this.emit("error", { type: "error", code: "internal", message });
+                fail(e instanceof Error ? e : new Error(message));
+              },
             );
           } else if (event.type === "error") {
-            fail(new Error(event.message));
+            settle(new Error(event.message));
+            this.shutdown(false, 1000);
           }
         } else if (data instanceof ArrayBuffer) {
+          if (this.ended) return;
           this.player?.enqueue(data);
           this.emit("audio", data);
         }
@@ -116,21 +138,21 @@ export class VoiceClient {
     });
   }
 
+  /** Ends the call: sends `end`, releases mic/player, closes the socket. Idempotent. */
   end(): void {
-    if (this.ended) return;
-    const ws = this.ws;
-    if (ws && ws.readyState === OPEN) {
-      try {
-        ws.send(JSON.stringify({ type: "end" }));
-      } catch {
-        // socket already going away
-      }
-    }
+    this.shutdown(true, 1000);
+  }
+
+  private shutdown(sendEnd: boolean, code: number): void {
     this.teardown();
+    const ws = this.ws;
+    if (!ws || this.socketClosed) return;
+    this.socketClosed = true;
     try {
-      ws?.close(1000);
+      if (sendEnd && ws.readyState === OPEN) ws.send(JSON.stringify({ type: "end" }));
+      ws.close(code);
     } catch {
-      // ignore
+      // socket already going away
     }
   }
 

@@ -1,31 +1,62 @@
 export const TARGET_RATE = 16000;
 export const FRAME_BYTES = 3200; // 100 ms of PCM16 mono at 16 kHz
 
-/** Downsample mono float32 audio to 16 kHz (box average for integer ratios, linear interpolation otherwise). */
-export function downsampleTo16k(float32: Float32Array, inRate: number): Float32Array {
-  if (inRate === TARGET_RATE) return float32;
-  if (inRate < TARGET_RATE) throw new Error(`input rate ${inRate} is below ${TARGET_RATE}`);
-  const ratio = inRate / TARGET_RATE;
-  const outLen = Math.floor(float32.length / ratio);
-  const out = new Float32Array(outLen);
-  if (Number.isInteger(ratio)) {
-    for (let i = 0; i < outLen; i++) {
-      let sum = 0;
-      const start = i * ratio;
-      for (let j = 0; j < ratio; j++) sum += float32[start + j] ?? 0;
-      out[i] = sum / ratio;
+/**
+ * Stateful streaming resampler (to 16 kHz by default). Keeps the fractional read position and the
+ * unconsumed input tail across `push` calls, so arbitrary block sizes (e.g. 128-sample worklet
+ * quanta) produce a continuous, correctly-timed stream. Linear interpolation, with a cheap 2-tap
+ * box average as anti-alias filter when downsampling by more than 1.5x.
+ */
+export class Resampler {
+  private readonly ratio: number;
+  private readonly filter: boolean;
+  private buf = new Float32Array(0);
+  private pos = 0;
+  private prev = 0;
+
+  constructor(inRate: number, outRate: number = TARGET_RATE) {
+    if (!(inRate >= outRate)) throw new Error(`input rate ${inRate} is below ${outRate}`);
+    this.ratio = inRate / outRate;
+    this.filter = this.ratio > 1.5;
+  }
+
+  push(input: Float32Array): Float32Array {
+    if (this.ratio === 1) return input;
+    let src = input;
+    if (this.filter) {
+      src = new Float32Array(input.length);
+      let prev = this.prev;
+      for (let i = 0; i < input.length; i++) {
+        const x = input[i] ?? 0;
+        src[i] = (x + prev) / 2;
+        prev = x;
+      }
+      this.prev = prev;
     }
-    return out;
+    const all = new Float32Array(this.buf.length + src.length);
+    all.set(this.buf);
+    all.set(src, this.buf.length);
+
+    const out: number[] = [];
+    let pos = this.pos;
+    while (Math.floor(pos) + 1 < all.length) {
+      const idx = Math.floor(pos);
+      const frac = pos - idx;
+      const a = all[idx] ?? 0;
+      const b = all[idx + 1] ?? a;
+      out.push(a + (b - a) * frac);
+      pos += this.ratio;
+    }
+    const drop = Math.min(Math.floor(pos), all.length);
+    this.buf = all.slice(drop);
+    this.pos = pos - drop;
+    return Float32Array.from(out);
   }
-  for (let i = 0; i < outLen; i++) {
-    const pos = i * ratio;
-    const idx = Math.floor(pos);
-    const frac = pos - idx;
-    const a = float32[idx] ?? 0;
-    const b = float32[idx + 1] ?? a;
-    out[i] = a + (b - a) * frac;
-  }
-  return out;
+}
+
+/** Single-shot downsample to 16 kHz. For streams use `Resampler`. */
+export function downsampleTo16k(float32: Float32Array, inRate: number): Float32Array {
+  return new Resampler(inRate, TARGET_RATE).push(float32);
 }
 
 export function floatToPcm16(f: Float32Array): Int16Array {
