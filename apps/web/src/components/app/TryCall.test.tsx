@@ -25,6 +25,11 @@ vi.mock("./use-clinic-profile", () => ({
   }),
 }));
 const getAccessToken = vi.fn(async () => "tok-fresh");
+const assertEnv = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/env", () => ({
+  env: { voiceWsUrl: "wss://v.test" },
+  assertRuntimeEnv: () => assertEnv(),
+}));
 vi.mock("@/lib/api-client", () => ({ getAccessToken: () => getAccessToken() }));
 
 import { TryCall } from "./TryCall";
@@ -45,6 +50,7 @@ beforeEach(() => {
   start.mockClear();
   stop.mockClear();
   getAccessToken.mockClear();
+  assertEnv.mockReset();
   Element.prototype.scrollIntoView = vi.fn();
 });
 afterEach(cleanup);
@@ -159,5 +165,17 @@ describe("TryCall", () => {
     render(<TryCall />);
     fireEvent.click(screen.getByRole("button", { name: "Start call" }));
     expect(await screen.findByText("Your session expired")).toBeTruthy();
+  });
+
+  it("shows a misconfiguration error inline, before fetching a token", async () => {
+    assertEnv.mockImplementation(() => {
+      throw new Error("This deployment is misconfigured: NEXT_PUBLIC_VOICE_WS_URL is not set");
+    });
+    render(<TryCall />);
+    fireEvent.click(screen.getByRole("button", { name: "Start call" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/misconfigured/);
+    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
   });
 });

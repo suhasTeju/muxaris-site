@@ -5,7 +5,7 @@ import { LANGUAGES, type LanguageCode } from "@muxaris/shared";
 import { useVoiceCall, type CallState } from "@muxaris/voice-sdk";
 import { getAccessToken } from "@/lib/api-client";
 import { CALL_ERROR_COPY, classifyCallError } from "@/lib/call-errors";
-import { env } from "@/lib/env";
+import { assertRuntimeEnv, env } from "@/lib/env";
 import { BookingCard } from "./BookingCard";
 import { useClinic } from "./clinic-context";
 import { fieldClass, ghostBtn } from "./Modal";
@@ -41,6 +41,7 @@ export function TryCall() {
   const [token, setToken] = useState("");
   const [pending, setPending] = useState(false);
   const startingRef = useRef(false);
+  const [configMessage, setConfigMessage] = useState("");
   const [startError, setStartError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -74,6 +75,14 @@ export function TryCall() {
     if (startingRef.current) return;
     startingRef.current = true;
     setStartError(null);
+    try {
+      assertRuntimeEnv();
+    } catch (e) {
+      setStartError("config");
+      setConfigMessage(e instanceof Error ? e.message : "Misconfigured deployment");
+      startingRef.current = false;
+      return;
+    }
     setPending(true);
     let t: string | undefined;
     try {
@@ -97,14 +106,16 @@ export function TryCall() {
   const failure =
     startError === "auth" ? "invalid or expired token" : phase === "error" ? error : null;
   const errorCopy =
-    startError === "network"
-      ? {
-          title: "Could not reach the sign-in service",
-          body: "Check your connection and try again.",
-        }
-      : failure !== null
-        ? CALL_ERROR_COPY[classifyCallError(failure)]
-        : null;
+    startError === "config"
+      ? { title: "Calls are not available", body: configMessage }
+      : startError === "network"
+        ? {
+            title: "Could not reach the sign-in service",
+            body: "Check your connection and try again.",
+          }
+        : failure !== null
+          ? CALL_ERROR_COPY[classifyCallError(failure)]
+          : null;
 
   return (
     <div className="px-4 py-8 sm:px-8">

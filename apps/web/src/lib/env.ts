@@ -4,31 +4,43 @@ interface RawEnv {
   voiceWsUrl: string | undefined;
 }
 
-/** Dev keeps localhost defaults; a production build must set both URLs (and the WS one must be wss:). */
-export function resolveUrls(raw: RawEnv): { apiUrl: string; voiceWsUrl: string } {
-  if (raw.nodeEnv === "production") {
-    if (!raw.apiUrl) throw new Error("NEXT_PUBLIC_API_URL must be set in production");
-    if (!raw.voiceWsUrl) throw new Error("NEXT_PUBLIC_VOICE_WS_URL must be set in production");
-    if (!raw.voiceWsUrl.startsWith("wss:")) {
-      throw new Error("NEXT_PUBLIC_VOICE_WS_URL must use wss: in production");
-    }
-  }
-  return {
-    apiUrl: raw.apiUrl || "http://localhost:4000",
-    voiceWsUrl: raw.voiceWsUrl || "ws://localhost:4100",
-  };
-}
-
-// Literal process.env.NEXT_PUBLIC_* accesses so Next can inline them into the client bundle.
-const urls = resolveUrls({
+const raw = (): RawEnv => ({
+  // Literal process.env.NEXT_PUBLIC_* accesses so Next can inline them into the client bundle.
   nodeEnv: process.env.NODE_ENV,
   apiUrl: process.env.NEXT_PUBLIC_API_URL,
   voiceWsUrl: process.env.NEXT_PUBLIC_VOICE_WS_URL,
 });
 
+const LOCAL_HOSTS = ["localhost", "127.0.0.1"];
+
+/**
+ * Throws a clear Error when a production browser session (not on localhost) is missing
+ * NEXT_PUBLIC_API_URL / NEXT_PUBLIC_VOICE_WS_URL or has a non-wss voice URL. Never runs at module
+ * evaluation, so `next build` is unaffected.
+ */
+export function assertRuntimeEnv(
+  r: RawEnv = raw(),
+  hostname: string | undefined = typeof window === "undefined"
+    ? undefined
+    : window.location.hostname,
+): void {
+  if (r.nodeEnv !== "production" || hostname === undefined || LOCAL_HOSTS.includes(hostname)) {
+    return;
+  }
+  if (!r.apiUrl)
+    throw new Error("This deployment is misconfigured: NEXT_PUBLIC_API_URL is not set");
+  if (!r.voiceWsUrl) {
+    throw new Error("This deployment is misconfigured: NEXT_PUBLIC_VOICE_WS_URL is not set");
+  }
+  if (!r.voiceWsUrl.startsWith("wss:")) {
+    throw new Error("This deployment is misconfigured: NEXT_PUBLIC_VOICE_WS_URL must use wss:");
+  }
+}
+
+const base = raw();
 export const env = {
-  apiUrl: urls.apiUrl,
-  voiceWsUrl: urls.voiceWsUrl,
+  apiUrl: base.apiUrl || "http://localhost:4000",
+  voiceWsUrl: base.voiceWsUrl || "ws://localhost:4100",
   cognito: {
     userPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID ?? "",
     clientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID ?? "",

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   clinicId: "clinic_1",
   profileReady: true,
+  profileFailed: false,
+  retry: vi.fn(),
   api: vi.fn(),
 }));
 
@@ -15,6 +17,8 @@ vi.mock("./use-clinic-profile", () => ({
   useClinicProfile: () => ({
     tz: "Asia/Kolkata",
     clinic: state.profileReady ? { languages: ["en-IN"], timezone: "Asia/Kolkata" } : null,
+    failed: state.profileFailed,
+    retry: state.retry,
   }),
 }));
 vi.mock("@/lib/api-client", () => ({ useApi: () => state.api }));
@@ -57,6 +61,8 @@ const catalog = (path: string) => {
 beforeEach(() => {
   state.clinicId = "clinic_1";
   state.profileReady = true;
+  state.profileFailed = false;
+  state.retry = vi.fn();
   state.api = vi.fn();
 });
 afterEach(cleanup);
@@ -115,5 +121,16 @@ describe("AppointmentsView", () => {
     expect(screen.getByText("Loading appointments…")).toBeTruthy();
     expect(screen.queryByText(/Cleaning A/)).toBeNull();
     expect(screen.queryByRole("button", { name: /Phone ending/ })).toBeNull();
+  });
+
+  it("shows an inline error with Retry when the clinic profile fails, not endless loading", async () => {
+    state.profileReady = false;
+    state.profileFailed = true;
+    render(<AppointmentsView />);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/Could not load the clinic profile/);
+    expect(screen.queryByText("Loading appointments…")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(state.retry).toHaveBeenCalledTimes(1);
   });
 });

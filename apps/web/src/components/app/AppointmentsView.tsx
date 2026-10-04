@@ -21,7 +21,7 @@ export function AppointmentsView() {
 
 function AppointmentsInner() {
   const api = useApi();
-  const { clinic, tz } = useClinicProfile();
+  const { clinic, tz, failed: profileFailed, retry: retryProfile } = useClinicProfile();
   const ready = clinic !== null;
   const [mode, setMode] = useState<Mode>("day");
   // null means "today in the clinic's timezone".
@@ -150,7 +150,14 @@ function AppointmentsInner() {
         </button>
       </div>
 
-      {error ? (
+      {profileFailed && !ready ? (
+        <p role="alert" className="text-danger">
+          Could not load the clinic profile.{" "}
+          <button type="button" className="underline" onClick={retryProfile}>
+            Retry
+          </button>
+        </p>
+      ) : error ? (
         <p role="alert" className="text-danger">
           {error}{" "}
           <button type="button" className="underline" onClick={reload}>

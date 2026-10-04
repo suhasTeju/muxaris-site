@@ -1,20 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { resolveUrls } from "./env";
+import { assertRuntimeEnv } from "./env";
 
-describe("resolveUrls", () => {
-  it("keeps localhost defaults outside production", () => {
-    expect(
-      resolveUrls({ nodeEnv: "development", apiUrl: undefined, voiceWsUrl: undefined }),
-    ).toEqual({
-      apiUrl: "http://localhost:4000",
-      voiceWsUrl: "ws://localhost:4100",
-    });
+const ok = { nodeEnv: "production", apiUrl: "https://api.x", voiceWsUrl: "wss://v.x" };
+const unset = { nodeEnv: "production", apiUrl: undefined, voiceWsUrl: undefined };
+
+describe("assertRuntimeEnv", () => {
+  it("throws in production on a real host when a URL is unset or the WS url is not wss", () => {
+    expect(() => assertRuntimeEnv(unset, "app.muxaris.com")).toThrow(/API_URL/);
+    expect(() => assertRuntimeEnv({ ...ok, voiceWsUrl: undefined }, "app.muxaris.com")).toThrow(
+      /VOICE_WS_URL/,
+    );
+    expect(() => assertRuntimeEnv({ ...ok, voiceWsUrl: "ws://v.x" }, "app.muxaris.com")).toThrow(
+      /wss/,
+    );
+    expect(() => assertRuntimeEnv(ok, "app.muxaris.com")).not.toThrow();
   });
-  it("throws in production when a URL is missing or the WS url is not wss", () => {
-    const ok = { nodeEnv: "production", apiUrl: "https://api.x", voiceWsUrl: "wss://v.x" };
-    expect(resolveUrls(ok).voiceWsUrl).toBe("wss://v.x");
-    expect(() => resolveUrls({ ...ok, apiUrl: undefined })).toThrow(/API_URL/);
-    expect(() => resolveUrls({ ...ok, voiceWsUrl: undefined })).toThrow(/VOICE_WS_URL/);
-    expect(() => resolveUrls({ ...ok, voiceWsUrl: "ws://v.x" })).toThrow(/wss/);
+  it("is fine on localhost, in dev, and outside the browser", () => {
+    expect(() => assertRuntimeEnv(unset, "localhost")).not.toThrow();
+    expect(() => assertRuntimeEnv(unset, "127.0.0.1")).not.toThrow();
+    expect(() => assertRuntimeEnv({ ...unset, nodeEnv: "development" }, "app.x")).not.toThrow();
+    expect(() => assertRuntimeEnv(unset, undefined)).not.toThrow();
   });
 });
