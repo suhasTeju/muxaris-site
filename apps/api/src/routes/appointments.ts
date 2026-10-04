@@ -1,20 +1,23 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { and, desc, eq, gte, ilike, lt, or } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, lt, or } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
 import {
   bookAppointment,
   cancelAppointment,
   listAppointments,
   rescheduleAppointment,
+  localDateString,
+  atLocal,
   CoreError,
 } from "@muxaris/core";
-import { appointmentBody, rescheduleBody } from "@muxaris/shared";
+import { appointmentBody, maskPhone, rescheduleBody } from "@muxaris/shared";
 import type { AppEnv } from "../deps.js";
 import { requireClinic } from "../auth/middleware.js";
 import { isoOffset, v } from "../validate.js";
 
 const DAY = 86_400_000;
+const MAX_RANGE_DAYS = 62;
 const page = {
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -24,15 +27,38 @@ const listQuery = z.object({
   to: isoOffset.optional(),
   doctorId: z.string().min(1).optional(),
   status: z.enum(schema.appointmentStatusEnum.enumValues).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).default(500),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 const cancelBody = z.object({ reason: z.string().trim().min(1).max(300).optional() });
 const patientsQuery = z.object({ q: z.string().trim().min(1).max(100).optional(), ...page });
 const callsQuery = z.object({ from: isoOffset.optional(), to: isoOffset.optional(), ...page });
 
-function startOfToday() {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
+/** Adds `patient: { name, phoneMasked }` (clinic-scoped join) to appointment rows. */
+async function attachPatients<T extends { patientId: string }>(
+  db: Db,
+  clinicId: string,
+  rows: T[],
+) {
+  const ids = [...new Set(rows.map((r) => r.patientId))];
+  const found = ids.length
+    ? await db
+        .select({
+          id: schema.patients.id,
+          name: schema.patients.name,
+          phone: schema.patients.phone,
+        })
+        .from(schema.patients)
+        .where(and(eq(schema.patients.clinicId, clinicId), inArray(schema.patients.id, ids)))
+    : [];
+  const byId = new Map(found.map((p) => [p.id, p]));
+  return rows.map((r) => {
+    const p = byId.get(r.patientId);
+    return {
+      ...r,
+      patient: { name: p?.name ?? null, phoneMasked: p ? maskPhone(p.phone) : "" },
+    };
+  });
 }
 
 export function appointmentRoutes(db: Db) {
@@ -41,17 +67,34 @@ export function appointmentRoutes(db: Db) {
 
   r.get("/appointments", member, v("query", listQuery), async (c) => {
     const q = c.req.valid("query");
-    const from = q.from ? new Date(q.from) : startOfToday();
+    const clinicId = c.get("clinic").id;
+    let from: Date;
+    if (q.from) {
+      from = new Date(q.from);
+    } else {
+      // "today" is the clinic's local day, not UTC
+      const [clinic] = await db
+        .select({ timezone: schema.clinics.timezone })
+        .from(schema.clinics)
+        .where(eq(schema.clinics.id, clinicId));
+      const tz = clinic?.timezone ?? "Asia/Kolkata";
+      from = atLocal(localDateString(new Date(), tz), "00:00", tz);
+    }
     const to = q.to ? new Date(q.to) : new Date(from.getTime() + 7 * DAY);
     if (to <= from) throw new CoreError("validation", "`to` must be after `from`");
-    const appointments = await listAppointments(db, {
-      clinicId: c.get("clinic").id,
+    if (to.getTime() - from.getTime() > MAX_RANGE_DAYS * DAY) {
+      throw new CoreError("validation", `the range may span at most ${MAX_RANGE_DAYS} days`);
+    }
+    const rows = await listAppointments(db, {
+      clinicId,
       from,
       to,
+      limit: q.limit,
+      offset: q.offset,
       ...(q.doctorId ? { doctorId: q.doctorId } : {}),
       ...(q.status ? { status: q.status } : {}),
     });
-    return c.json({ appointments });
+    return c.json({ appointments: await attachPatients(db, clinicId, rows) });
   });
 
   r.post("/appointments", member, v("json", appointmentBody), async (c) => {
@@ -68,8 +111,10 @@ export function appointmentRoutes(db: Db) {
       startsAt: new Date(b.startsAt),
       source: "dashboard",
       ...(b.notes ? { notes: b.notes } : {}),
+      ...(b.allowOutsideRules ? { allowOutsideRules: true } : {}),
     });
-    return c.json({ appointment }, 201);
+    const [withPatient] = await attachPatients(db, c.get("clinic").id, [appointment]);
+    return c.json({ appointment: withPatient }, 201);
   });
 
   r.patch("/appointments/:id/reschedule", member, v("json", rescheduleBody), async (c) => {
@@ -101,8 +146,10 @@ export function appointmentRoutes(db: Db) {
       clinicId,
       appointmentId,
       newStartsAt: new Date(b.startsAt),
+      ...(b.allowOutsideRules ? { allowOutsideRules: true } : {}),
     });
-    return c.json({ appointment });
+    const [withPatient] = await attachPatients(db, clinicId, [appointment]);
+    return c.json({ appointment: withPatient });
   });
 
   r.post("/appointments/:id/cancel", member, v("json", cancelBody), async (c) => {
@@ -111,7 +158,8 @@ export function appointmentRoutes(db: Db) {
       appointmentId: c.req.param("id"),
       ...(c.req.valid("json").reason ? { reason: c.req.valid("json").reason! } : {}),
     });
-    return c.json({ appointment });
+    const [withPatient] = await attachPatients(db, c.get("clinic").id, [appointment]);
+    return c.json({ appointment: withPatient });
   });
 
   r.get("/patients", member, v("query", patientsQuery), async (c) => {

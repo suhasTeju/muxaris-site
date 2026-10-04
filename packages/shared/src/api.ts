@@ -7,7 +7,13 @@ const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
 const timeStr = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
 const endTimeStr = z.union([timeStr, z.literal("24:00")]);
 const isoDateTime = z.iso.datetime({ offset: true });
-const languages = z.array(z.enum(LANGUAGE_CODES)).min(1);
+const languages = z.array(z.enum(LANGUAGE_CODES)).min(1).max(20);
+/** Bounds shared by every request body (Phase 1 abuse limits). */
+const NAME_MAX = 120;
+const TEXT_MAX = 2000;
+const ARRAY_MAX = 50;
+const name = () => z.string().trim().min(1).max(NAME_MAX);
+const text = () => z.string().trim().max(TEXT_MAX);
 
 /**
  * Indian mobile in common human formats (`+91 98765-43210`, `91…`, `0…`, bare 10 digits);
@@ -19,19 +25,28 @@ export const indianPhone = z
   .pipe(z.string().regex(/^(?:\+91|91|0)?[6-9]\d{9}$/, "Enter a valid Indian mobile number"))
   .transform((v) => `+91${v.slice(-10)}`);
 
+/** `+919876543210` -> `+91 •••• ••3210` (last four digits visible). */
+export function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  const last4 = digits.slice(-4);
+  return digits.length === 12 && digits.startsWith("91")
+    ? `+91 •••• ••${last4}`
+    : `•••• ••${last4}`;
+}
+
 export const createClinicBody = z.object({
-  name: z.string().trim().min(1),
-  city: z.string().trim().min(1),
-  specialty: z.string().trim().min(1).optional(),
-  address: z.string().trim().optional(),
+  name: name(),
+  city: name(),
+  specialty: name().optional(),
+  address: text().optional(),
   phone: indianPhone.optional(),
   languages: languages.optional(),
 });
 
 export const doctorBody = z.object({
-  name: z.string().trim().min(1),
-  title: z.string().trim().nullish(),
-  specialties: z.array(z.string().trim().min(1)).optional(),
+  name: name(),
+  title: z.string().trim().max(NAME_MAX).nullish(),
+  specialties: z.array(name()).max(ARRAY_MAX).optional(),
   languages: languages.optional(),
   color: z
     .string()
@@ -63,11 +78,11 @@ export const workingHoursBody = z.object({
 });
 
 export const serviceBody = z.object({
-  name: z.string().trim().min(1),
-  description: z.string().trim().nullish(),
-  durationMin: z.number().int().positive(),
-  bufferMin: z.number().int().nonnegative().optional(),
-  priceInr: z.number().int().nonnegative().nullish(),
+  name: name(),
+  description: text().nullish(),
+  durationMin: z.number().int().min(5).max(480),
+  bufferMin: z.number().int().min(0).max(120).optional(),
+  priceInr: z.number().int().min(0).max(1_000_000).nullish(),
   bookableByAi: z.boolean().optional(),
   active: z.boolean().optional(),
 });
@@ -95,28 +110,31 @@ export const assistantProfileBody = z.object({
 
 export const patientBody = z.object({
   phone: indianPhone,
-  name: z.string().trim().min(1).nullish(),
+  name: name().nullish(),
   preferredLanguage: z.enum(LANGUAGE_CODES).optional(),
   dob: dateStr.nullish(),
-  notes: z.string().nullish(),
+  notes: text().nullish(),
 });
 
 export const appointmentBody = z.object({
   patient: z.object({
     phone: indianPhone,
-    name: z.string().trim().min(1).optional(),
+    name: name().optional(),
     preferredLanguage: z.enum(LANGUAGE_CODES).optional(),
   }),
-  doctorId: z.string().min(1),
-  serviceId: z.string().min(1),
+  doctorId: z.string().min(1).max(64),
+  serviceId: z.string().min(1).max(64),
   startsAt: isoDateTime,
-  notes: z.string().nullish(),
+  notes: text().nullish(),
+  /** Explicit staff opt-in: bypass working hours, lead time and grain (never overlaps). */
+  allowOutsideRules: z.boolean().optional(),
 });
 
 export const rescheduleBody = z.object({
   startsAt: isoDateTime,
-  doctorId: z.string().min(1).optional(),
-  serviceId: z.string().min(1).optional(),
+  doctorId: z.string().min(1).max(64).optional(),
+  serviceId: z.string().min(1).max(64).optional(),
+  allowOutsideRules: z.boolean().optional(),
 });
 
 export const memberRoleBody = z.object({ role: z.enum(ROLES) });
@@ -169,6 +187,8 @@ export interface Doctor {
   color: string;
   active: boolean;
   createdAt: Iso;
+  /** Present on GET /v1/doctors. */
+  workingHours?: Array<{ weekday: number; startTime: string; endTime: string }>;
 }
 export interface WorkingHour {
   id: string;
@@ -224,6 +244,8 @@ export interface Appointment {
   reminder2hSentAt: Iso | null;
   createdAt: Iso;
   updatedAt: Iso;
+  /** Present on appointment responses; phone is masked. */
+  patient?: { name: string | null; phoneMasked: string };
 }
 export interface Call {
   id: string;

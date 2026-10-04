@@ -6,6 +6,7 @@ import {
   demoRequestBody,
   doctorBody,
   indianPhone,
+  maskPhone,
   memberRoleBody,
   patientBody,
   rescheduleBody,
@@ -180,5 +181,62 @@ describe("demoRequestBody", () => {
     expect(demoRequestBody.safeParse({ ...ok, phone: "12345" }).success).toBe(false);
     expect(demoRequestBody.safeParse({ ...ok, email: "nope" }).success).toBe(false);
     expect(demoRequestBody.safeParse({ ...ok, city: "Paris" }).success).toBe(false);
+  });
+});
+
+describe("upper bounds on request bodies", () => {
+  const long = (n: number) => "x".repeat(n);
+  const okAppt = {
+    patient: { phone: "9876543210" },
+    doctorId: "doc_1",
+    serviceId: "svc_1",
+    startsAt: "2030-01-01T10:00:00+05:30",
+  };
+  const rejects = (schema: { safeParse(v: unknown): { success: boolean } }, v: unknown) =>
+    expect(schema.safeParse(v).success).toBe(false);
+
+  it("clinic", () => {
+    const base = { name: "A", city: "B" };
+    expect(createClinicBody.safeParse(base).success).toBe(true);
+    rejects(createClinicBody, { ...base, name: long(121) });
+    rejects(createClinicBody, { ...base, address: long(2001) });
+  });
+  it("doctor", () => {
+    rejects(doctorBody, { name: long(121) });
+    rejects(doctorBody, { name: "A", title: long(121) });
+    rejects(doctorBody, { name: "A", specialties: Array.from({ length: 51 }, () => "x") });
+    rejects(doctorBody, { name: "A", specialties: [long(121)] });
+  });
+  it("service", () => {
+    const base = { name: "S", durationMin: 30 };
+    expect(serviceBody.safeParse(base).success).toBe(true);
+    rejects(serviceBody, { ...base, name: long(121) });
+    rejects(serviceBody, { ...base, description: long(2001) });
+    rejects(serviceBody, { ...base, durationMin: 4 });
+    rejects(serviceBody, { ...base, durationMin: 481 });
+    rejects(serviceBody, { ...base, durationMin: 99_999_999_999 });
+    rejects(serviceBody, { ...base, bufferMin: 121 });
+    rejects(serviceBody, { ...base, priceInr: 1_000_001 });
+    expect(
+      serviceBody.safeParse({ ...base, durationMin: 480, bufferMin: 120, priceInr: 0 }).success,
+    ).toBe(true);
+  });
+  it("patient and appointment", () => {
+    rejects(patientBody, { phone: "9876543210", name: long(121) });
+    rejects(patientBody, { phone: "9876543210", notes: long(2001) });
+    expect(appointmentBody.safeParse(okAppt).success).toBe(true);
+    rejects(appointmentBody, { ...okAppt, notes: long(2001) });
+    rejects(appointmentBody, { ...okAppt, patient: { phone: "9876543210", name: long(121) } });
+    rejects(appointmentBody, { ...okAppt, doctorId: long(65) });
+  });
+  it("trims strings", () => {
+    expect(serviceBody.parse({ name: "  Clean  ", durationMin: 30 }).name).toBe("Clean");
+  });
+});
+
+describe("maskPhone", () => {
+  it("keeps only the last four digits", () => {
+    expect(maskPhone("+919876543210")).toBe("+91 •••• ••3210");
+    expect(maskPhone("12345")).toBe("•••• ••2345");
   });
 });

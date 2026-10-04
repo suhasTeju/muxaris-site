@@ -217,7 +217,7 @@ afterAll(async () => {
     const apt = ((await ok.json()) as J).appointment;
     const again = await call("POST", "/appointments", { token: tokA, clinic: c, body: payload });
     expect(again.status).toBe(409);
-    expect(((await again.json()) as J).error.code).toBe("conflict");
+    expect(((await again.json()) as J).error.code).toBe("slot_unavailable");
 
     // cross-tenant: another clinic cannot see or touch this appointment
     const other = (await (

@@ -82,9 +82,29 @@ export function catalogRoutes(db: Db, opts: CatalogOptions = {}) {
   const member = requireClinic(db);
   const owner = requireClinic(db, "owner");
 
-  r.get("/doctors", member, async (c) =>
-    c.json({ doctors: await listDoctors(db, c.get("clinic").id) }),
-  );
+  r.get("/doctors", member, async (c) => {
+    const clinicId = c.get("clinic").id;
+    const [docs, hours] = await Promise.all([
+      listDoctors(db, clinicId),
+      db
+        .select()
+        .from(schema.workingHours)
+        .where(eq(schema.workingHours.clinicId, clinicId))
+        .orderBy(schema.workingHours.weekday, schema.workingHours.startTime),
+    ]);
+    return c.json({
+      doctors: docs.map((d) => ({
+        ...d,
+        workingHours: hours
+          .filter((h) => h.doctorId === d.id)
+          .map((h) => ({
+            weekday: h.weekday,
+            startTime: hhmm(h.startTime),
+            endTime: hhmm(h.endTime),
+          })),
+      })),
+    });
+  });
   r.post("/doctors", owner, v("json", doctorBody), async (c) => {
     const b = c.req.valid("json");
     const doctor = await createDoctor(db, c.get("clinic").id, {

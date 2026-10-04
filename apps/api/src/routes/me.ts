@@ -49,6 +49,8 @@ export function meRoutes(db: Db) {
     return c.json({ clinic, membership }, 201);
   });
 
+  // Non-members get 403 (not 404) here and on X-Clinic-Id routes: the id is not a secret to the
+  // caller and nothing about the clinic leaks. Resource ids inside a clinic return 404.
   r.get("/clinics/:id", async (c) => {
     const id = c.req.param("id");
     const membership = await getMembership(db, { userId: c.get("user").id, clinicId: id });

@@ -1,4 +1,5 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { HTTPException } from "hono/http-exception";
@@ -13,7 +14,20 @@ import { demoRequestRoutes } from "./routes/demo-requests.js";
 
 export type { AppDeps } from "./deps.js";
 
-const CORE_STATUS = { not_found: 404, conflict: 409, forbidden: 403, validation: 400 } as const;
+const CORE_STATUS = {
+  not_found: 404,
+  conflict: 409,
+  forbidden: 403,
+  validation: 400,
+  slot_unavailable: 409,
+  clinic_limit: 409,
+} as const;
+
+const tooLarge = (c: Context) =>
+  c.json({ error: { code: "payload_too_large", message: "request body too large" } }, 413);
+/** Authenticated /v1 bodies (64 KiB) and public unauthenticated routes (16 KiB). */
+const V1_BODY_MAX = 64 * 1024;
+const PUBLIC_BODY_MAX = 16 * 1024;
 
 export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>();
@@ -29,9 +43,11 @@ export function createApp(deps: AppDeps) {
   app.get("/healthz", (c) => c.json({ ok: true, service: "api", version: deps.version }));
 
   // Public intake route: registered before the authenticated v1 group.
+  app.use("/v1/demo-requests", bodyLimit({ maxSize: PUBLIC_BODY_MAX, onError: tooLarge }));
   app.route("/v1", demoRequestRoutes(deps.db));
 
   const v1 = new Hono<AppEnv>();
+  v1.use("*", bodyLimit({ maxSize: V1_BODY_MAX, onError: tooLarge }));
   v1.use("*", requireUser(deps.db, deps.verifier));
   v1.route("/", meRoutes(deps.db));
   v1.route("/", catalogRoutes(deps.db));
@@ -42,7 +58,18 @@ export function createApp(deps: AppDeps) {
   app.notFound((c) => c.json({ error: { code: "not_found", message: "route not found" } }, 404));
   app.onError((err, c) => {
     if (err instanceof CoreError) {
-      return c.json({ error: { code: err.code, message: err.message } }, CORE_STATUS[err.code]);
+      return c.json(
+        {
+          error: {
+            code: err.code,
+            message: err.message,
+            ...(err.reason ? { reason: err.reason } : {}),
+          },
+          // also top-level so clients can branch on `reason` without digging into the envelope
+          ...(err.reason ? { reason: err.reason } : {}),
+        },
+        CORE_STATUS[err.code],
+      );
     }
     if (err instanceof HTTPException && err.status < 500) {
       return c.json(

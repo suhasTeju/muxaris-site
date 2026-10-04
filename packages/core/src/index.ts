@@ -1,5 +1,5 @@
 export * from "./scheduling/slot-engine.js";
-export { assertDateString, assertTimeString } from "./scheduling/time.js";
+export { assertDateString, assertTimeString, atLocal } from "./scheduling/time.js";
 export * from "./services/errors.js";
 export * from "./services/clinics.js";
 export * from "./services/scheduling.js";

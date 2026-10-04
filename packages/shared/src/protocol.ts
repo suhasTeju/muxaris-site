@@ -33,7 +33,7 @@ export type GatewayEvent =
   | { type: "usage"; secondsUsed: number; secondsRemaining: number }
   | {
       type: "ended";
-      reason: "caller" | "assistant" | "timeout" | "cap" | "error";
+      reason: "caller" | "assistant" | "timeout" | "cap" | "error" | "server_shutdown";
       outcome?: string;
     }
   | {
@@ -58,7 +58,14 @@ export const GATEWAY_ERROR_CODES = [
   "internal",
   "not_implemented",
 ] as const;
-export const ENDED_REASONS = ["caller", "assistant", "timeout", "cap", "error"] as const;
+export const ENDED_REASONS = [
+  "caller",
+  "assistant",
+  "timeout",
+  "cap",
+  "error",
+  "server_shutdown",
+] as const;
 
 const languageCode = z.enum(LANGUAGE_CODES);
 const toolName = z.enum(Object.keys(toolInputSchemas) as [ToolName, ...ToolName[]]);

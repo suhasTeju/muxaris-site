@@ -765,7 +765,15 @@ export async function cancelAppointment(
 
 export async function listAppointments(
   db: Db,
-  input: { clinicId: string; from: Date; to: Date; doctorId?: string; status?: AppointmentStatus },
+  input: {
+    clinicId: string;
+    from: Date;
+    to: Date;
+    doctorId?: string;
+    status?: AppointmentStatus;
+    limit?: number;
+    offset?: number;
+  },
 ) {
   return db
     .select()
@@ -779,5 +787,7 @@ export async function listAppointments(
         ...(input.status ? [eq(appointments.status, input.status)] : []),
       ),
     )
-    .orderBy(asc(appointments.startsAt));
+    .orderBy(asc(appointments.startsAt), asc(appointments.id))
+    .limit(input.limit ?? 5000)
+    .offset(input.offset ?? 0);
 }
