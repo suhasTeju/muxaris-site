@@ -40,6 +40,30 @@ describe("gatewayEventSchema", () => {
     ])
       expect(gatewayEventSchema.safeParse(e).success, JSON.stringify(e)).toBe(true);
   });
+  it("strips unknown keys", () => {
+    const out = gatewayEventSchema.parse({ type: "state", state: "listening", extra: 1 });
+    expect(out).toEqual({ type: "state", state: "listening" });
+  });
+  it("rejects bad booking time, usage and language", () => {
+    const booking = { type: "booking", appointmentId: "a", doctorName: "d", serviceName: "s" };
+    expect(gatewayEventSchema.safeParse({ ...booking, startsAt: "tomorrow" }).success).toBe(false);
+    expect(
+      gatewayEventSchema.safeParse({ type: "usage", secondsUsed: -1, secondsRemaining: 5 }).success,
+    ).toBe(false);
+    expect(
+      gatewayEventSchema.safeParse({ type: "usage", secondsUsed: 1.5, secondsRemaining: 5 })
+        .success,
+    ).toBe(false);
+    expect(
+      gatewayEventSchema.safeParse({
+        type: "ready",
+        callId: "1",
+        assistantName: "A",
+        greeting: "x",
+        language: "fr-FR",
+      }).success,
+    ).toBe(false);
+  });
   it("rejects bad events", () => {
     expect(gatewayEventSchema.safeParse({ type: "state", state: "sleeping" }).success).toBe(false);
     expect(gatewayEventSchema.safeParse({ type: "ended", reason: "other" }).success).toBe(false);

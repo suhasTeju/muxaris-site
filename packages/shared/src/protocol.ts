@@ -104,13 +104,13 @@ export const gatewayEventSchema = z.discriminatedUnion("type", [
     appointmentId: z.string(),
     doctorName: z.string(),
     serviceName: z.string(),
-    startsAt: z.string(),
+    startsAt: z.iso.datetime({ offset: true }),
   }),
   z.object({ type: z.literal("flush_playback") }),
   z.object({
     type: z.literal("usage"),
-    secondsUsed: z.number(),
-    secondsRemaining: z.number(),
+    secondsUsed: z.number().int().nonnegative(),
+    secondsRemaining: z.number().int().nonnegative(),
   }),
   z.object({
     type: z.literal("ended"),

@@ -1,18 +1,23 @@
 import { z } from "zod";
-import { LANGUAGE_CODES } from "./languages.js";
+import { BULBUL_V3_SPEAKERS, LANGUAGE_CODES } from "./languages.js";
 import { ROLES } from "./clinic.js";
 
-// Request-body schemas. Date/time strings are shape-checked here; the API adds calendar checks.
+// Request-body schemas. Dates are shape-checked here; the API adds calendar checks.
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
-const timeStr = z.string().regex(/^\d{2}:\d{2}$/, "Expected HH:MM");
+const timeStr = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
+const endTimeStr = z.union([timeStr, z.literal("24:00")]);
+const isoDateTime = z.iso.datetime({ offset: true });
 const languages = z.array(z.enum(LANGUAGE_CODES)).min(1);
 
-/** Indian mobile: `+91XXXXXXXXXX` or 10 digits starting 6-9; normalised to E.164. */
+/**
+ * Indian mobile in common human formats (`+91 98765-43210`, `91…`, `0…`, bare 10 digits);
+ * normalised to E.164 `+91XXXXXXXXXX`.
+ */
 export const indianPhone = z
   .string()
-  .trim()
-  .regex(/^(\+91)?[6-9]\d{9}$/, "Enter a valid Indian mobile number")
-  .transform((v) => (v.startsWith("+91") ? v : `+91${v}`));
+  .transform((v) => v.replace(/[\s\-()]/g, ""))
+  .pipe(z.string().regex(/^(?:\+91|91|0)?[6-9]\d{9}$/, "Enter a valid Indian mobile number"))
+  .transform((v) => `+91${v.slice(-10)}`);
 
 export const createClinicBody = z.object({
   name: z.string().trim().min(1),
@@ -36,13 +41,20 @@ export const doctorBody = z.object({
 });
 
 export const workingHoursBody = z.object({
-  hours: z.array(
-    z.object({
-      weekday: z.number().int().min(0).max(6),
-      startTime: timeStr,
-      endTime: timeStr,
-    }),
-  ),
+  hours: z
+    .array(
+      z
+        .object({
+          weekday: z.number().int().min(0).max(6),
+          startTime: timeStr,
+          endTime: endTimeStr,
+        })
+        .refine((h) => h.endTime === "00:00" || h.endTime === "24:00" || h.endTime > h.startTime, {
+          message: "endTime must be after startTime",
+          path: ["endTime"],
+        }),
+    )
+    .max(21),
 });
 
 export const serviceBody = z.object({
@@ -56,21 +68,24 @@ export const serviceBody = z.object({
 });
 
 export const slotRulesBody = z.object({
-  slotGrainMin: z.number().int().positive().optional(),
-  leadTimeMin: z.number().int().nonnegative().optional(),
-  maxDaysAhead: z.number().int().positive().optional(),
+  slotGrainMin: z.number().int().min(5).max(60).optional(),
+  leadTimeMin: z.number().int().min(0).max(1440).optional(),
+  maxDaysAhead: z.number().int().min(1).max(365).optional(),
   allowSameDay: z.boolean().optional(),
-  maxPerSlot: z.number().int().positive().optional(),
+  maxPerSlot: z.number().int().min(1).max(10).optional(),
 });
 
 export const assistantProfileBody = z.object({
-  name: z.string().trim().min(1).optional(),
-  greeting: z.record(z.string(), z.string()).optional(),
-  voices: z.record(z.string(), z.string()).optional(),
-  tone: z.string().trim().min(1).optional(),
+  name: z.string().trim().min(1).max(60).optional(),
+  greeting: z.partialRecord(z.enum(LANGUAGE_CODES), z.string().min(1).max(300)).optional(),
+  voices: z.partialRecord(z.enum(LANGUAGE_CODES), z.enum(BULBUL_V3_SPEAKERS)).optional(),
+  tone: z.string().trim().min(1).max(200).optional(),
   handoffNumber: indianPhone.nullish(),
-  faq: z.array(z.object({ q: z.string().min(1), a: z.string().min(1) })).optional(),
-  knowledge: z.string().nullish(),
+  faq: z
+    .array(z.object({ q: z.string().min(1).max(200), a: z.string().min(1).max(1000) }))
+    .max(30)
+    .optional(),
+  knowledge: z.string().max(8000).nullish(),
 });
 
 export const patientBody = z.object({
@@ -82,17 +97,19 @@ export const patientBody = z.object({
 });
 
 export const appointmentBody = z.object({
-  patientId: z.string().min(1),
+  patient: z.object({
+    phone: indianPhone,
+    name: z.string().trim().min(1).optional(),
+    preferredLanguage: z.enum(LANGUAGE_CODES).optional(),
+  }),
   doctorId: z.string().min(1),
   serviceId: z.string().min(1),
-  date: dateStr,
-  startTime: timeStr,
+  startsAt: isoDateTime,
   notes: z.string().nullish(),
 });
 
 export const rescheduleBody = z.object({
-  date: dateStr,
-  startTime: timeStr,
+  startsAt: isoDateTime,
   doctorId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
 });
