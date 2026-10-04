@@ -145,6 +145,42 @@ d("call routes", () => {
     expect(((await x.json()) as J).error.code).toBe("not_found");
   });
 
+  it("GET /calls/:id never returns tool arguments or results, only a status", async () => {
+    await db.insert(schema.callTurns).values([
+      {
+        id: newId("turn"),
+        clinicId: a,
+        callId: ids.booked!,
+        seq: 0,
+        role: "tool",
+        toolName: "request_callback",
+        toolArgs: { phone: "9876543210", reason: "pain" },
+        toolResult: { ok: true, phone: "+919876543210" },
+      },
+      {
+        id: newId("turn"),
+        clinicId: a,
+        callId: ids.booked!,
+        seq: 1,
+        role: "tool",
+        toolName: "book_appointment",
+        toolArgs: { patient_phone: "9123456780" },
+        toolResult: { error: "slot_taken" },
+      },
+    ]);
+    const res = await call("GET", `/calls/${ids.booked}`, { sub: subs[0]!, clinic: a });
+    const text = await res.text();
+    expect(text).not.toContain("toolArgs");
+    expect(text).not.toContain("toolResult");
+    expect(text).not.toMatch(/\d{10}/);
+    const body = JSON.parse(text) as J;
+    expect(body.turns.map((t: J) => [t.toolName, t.toolStatus])).toEqual([
+      ["request_callback", "ok"],
+      ["book_appointment", "error"],
+    ]);
+    await db.delete(schema.callTurns).where(eq(schema.callTurns.callId, ids.booked!));
+  });
+
   it("recording-url by state", async () => {
     const get = (id: string, sub = subs[0]!, clinic = a) =>
       call("GET", `/calls/${id}/recording-url`, { sub, clinic });

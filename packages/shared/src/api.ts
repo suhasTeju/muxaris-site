@@ -297,6 +297,8 @@ export interface Call {
     model?: string;
     /** Set by the worker when there was nothing to analyse (e.g. "no_turns"). */
     skipped?: string;
+    /** Set by the retention purge. */
+    purged?: boolean;
   } | null;
   analysedAt: Iso | null;
 }
@@ -323,8 +325,8 @@ export interface CallTurn {
   role: "user" | "assistant" | "tool";
   text: string | null;
   toolName: string | null;
-  toolArgs: unknown;
-  toolResult: unknown;
+  /** Present on tool turns. Arguments and results are never sent to the browser. */
+  toolStatus?: "ok" | "error";
   latencyMs: number | null;
   startedAt: Iso;
 }

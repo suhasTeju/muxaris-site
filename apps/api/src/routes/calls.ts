@@ -9,6 +9,14 @@ import { v } from "../validate.js";
 
 const RECORDING_TTL_S = 600;
 
+function toolStatus(result: unknown): "ok" | "error" {
+  if (result && typeof result === "object") {
+    const o = result as Record<string, unknown>;
+    if (o["ok"] === false || "error" in o) return "error";
+  }
+  return "ok";
+}
+
 export function callRoutes(db: Db, deps: { blobs: BlobStore | null }) {
   const r = new Hono<AppEnv>();
   const member = requireClinic(db);
@@ -29,7 +37,15 @@ export function callRoutes(db: Db, deps: { blobs: BlobStore | null }) {
   });
 
   r.get("/calls/:id", member, async (c) => {
-    return c.json(await getCall(db, c.get("clinic").id, c.req.param("id")));
+    const { turns, ...rest } = await getCall(db, c.get("clinic").id, c.req.param("id"));
+    // Tool arguments and results hold raw phone numbers and names; the UI only needs the status.
+    return c.json({
+      ...rest,
+      turns: turns.map(({ toolArgs: _a, toolResult, ...turn }) => ({
+        ...turn,
+        ...(turn.role === "tool" ? { toolStatus: toolStatus(toolResult) } : {}),
+      })),
+    });
   });
 
   r.get("/calls/:id/recording-url", member, async (c) => {
