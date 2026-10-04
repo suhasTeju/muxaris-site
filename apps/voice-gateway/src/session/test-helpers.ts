@@ -89,6 +89,10 @@ export class TestTransport implements MediaTransport {
   onInboundAudio(cb: (b: Buffer) => void) {
     this.inbound.push(cb);
   }
+  /** Simulates caller audio arriving from the browser. */
+  feedAudio(b: Buffer) {
+    for (const cb of this.inbound) cb(b);
+  }
   sendAudio(b: Buffer) {
     this.log.push({ kind: "audio", bytes: b.length });
   }

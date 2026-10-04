@@ -11,6 +11,11 @@ export interface VoiceEnv {
   authMode: "cognito" | "dev";
   cognitoUserPoolId: string | null;
   cognitoClientId: string | null;
+  /** S3 bucket for recordings and transcripts; empty disables storage. */
+  callsBucket: string;
+  postCallQueueUrl: string;
+  /** STORAGE_DISABLED=1 or no bucket: nothing is recorded, uploaded or queued. */
+  storageDisabled: boolean;
 }
 
 /** Positive integer from an env var; throws at boot on empty, NaN, fractional or <= 0. */
@@ -54,6 +59,7 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): VoiceEnv {
   }
   const provider: "sarvam" | "mock" =
     forcedProvider === "mock" ? "mock" : sarvamKey ? "sarvam" : "mock";
+  const callsBucket = src.CALLS_BUCKET?.trim() ?? "";
   return {
     port: positiveInt(src, "VOICE_PORT", 4100, 65535),
     databaseUrl,
@@ -71,5 +77,8 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): VoiceEnv {
     authMode,
     cognitoUserPoolId,
     cognitoClientId,
+    callsBucket,
+    postCallQueueUrl: src.POST_CALL_QUEUE_URL?.trim() ?? "",
+    storageDisabled: src.STORAGE_DISABLED?.trim() === "1" || !callsBucket,
   };
 }

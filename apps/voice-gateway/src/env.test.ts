@@ -68,4 +68,17 @@ describe("voice-gateway loadEnv", () => {
       );
     });
   });
+  it("storage: bucket and queue url, disabled when no bucket or STORAGE_DISABLED=1", () => {
+    expect(loadEnv(dev)).toMatchObject({
+      callsBucket: "",
+      postCallQueueUrl: "",
+      storageDisabled: true,
+    });
+    const on = loadEnv({ ...dev, CALLS_BUCKET: "b", POST_CALL_QUEUE_URL: "https://q" });
+    expect(on).toMatchObject({ callsBucket: "b", postCallQueueUrl: "https://q" });
+    expect(on.storageDisabled).toBe(false);
+    expect(loadEnv({ ...dev, CALLS_BUCKET: "b", STORAGE_DISABLED: "1" }).storageDisabled).toBe(
+      true,
+    );
+  });
 });

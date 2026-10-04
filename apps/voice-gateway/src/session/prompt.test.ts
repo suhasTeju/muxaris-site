@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildSystemPrompt, type ClinicContext } from "./prompt.js";
+import { LANGUAGE_CODES } from "@muxaris/shared";
+import {
+  DISCLOSURE,
+  DISCLOSURE_RECORDED,
+  buildSystemPrompt,
+  openingUtterances,
+  type ClinicContext,
+} from "./prompt.js";
 
 const ctx = {
   clinic: {
@@ -32,5 +39,19 @@ describe("buildSystemPrompt rules", () => {
 
   it("limits slot offers to three at a time", () => {
     expect(prompt).toMatch(/at most three/i);
+  });
+});
+
+describe("openingUtterances disclosure", () => {
+  it("picks the recorded variant per language and the transcription-only one otherwise", () => {
+    for (const lang of LANGUAGE_CODES) {
+      expect(openingUtterances(null, ctx.clinic, lang, { recorded: true }).disclosure).toBe(
+        DISCLOSURE_RECORDED[lang],
+      );
+      expect(openingUtterances(null, ctx.clinic, lang, { recorded: false }).disclosure).toBe(
+        DISCLOSURE[lang],
+      );
+      expect(DISCLOSURE_RECORDED[lang]).not.toBe(DISCLOSURE[lang]);
+    }
   });
 });

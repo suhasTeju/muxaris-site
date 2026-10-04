@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { appendTurn, finishCall } from "@muxaris/core";
 import type { Db } from "@muxaris/db";
 import {
@@ -19,6 +22,7 @@ import type {
   TtsProvider,
   TtsUtterance,
 } from "../providers/types.js";
+import { Recorder } from "./recorder.js";
 import { buildSystemPrompt, openingUtterances, type ClinicContext } from "./prompt.js";
 import { chunkSentences } from "./sentence-chunker.js";
 import { executeTool, summarizeResult, type ToolContext } from "./tools.js";
@@ -35,6 +39,8 @@ export interface SessionContext {
   maxDurationS: number;
   /** Seconds left in the clinic's plan; the call ends with reason "cap" when it reaches zero. */
   secondsRemaining: number;
+  /** Record both audio channels (and speak the recorded disclosure variant). */
+  recordCalls: boolean;
   /**
    * "browser" (default) callers are authenticated clinic members whose phone is self-asserted.
    * Task 7 always passes `callerPhone` for "phone" calls; a phone call without one falls back to
@@ -177,6 +183,13 @@ interface TurnInfo {
   firstAudioAt?: number;
 }
 
+let processSpoolDir: string | undefined;
+/** One private (0700) spool directory per process, created on first use. */
+function spoolDir(): string {
+  processSpoolDir ??= mkdtempSync(join(tmpdir(), "muxaris-rec-"));
+  return processSpoolDir;
+}
+
 export class VoiceSession {
   private readonly transport: MediaTransport;
   private readonly sttProvider: SttProvider;
@@ -186,6 +199,9 @@ export class VoiceSession {
   private readonly ctx: SessionContext;
   private readonly log: SessionLogger;
   private readonly timers: SessionTimers;
+
+  /** Stereo recorder (null when recording is off); closed out by the server after finishCall. */
+  readonly recorder: Recorder | null;
 
   private stt: SttStream | null = null;
   private language: LanguageCode;
@@ -218,7 +234,8 @@ export class VoiceSession {
   private messages: ConverseMessage[] = [];
   private seq = 0;
   private persistChain: Promise<void> = Promise.resolve();
-  private userTurns = 0;
+  /** User turns so far; read by the server to decide whether the call is worth recording. */
+  userTurns = 0;
   private assistantTurns = 0;
   private toolCalls = 0;
   private latencies: number[] = [];
@@ -243,6 +260,12 @@ export class VoiceSession {
     this.log = deps.log;
     this.timers = deps.timers ?? defaultTimers;
     this.language = deps.ctx.language;
+    this.recorder = deps.ctx.recordCalls
+      ? new Recorder({
+          spoolDir: spoolDir(),
+          now: () => deps.ctx.now().getTime(),
+        })
+      : null;
     let unverifiable = false;
     const norm = (label: string, v: string | undefined) => {
       if (v === undefined) return undefined;
@@ -304,7 +327,9 @@ export class VoiceSession {
       this.stt = stt;
       this.attachStt(stt);
       this.transport.onInboundAudio((pcm) => {
-        if (!this.ended) this.stt?.sendAudio(pcm);
+        if (this.ended) return;
+        this.recorder?.caller(pcm);
+        this.stt?.sendAudio(pcm);
       });
     } catch {
       this.providerError("stt_open");
@@ -593,6 +618,7 @@ export class VoiceSession {
           if (out.length === 0) continue;
           this.noteAudioSent(out.length);
           this.transport.sendAudio(out);
+          this.recorder?.assistant(out);
         }
       } catch (e) {
         // The provider already retried; skip this utterance and stay in the call.
@@ -619,6 +645,7 @@ export class VoiceSession {
       this.ctx.clinic.assistant,
       this.ctx.clinic.clinic,
       this.language,
+      { recorded: this.ctx.recordCalls },
     );
     const epoch = this.epoch;
     this.persist({ seq: this.seq++, role: "assistant", text: `${disclosure} ${greeting}` });
@@ -650,6 +677,7 @@ export class VoiceSession {
       this.lastAudioSentAt = 0;
       this.playbackEndsAt = 0;
       this.transport.sendEvent({ type: "flush_playback" });
+      this.recorder?.truncateAssistant();
     }
   }
 
@@ -663,6 +691,7 @@ export class VoiceSession {
     this.speechQueue.length = 0;
     this.currentUtt?.cancel();
     this.transport.sendEvent({ type: "flush_playback" });
+    this.recorder?.truncateAssistant();
     if (this.state !== "listening") {
       this.log.info("state", { from: this.state, to: "listening" });
       this.state = "listening";

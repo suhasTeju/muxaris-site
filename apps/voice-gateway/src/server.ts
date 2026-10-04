@@ -9,6 +9,7 @@ import {
   getPlanForClinic,
   getUsedCallSeconds,
   recordCallUsage,
+  setCallRecording,
   usageMonth,
   type TokenVerifier,
 } from "@muxaris/core";
@@ -16,9 +17,12 @@ import type { Db } from "@muxaris/db";
 import {
   clientEventSchema,
   LANGUAGE_CODES,
+  postCallMessageSchema,
   type GatewayEvent,
   type LanguageCode,
+  type PostCallMessage,
 } from "@muxaris/shared";
+import { createS3BlobStore, createSqsQueue, type BlobStore, type JobQueue } from "@muxaris/storage";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { createVerifier } from "./auth.js";
 import type { VoiceEnv } from "./env.js";
@@ -27,6 +31,7 @@ import { FakeLlm, FakeStt, FakeTts } from "./providers/fakes.js";
 import { SarvamStt } from "./providers/sarvam-stt.js";
 import { SarvamTts } from "./providers/sarvam-tts.js";
 import type { LlmProvider, SttProvider, TtsProvider } from "./providers/types.js";
+import { completeCall } from "./post-call.js";
 import { openingUtterances } from "./session/prompt.js";
 import { VoiceSession, type SessionLogger } from "./session/voice-session.js";
 import { WsTransport } from "./ws-transport.js";
@@ -35,6 +40,12 @@ export interface Providers {
   stt: SttProvider;
   tts: TtsProvider;
   llm: LlmProvider;
+}
+
+/** Resolved storage clients; both null when storage is disabled. */
+export interface Storage {
+  blobs: BlobStore | null;
+  queue: JobQueue<PostCallMessage> | null;
 }
 
 export type ServerEnv = Pick<
@@ -49,13 +60,16 @@ export type ServerEnv = Pick<
   | "authMode"
   | "cognitoUserPoolId"
   | "cognitoClientId"
->;
+> &
+  Partial<Pick<VoiceEnv, "callsBucket" | "postCallQueueUrl" | "storageDisabled">>;
 
 export interface ServerDeps {
   version: string;
   db: Db;
   env: ServerEnv;
   providers?: Providers;
+  /** Recording storage; defaults to clients built from env (none when storage is disabled). */
+  storage?: Storage;
   verifier?: TokenVerifier;
   log?: SessionLogger;
   now?: () => Date;
@@ -102,6 +116,20 @@ export function createProviders(env: ServerEnv): Providers {
     };
   }
   return { stt: new FakeStt(), tts: new FakeTts(), llm: new FakeLlm() };
+}
+
+export function createStorage(env: ServerEnv): Storage {
+  if (env.storageDisabled || !env.callsBucket) return { blobs: null, queue: null };
+  return {
+    blobs: createS3BlobStore({ bucket: env.callsBucket, region: env.awsRegion }),
+    queue: env.postCallQueueUrl
+      ? createSqsQueue<PostCallMessage>({
+          url: env.postCallQueueUrl,
+          region: env.awsRegion,
+          parse: (raw) => postCallMessageSchema.parse(raw),
+        })
+      : null,
+  };
 }
 
 export const consoleLogger: SessionLogger = {
@@ -160,6 +188,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
   const now = deps.now ?? (() => new Date());
   const verifier = deps.verifier ?? createVerifier(env);
   const providers = deps.providers ?? createProviders(env);
+  const storage = deps.storage ?? createStorage(env);
   const startTimeoutMs = deps.startTimeoutMs ?? START_TIMEOUT_MS;
   const setupTimeoutMs = deps.setupTimeoutMs ?? SETUP_TIMEOUT_MS;
   const shutdownGraceMs = deps.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
@@ -172,6 +201,9 @@ export function createServer(deps: ServerDeps): GatewayServer {
   let shuttingDown = false;
   const perClinic = new Map<string, number>();
   const live = new Set<LiveCall>();
+  /** Post-call uploads still running; shutdown() waits for them. */
+  const inFlightCompletions = new Set<Promise<void>>();
+  const completionAbort = new AbortController();
   const release = (clinicId: string) => {
     active = Math.max(0, active - 1);
     const n = (perClinic.get(clinicId) ?? 1) - 1;
@@ -498,7 +530,21 @@ export function createServer(deps: ServerDeps): GatewayServer {
       ws.off("message", ctl.hold);
       for (const f of ctl.early) transport.feed(f.data, f.isBinary);
 
-      const { disclosure, greeting } = openingUtterances(clinic.assistant, clinic.clinic, language);
+      const recordCalls = clinic.clinic.settings["recordCalls"] !== false && storage.blobs !== null;
+      if (recordCalls) {
+        await ctl
+          .bound(setCallRecording(db, { clinicId, callId, status: "pending" }))
+          .catch((e) => {
+            if (e instanceof SetupExpired) throw e;
+            sessLog.warn("recording status pending failed", safeErr(e));
+          });
+      }
+      const { disclosure, greeting } = openingUtterances(
+        clinic.assistant,
+        clinic.clinic,
+        language,
+        { recorded: recordCalls },
+      );
       const session = new VoiceSession({
         transport,
         stt: providers.stt,
@@ -513,6 +559,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
           now,
           maxDurationS: callSecondsAllowed,
           secondsRemaining: callSecondsAllowed,
+          recordCalls,
           channel: "browser",
           callerPhone: undefined,
           verifiedPhone: undefined,
@@ -549,6 +596,19 @@ export function createServer(deps: ServerDeps): GatewayServer {
           } catch (e) {
             sessLog.error("call settle failed", safeErr(e));
           } finally {
+            // Upload + enqueue in the background; never blocks the slot or the socket close.
+            const completion: Promise<void> = completeCall(
+              { db, blobs: storage.blobs, queue: storage.queue, log: sessLog },
+              {
+                clinicId,
+                callId,
+                recorder: session.recorder,
+                endedAt: now(),
+                userTurns: session.userTurns,
+                signal: completionAbort.signal,
+              },
+            ).finally(() => inFlightCompletions.delete(completion));
+            inFlightCompletions.add(completion);
             releaseOnce();
             live.delete(entry);
             resolveSettled();
@@ -610,13 +670,30 @@ export function createServer(deps: ServerDeps): GatewayServer {
     const pending = [...live];
     for (const c of pending) void c.session.end("server_shutdown");
     let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      Promise.allSettled(pending.map((c) => c.settled)),
-      new Promise<void>((r) => {
-        timer = setTimeout(r, shutdownGraceMs);
+    // Live calls settle first (which starts their uploads), then uploads are awaited.
+    const drained = Promise.allSettled(pending.map((c) => c.settled)).then(() =>
+      Promise.allSettled([...inFlightCompletions]),
+    );
+    const timedOut = await Promise.race([
+      drained.then(() => false),
+      new Promise<boolean>((r) => {
+        timer = setTimeout(() => r(true), shutdownGraceMs);
       }),
     ]);
     clearTimeout(timer);
+    if (timedOut && inFlightCompletions.size > 0) {
+      // Grace is over: mark unfinished recordings failed rather than losing track of them.
+      log.warn("aborting in-flight completions", { count: inFlightCompletions.size });
+      completionAbort.abort();
+      let t2: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        Promise.allSettled([...inFlightCompletions]),
+        new Promise<void>((r) => {
+          t2 = setTimeout(r, 3000);
+        }),
+      ]);
+      clearTimeout(t2);
+    }
     for (const c of wss.clients) c.terminate();
     server.closeAllConnections();
     wss.close();

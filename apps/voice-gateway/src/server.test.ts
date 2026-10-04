@@ -3,6 +3,10 @@ import WebSocket from "ws";
 import { createClinicForUser, loadDemoClinicData, upsertUser, usageMonth } from "@muxaris/core";
 import { createDb, newId, schema, type Db } from "@muxaris/db";
 import { desc, eq } from "drizzle-orm";
+import type { PostCallMessage } from "@muxaris/shared";
+import { callKeys } from "@muxaris/storage";
+import { FakeBlobStore, FakeQueue } from "@muxaris/storage/fakes";
+import { DISCLOSURE, DISCLOSURE_RECORDED } from "./session/prompt.js";
 import { FakeLlm, FakeStt, FakeTts } from "./providers/fakes.js";
 import { createServer, type ServerEnv } from "./server.js";
 
@@ -681,5 +685,138 @@ async function until<T>(
         w.on("error", reject);
       }),
     ).rejects.toBeDefined();
+  });
+  describe("recording and post-call", () => {
+    const callRow = async (callId: string) =>
+      (await db.select().from(schema.calls).where(eq(schema.calls.id, callId)))[0]!;
+
+    /** A call with one user turn, ended by the client; resolves with the call id. */
+    async function talk(port: number, stt: FakeStt) {
+      const c = await open(port);
+      c.ws.send(startFrame(member));
+      const ready = await c.waitFor((e) => e.type === "ready");
+      await c.waitFor((e) => e.type === "state");
+      c.ws.send(Buffer.alloc(3200, 1));
+      stt.push({ type: "transcript", text: "hello" });
+      await until(() => c.events.filter((e) => e.type === "state").length >= 2);
+      return { c, ready, callId: ready.callId as string };
+    }
+
+    it("happy path leaves one transcript, one WAV and one queue message", async () => {
+      const blobs = new FakeBlobStore();
+      const queue = new FakeQueue<PostCallMessage>();
+      const stt = new FakeStt();
+      const { port } = await start({
+        storage: { blobs, queue },
+        providers: { stt, tts: new FakeTts(), llm: new FakeLlm() },
+      });
+      const { c, ready, callId } = await talk(port, stt);
+      expect(String(ready.greeting).startsWith(DISCLOSURE_RECORDED["en-IN"])).toBe(true);
+      end(c);
+      await c.closed;
+      await until(async () => (await callRow(callId)).recordingStatus === "ready");
+      const wav = blobs.objects.get(callKeys.recording(clinicId, callId));
+      expect(wav?.contentType).toBe("audio/wav");
+      expect(wav!.body.readUInt16LE(22)).toBe(2);
+      expect(blobs.objects.has(callKeys.transcript(clinicId, callId))).toBe(true);
+      expect(blobs.objects.size).toBe(2);
+      expect(queue.sent).toHaveLength(1);
+      expect(queue.sent[0]).toMatchObject({ type: "call.completed", clinicId, callId });
+    });
+
+    it("recordCalls=false in clinic settings: transcript only, plain disclosure", async () => {
+      const [row] = await db.select().from(schema.clinics).where(eq(schema.clinics.id, clinicId));
+      await db
+        .update(schema.clinics)
+        .set({ settings: { ...(row!.settings as object), recordCalls: false } })
+        .where(eq(schema.clinics.id, clinicId));
+      try {
+        const blobs = new FakeBlobStore();
+        const queue = new FakeQueue<PostCallMessage>();
+        const stt = new FakeStt();
+        const { port } = await start({
+          storage: { blobs, queue },
+          providers: { stt, tts: new FakeTts(), llm: new FakeLlm() },
+        });
+        const { c, ready, callId } = await talk(port, stt);
+        expect(String(ready.greeting).startsWith(DISCLOSURE["en-IN"])).toBe(true);
+        end(c);
+        await c.closed;
+        await until(() => queue.sent.length === 1);
+        expect([...blobs.objects.keys()]).toEqual([callKeys.transcript(clinicId, callId)]);
+        expect((await callRow(callId)).recordingStatus).toBe("none");
+      } finally {
+        await db
+          .update(schema.clinics)
+          .set({ settings: row!.settings })
+          .where(eq(schema.clinics.id, clinicId));
+      }
+    });
+
+    it("no storage: nothing recorded, row stays none", async () => {
+      const stt = new FakeStt();
+      const { port } = await start({
+        storage: { blobs: null, queue: null },
+        providers: { stt, tts: new FakeTts(), llm: new FakeLlm() },
+      });
+      const { c, ready, callId } = await talk(port, stt);
+      expect(String(ready.greeting).startsWith(DISCLOSURE["en-IN"])).toBe(true);
+      end(c);
+      await c.closed;
+      await until(async () => (await callRow(callId)).status === "completed");
+      expect((await callRow(callId)).recordingStatus).toBe("none");
+    });
+
+    it("shutdown waits for an in-flight upload", async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      class SlowBlobs extends FakeBlobStore {
+        override async put(...a: Parameters<FakeBlobStore["put"]>) {
+          await gate;
+          return super.put(...a);
+        }
+      }
+      const blobs = new SlowBlobs();
+      const queue = new FakeQueue<PostCallMessage>();
+      const stt = new FakeStt();
+      const { server, port } = await start({
+        storage: { blobs, queue },
+        providers: { stt, tts: new FakeTts(), llm: new FakeLlm() },
+        shutdownGraceMs: 5000,
+      });
+      const { c, callId } = await talk(port, stt);
+      end(c);
+      await c.closed;
+      await until(async () => (await callRow(callId)).status === "completed");
+      let done = false;
+      const sd = server.shutdown().then(() => (done = true));
+      await new Promise((r) => setTimeout(r, 300));
+      expect(done).toBe(false);
+      release();
+      await sd;
+      expect((await callRow(callId)).recordingStatus).toBe("ready");
+      expect(queue.sent).toHaveLength(1);
+    });
+
+    it("aborted completion marks the row failed after the grace window", async () => {
+      class HangingBlobs extends FakeBlobStore {
+        override async put(): Promise<void> {
+          await new Promise(() => undefined);
+        }
+      }
+      const queue = new FakeQueue<PostCallMessage>();
+      const stt = new FakeStt();
+      const { server, port } = await start({
+        storage: { blobs: new HangingBlobs(), queue },
+        providers: { stt, tts: new FakeTts(), llm: new FakeLlm() },
+        shutdownGraceMs: 300,
+      });
+      const { c, callId } = await talk(port, stt);
+      end(c);
+      await c.closed;
+      await until(async () => (await callRow(callId)).status === "completed");
+      await server.shutdown();
+      expect((await callRow(callId)).recordingStatus).toBe("failed");
+    });
   });
 });

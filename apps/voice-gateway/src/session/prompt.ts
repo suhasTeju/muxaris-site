@@ -12,6 +12,18 @@ export const DISCLOSURE: Record<LanguageCode, string> = {
   "te-IN": "ఈ కాల్‌కు ఒక AI సహాయకుడు సమాధానం ఇస్తున్నారు; ఇది లిఖితంగా నమోదు కావచ్చు.",
 };
 
+/** Spoken instead of DISCLOSURE when the call is also being recorded. Native-reader review before GA. */
+export const DISCLOSURE_RECORDED: Record<LanguageCode, string> = {
+  "en-IN": "This call is answered by an AI assistant and may be recorded and transcribed.",
+  "hi-IN":
+    "यह कॉल एक AI सहायक द्वारा उत्तर दी जा रही है और इसे रिकॉर्ड और ट्रांसक्राइब किया जा सकता है।",
+  "kn-IN": "ಈ ಕರೆಗೆ AI ಸಹಾಯಕ ಉತ್ತರಿಸುತ್ತಿದೆ ಮತ್ತು ಇದನ್ನು ರೆಕಾರ್ಡ್ ಮತ್ತು ಲಿಪ್ಯಂತರ ಮಾಡಬಹುದು.",
+  "ta-IN":
+    "இந்த அழைப்பிற்கு ஒரு AI உதவியாளர் பதிலளிக்கிறது; இது பதிவு செய்யப்பட்டு எழுத்துருவாக்கப்படலாம்.",
+  "te-IN":
+    "ఈ కాల్‌కు ఒక AI సహాయకుడు సమాధానమిస్తున్నారు; ఇది రికార్డ్ చేయబడి, లిప్యంతరీకరించబడవచ్చు.",
+};
+
 export type ClinicContext = Awaited<ReturnType<typeof getClinicContext>>;
 
 /**
@@ -22,12 +34,13 @@ export function openingUtterances(
   assistant: ClinicContext["assistant"],
   clinic: ClinicContext["clinic"],
   language: LanguageCode,
+  opts: { recorded: boolean },
 ): { disclosure: string; greeting: string } {
   const greeting =
     assistant?.greeting?.[language] ??
     Object.values(assistant?.greeting ?? {}).find((g) => g.trim()) ??
     `Hello, this is ${assistant?.name ?? "the receptionist"} at ${clinic.name}. How can I help you?`;
-  return { disclosure: DISCLOSURE[language], greeting };
+  return { disclosure: (opts.recorded ? DISCLOSURE_RECORDED : DISCLOSURE)[language], greeting };
 }
 
 const languageLabel = (code: LanguageCode) => LANGUAGES.find((l) => l.code === code)?.label ?? code;

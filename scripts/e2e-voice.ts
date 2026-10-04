@@ -155,6 +155,7 @@ async function main(): Promise<void> {
   let ended = false;
   let errorEv = "";
   let ready = false;
+  let callId = "";
   const toolSeen: string[] = [];
   const assistantTurns: string[] = [];
 
@@ -176,6 +177,7 @@ async function main(): Promise<void> {
     switch (ev.type) {
       case "ready":
         ready = true;
+        callId = String(ev.callId ?? "");
         log(`ready assistant=${ev.assistantName} lang=${ev.language} greeting="${ev.greeting}"`);
         break;
       case "state":
@@ -308,6 +310,23 @@ async function main(): Promise<void> {
   const all = Buffer.concat(received);
   writeFileSync(join(OUT, "e2e-reply.wav"), wav(all, 24000));
   log(`saved reply audio (${(all.length / 48000).toFixed(1)}s) to ${join(OUT, "e2e-reply.wav")}`);
+
+  // (h) recording: the gateway uploads the WAV + transcript after the call ends (<= 20 s)
+  if (!callId) fail("no callId received in ready event");
+  const readyBy = Date.now() + 20_000;
+  const recStart = Date.now();
+  let rec: any = null;
+  for (;;) {
+    rec = (await api(`/v1/calls/${callId}`, token, {}, clinicId)).call;
+    if (rec.recordingStatus === "ready" || rec.recordingStatus === "failed") break;
+    if (Date.now() > readyBy) break;
+    await sleep(500);
+  }
+  if (rec.recordingStatus !== "ready")
+    fail(`recording not ready within 20s (status=${rec.recordingStatus})`);
+  if (!rec.transcriptS3Key) fail("transcriptS3Key not set");
+  if (!rec.recordingS3Key) fail("recordingS3Key not set");
+  log(`recording ready in ${Date.now() - recStart} ms`);
 
   // (i) appointment check
   const from = new Date(Date.now() - 3600_000).toISOString();

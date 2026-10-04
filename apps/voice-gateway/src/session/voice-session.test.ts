@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { schema } from "@muxaris/db";
 import { FakeLlm, FakeStt, FakeTts } from "../providers/fakes.js";
-import { DISCLOSURE, openingUtterances } from "./prompt.js";
+import { DISCLOSURE, DISCLOSURE_RECORDED, openingUtterances } from "./prompt.js";
 import { chunkSentences } from "./sentence-chunker.js";
 import { VoiceSession, type SessionLogger, type SessionTimers } from "./voice-session.js";
 import {
@@ -54,6 +54,7 @@ afterAll(async () => {
     clinic?: typeof demo.ctx;
     log?: SessionLogger;
     stt?: FakeStt;
+    recordCalls?: boolean;
   }) {
     const transport = new TestTransport();
     const stt = opts.stt ?? new FakeStt();
@@ -74,6 +75,7 @@ afterAll(async () => {
         now: opts.now ?? (() => new Date()),
         maxDurationS: opts.maxDurationS ?? 600,
         secondsRemaining: opts.secondsRemaining ?? 3600,
+        recordCalls: opts.recordCalls ?? false,
         ...(opts.callerPhone ? { callerPhone: opts.callerPhone } : {}),
         ...(opts.channel === "unset" ? {} : { channel: opts.channel ?? "browser" }),
       },
@@ -489,12 +491,43 @@ afterAll(async () => {
     expect(transport.ofType("ended")[0]).toMatchObject({ reason: "assistant", outcome: "handoff" });
   });
 
+  it("recordCalls: speaks the recorded disclosure and taps caller audio, assistant audio and barge-in", async () => {
+    const { transport, stt, session, tts, say } = await setup({
+      llm: new FakeLlm(),
+      recordCalls: true,
+    });
+    const { disclosure } = openingUtterances(demo.ctx.assistant, demo.ctx.clinic, "en-IN", {
+      recorded: true,
+    });
+    expect(disclosure).toBe(DISCLOSURE_RECORDED["en-IN"]);
+    expect(tts.spoken[0]!.text).toBe(DISCLOSURE_RECORDED["en-IN"]);
+    expect(session.recorder).not.toBeNull();
+    transport.feedAudio(Buffer.alloc(3200, 1));
+    await sleep(20);
+    expect(session.recorder!.bufferedBytes).toBeGreaterThan(3200); // caller + greeting audio
+    stt.push({ type: "speech_start" });
+    say("hello there");
+    await waitFor(() => session.userTurns >= 1, 4000, "user turn");
+    await session.end("caller");
+    const r = await session.recorder!.finish();
+    expect(r).not.toBeNull();
+    await session.recorder!.discard();
+  });
+
+  it("recordCalls false: no recorder and the transcription-only disclosure", async () => {
+    const { session, tts } = await setup({ llm: new FakeLlm() });
+    expect(session.recorder).toBeNull();
+    expect(tts.spoken[0]!.text).toBe(DISCLOSURE["en-IN"]);
+    await session.end("caller");
+  });
+
   it("always opens with the AI/transcription disclosure, as one persisted turn 0", async () => {
     const on = await setup({ llm: new FakeLlm() });
     const { disclosure, greeting } = openingUtterances(
       demo.ctx.assistant,
       demo.ctx.clinic,
       "en-IN",
+      { recorded: false },
     );
     expect(disclosure).toBe(DISCLOSURE["en-IN"]);
     expect(on.tts.spoken.map((x) => x.text)).toEqual([disclosure, greeting]);
