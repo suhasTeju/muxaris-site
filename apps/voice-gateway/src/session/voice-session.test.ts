@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { schema } from "@muxaris/db";
 import { FakeLlm, FakeStt, FakeTts } from "../providers/fakes.js";
+import { DISCLOSURE } from "./prompt.js";
 import { VoiceSession, type SessionTimers } from "./voice-session.js";
 import {
   ScriptedLlm,
@@ -49,6 +50,7 @@ afterAll(async () => {
     callerPhone?: string;
     channel?: "browser" | "phone" | "unset";
     waitListening?: boolean;
+    clinic?: typeof demo.ctx;
   }) {
     const transport = new TestTransport();
     const stt = new FakeStt();
@@ -63,7 +65,7 @@ afterAll(async () => {
       log: silentLog,
       ...(opts.timers ? { timers: opts.timers } : {}),
       ctx: {
-        clinic: demo.ctx,
+        clinic: opts.clinic ?? demo.ctx,
         callId,
         language: "en-IN",
         now: opts.now ?? (() => new Date()),
@@ -482,5 +484,29 @@ afterAll(async () => {
     say("hello");
     await waitFor(() => transport.ofType("ended").length === 1, 8000, "ended");
     expect(transport.ofType("ended")[0]).toMatchObject({ reason: "assistant", outcome: "handoff" });
+  });
+
+  it("opens with the AI/transcription disclosure, unless switched off", async () => {
+    const on = await setup({ llm: new FakeLlm() });
+    const d = DISCLOSURE["en-IN"];
+    expect(on.tts.spoken[0]!.text).toBe(d);
+    expect(on.tts.spoken).toHaveLength(2);
+    await on.session.end("caller");
+    const rows = await db
+      .select()
+      .from(schema.callTurns)
+      .where(eq(schema.callTurns.callId, on.callId));
+    expect(rows.find((r) => r.seq === 0)!.text!.startsWith(d)).toBe(true);
+
+    const off = await setup({
+      llm: new FakeLlm(),
+      clinic: {
+        ...demo.ctx,
+        assistant: { ...demo.ctx.assistant!, settings: { disclosure: false } } as never,
+      },
+    });
+    expect(off.tts.spoken).toHaveLength(1);
+    expect(off.tts.spoken[0]!.text).not.toContain(d);
+    await off.session.end("caller");
   });
 });

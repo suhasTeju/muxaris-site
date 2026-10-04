@@ -2,6 +2,16 @@ import type { getClinicContext } from "@muxaris/core";
 import { LANGUAGES, type LanguageCode } from "@muxaris/shared";
 import { WEEKDAY_NAMES, formatLocalLong } from "./local-time.js";
 
+/** Spoken at the start of every call (privacy promise); `assistant.settings.disclosure === false` turns it off. */
+export const DISCLOSURE: Record<LanguageCode, string> = {
+  "en-IN": "This call is answered by an AI assistant and may be transcribed.",
+  "hi-IN": "यह कॉल एक एआई सहायक द्वारा उत्तर दी जा रही है और इसे लिखित रूप में सहेजा जा सकता है।",
+  "kn-IN": "ಈ ಕರೆಗೆ ಎಐ ಸಹಾಯಕ ಉತ್ತರಿಸುತ್ತಿದೆ ಮತ್ತು ಇದನ್ನು ಲಿಖಿತವಾಗಿ ದಾಖಲಿಸಬಹುದು.",
+  "ta-IN":
+    "இந்த அழைப்பிற்கு ஒரு AI உதவியாளர் பதிலளிக்கிறார்; இது எழுத்து வடிவில் பதிவு செய்யப்படலாம்.",
+  "te-IN": "ఈ కాల్‌కు ఒక AI సహాయకుడు సమాధానం ఇస్తున్నారు; ఇది లిఖితంగా నమోదు కావచ్చు.",
+};
+
 export type ClinicContext = Awaited<ReturnType<typeof getClinicContext>>;
 
 const languageLabel = (code: LanguageCode) => LANGUAGES.find((l) => l.code === code)?.label ?? code;

@@ -19,7 +19,7 @@ import type {
   TtsProvider,
   TtsUtterance,
 } from "../providers/types.js";
-import { buildSystemPrompt, type ClinicContext } from "./prompt.js";
+import { DISCLOSURE, buildSystemPrompt, type ClinicContext } from "./prompt.js";
 import { chunkSentences } from "./sentence-chunker.js";
 import { executeTool, summarizeResult, type ToolContext } from "./tools.js";
 import type { MediaTransport } from "./transport.js";
@@ -489,8 +489,16 @@ export class VoiceSession {
       Object.values(a?.greeting ?? {}).find((g) => g.trim()) ??
       `Hello, this is ${a?.name ?? "the receptionist"} at ${this.ctx.clinic.clinic.name}. How can I help you?`;
     const epoch = this.epoch;
-    this.persist({ seq: this.seq++, role: "assistant", text });
+    // Read defensively: the profile has no settings field yet, so the disclosure defaults to ON.
+    const settings = (a as { settings?: { disclosure?: unknown } } | null)?.settings;
+    const disclosure = settings?.disclosure === false ? null : DISCLOSURE[this.language];
+    this.persist({
+      seq: this.seq++,
+      role: "assistant",
+      text: disclosure ? `${disclosure} ${text}` : text,
+    });
     this.assistantTurns++;
+    if (disclosure) this.enqueueSpeech(disclosure, epoch);
     this.enqueueSpeech(text, epoch);
     void this.drain().then(() => {
       if (!this.ended && epoch === this.epoch) this.setState("listening");

@@ -7,3 +7,4 @@ export * from "./services/patients.js";
 export * from "./services/calls.js";
 export * from "./services/demo.js";
 export * from "./auth/verifier.js";
+export * from "./services/usage.js";

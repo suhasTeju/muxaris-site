@@ -31,7 +31,7 @@ export class WsTransport implements MediaTransport {
         return;
       }
       const parsed = clientEventSchema.safeParse(json);
-      if (parsed.success) this.eventCb?.(parsed.data);
+      if (parsed.success) this.eventCb?.(parsed.data as ClientEvent);
     });
     ws.on("close", () => this.closeCbs.forEach((cb) => cb()));
   }
