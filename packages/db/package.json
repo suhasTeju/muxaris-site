@@ -23,9 +23,9 @@
   },
   "dependencies": {
     "@muxaris/shared": "*",
-    "drizzle-orm": "^0.44",
-    "pg": "^8",
-    "nanoid": "^5"
+    "drizzle-orm": "^0.45.3",
+    "nanoid": "^5",
+    "pg": "^8"
   },
   "devDependencies": {
     "@types/pg": "^8",
