@@ -1,5 +1,12 @@
-import { addMinutes, differenceInCalendarDays } from "date-fns";
-import { atLocal, localDateString, partOfDayOf, weekdayOf } from "./time.js";
+import { addMinutes } from "date-fns";
+import {
+  assertDateString,
+  atLocal,
+  daysBetween,
+  localDateString,
+  partOfDayOf,
+  weekdayOf,
+} from "./time.js";
 export { localDateString, partOfDayOf } from "./time.js";
 
 export interface SlotRules {
@@ -7,6 +14,7 @@ export interface SlotRules {
   leadTimeMin: number;
   maxDaysAhead: number;
   allowSameDay: boolean;
+  /** Capacity per slot; NOTE: findSlots ignores this (enforced by the booking layer). */
   maxPerSlot: number;
 }
 export interface DoctorAvailability {
@@ -48,11 +56,13 @@ const overlaps = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) =>
   aStart < bEnd && bStart < aEnd;
 
 export function findSlots(i: FindSlotsInput): Slot[] {
+  assertDateString(i.date);
+  for (const h of i.holidays) assertDateString(h);
+  if (!(i.rules.slotGrainMin > 0)) {
+    throw new RangeError(`slotGrainMin must be > 0, got ${i.rules.slotGrainMin}`);
+  }
   const today = localDateString(i.now, i.timezone);
-  const dayDiff = differenceInCalendarDays(
-    atLocal(i.date, "12:00", i.timezone),
-    atLocal(today, "12:00", i.timezone),
-  );
+  const dayDiff = daysBetween(today, i.date);
   if (dayDiff < 0 || dayDiff > i.rules.maxDaysAhead) return [];
   if (dayDiff === 0 && !i.rules.allowSameDay) return [];
   if (i.holidays.includes(i.date)) return [];
@@ -60,19 +70,25 @@ export function findSlots(i: FindSlotsInput): Slot[] {
   const need = i.service.durationMin + i.service.bufferMin;
   const weekday = weekdayOf(i.date, i.timezone);
   const out: Slot[] = [];
+  const seen = new Set<string>();
   for (const doc of i.doctors) {
     const busy = i.appointments
       .filter((a) => a.doctorId === doc.doctorId)
       .map((a) => ({ s: a.startsAt, e: a.endsAt }));
     for (const wh of doc.workingHours.filter((w) => w.weekday === weekday)) {
       const open = atLocal(i.date, wh.startTime, i.timezone);
-      const close = atLocal(i.date, wh.endTime, i.timezone);
+      let close = atLocal(i.date, wh.endTime, i.timezone);
+      // An end at or before the start (e.g. "00:00") means the next day's midnight.
+      if (close <= open) close = atLocal(i.date, wh.endTime, i.timezone, 1);
       for (let t = open; addMinutes(t, need) <= close; t = addMinutes(t, i.rules.slotGrainMin)) {
         if (t < earliest) continue;
         const endWithBuffer = addMinutes(t, need);
         if (busy.some((b) => overlaps(t, endWithBuffer, b.s, b.e))) continue;
         if (doc.timeOff.some((o) => overlaps(t, endWithBuffer, o.startsAt, o.endsAt))) continue;
         if (i.partOfDay && partOfDayOf(t, i.timezone) !== i.partOfDay) continue;
+        const key = `${doc.doctorId}|${t.getTime()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         out.push({
           doctorId: doc.doctorId,
           startsAt: t,
@@ -82,6 +98,8 @@ export function findSlots(i: FindSlotsInput): Slot[] {
     }
   }
   return out.sort(
-    (a, b) => a.startsAt.getTime() - b.startsAt.getTime() || a.doctorId.localeCompare(b.doctorId),
+    (a, b) =>
+      a.startsAt.getTime() - b.startsAt.getTime() ||
+      (a.doctorId < b.doctorId ? -1 : a.doctorId > b.doctorId ? 1 : 0),
   );
 }
