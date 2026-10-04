@@ -22,7 +22,7 @@ const jsonLd = {
       "@type": "Organization",
       name: "Muxaris",
       url: SITE_URL,
-      logo: `${SITE_URL}/brand/muxaris-mark.svg`,
+      logo: `${SITE_URL}/brand/muxaris-mark.png`,
       email: CONTACT_EMAIL,
       address: { "@type": "PostalAddress", addressLocality: "Bengaluru", addressCountry: "IN" },
     },

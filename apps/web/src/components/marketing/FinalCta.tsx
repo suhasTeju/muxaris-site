@@ -11,11 +11,12 @@ export function FinalCta() {
             Book a demo
           </p>
           <h2 className="font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl">
-            Hear it answer <span className="text-accent-bright italic">your</span> phone.
+            Hear how it <span className="text-accent-bright italic">answers.</span>
           </h2>
           <p className="text-dark-muted mt-5 max-w-md leading-relaxed">
             Tell us about your clinic. We’ll set up a short walkthrough, and if you’re one of the
-            first 10 Bengaluru clinics, a free 30-day pilot.
+            first 10 Bengaluru clinics, a free 30-day pilot. Today the live product is a browser
+            call; clinic phone numbers are coming soon.
           </p>
           <p className="font-display text-dark-muted mt-6 italic">
             We reply within one working day.

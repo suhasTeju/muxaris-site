@@ -42,8 +42,7 @@ export function SamplePlayer({ src, label }: { src: string; label: string }) {
         type="button"
         onClick={toggle}
         aria-label={`${playing ? "Pause" : "Play"} ${label} greeting`}
-        aria-pressed={playing}
-        className="bg-ink text-paper hover:bg-accent-deep flex size-11 shrink-0 items-center justify-center rounded-full transition-colors"
+        className="bg-ink text-paper hover:bg-[color-mix(in_oklch,var(--color-accent),black_28%)] flex size-11 shrink-0 items-center justify-center rounded-full transition-colors"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
           {playing ? (

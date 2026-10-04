@@ -1,4 +1,4 @@
-import { CAPABILITIES } from "@/lib/content";
+import { CAPABILITIES, COMING_NEXT } from "@/lib/content";
 import { Reveal } from "./Reveal";
 
 export function WhatItHandles() {
@@ -30,6 +30,7 @@ export function WhatItHandles() {
             </Reveal>
           ))}
         </ul>
+        <p className="font-display text-dark-muted mt-8 max-w-2xl text-sm italic">{COMING_NEXT}</p>
       </div>
     </section>
   );

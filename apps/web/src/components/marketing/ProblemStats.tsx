@@ -12,7 +12,7 @@ export function ProblemStats() {
       <ol className="mt-14 grid gap-px overflow-hidden rounded-3xl border border-line bg-line md:grid-cols-3">
         {PROBLEM.moments.map((m, i) => (
           <Reveal as="li" key={m.when} delay={i * 90} className="bg-surface p-7 sm:p-9">
-            <span className="font-display text-accent-deep text-5xl leading-none italic">
+            <span className="font-display text-[color-mix(in_oklch,var(--color-accent),black_25%)] text-5xl leading-none italic">
               {i + 1}
             </span>
             <h3 className="mt-6 text-sm font-medium tracking-[0.12em] uppercase">{m.when}</h3>

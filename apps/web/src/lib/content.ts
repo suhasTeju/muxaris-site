@@ -14,8 +14,8 @@ export const NAV_LINKS = [
 export const HERO = {
   eyebrow: "AI voice receptionist for Indian clinics",
   title: "Your front desk misses calls. Muxaris doesn’t.",
-  sub: "Muxaris answers every call in the caller’s own language, books the appointment into your clinic’s real calendar, and sends a confirmation by WhatsApp or email before the patient hangs up.",
-  note: "Built for dental clinics first. Free 30-day pilot for the first 10 Bengaluru clinics.",
+  sub: "Muxaris answers every call in the caller’s own language, books the appointment into your clinic’s real calendar, and a confirmation is sent by email. Today you can hear it live in a browser call; clinic phone numbers are coming soon.",
+  note: "Dental first. Other specialties coming next. Free 30-day pilot for the first 10 Bengaluru clinics.",
 } as const;
 
 /** Real greeting clips, generated with the clinic greeting per language. */
@@ -60,7 +60,7 @@ export const STEPS = [
   {
     n: "01",
     title: "The call comes in",
-    text: "Muxaris picks up on the first ring, announces itself, and talks with the caller in their language. It asks what they need, in plain conversation.",
+    text: "Muxaris answers, says that an AI assistant is on the line, and talks with the caller in their language. It asks what they need, in plain conversation.",
     img: "/img/step-call.webp",
     alt: "A woman on a phone call outdoors, looking relieved",
   },
@@ -74,16 +74,21 @@ export const STEPS = [
   {
     n: "03",
     title: "The patient is confirmed",
-    text: "A confirmation goes out by WhatsApp or email with the doctor, date and time. You see the call, transcript and booking in your dashboard.",
+    text: "A confirmation is sent by email with the doctor, date and time (WhatsApp is coming soon). You see the call, transcript and booking in your dashboard.",
     img: "/img/step-confirm.webp",
     alt: "A hand holding a phone showing a message confirmation",
   },
 ] as const;
 
 export const DEMO_STAGES = [
-  { id: "answered", title: "Call answered", text: "First ring, in the caller’s language", at: 0 },
+  {
+    id: "answered",
+    title: "Call answered",
+    text: "Muxaris answers in the caller’s language",
+    at: 0,
+  },
   { id: "booked", title: "Slot booked", text: "Doctor Rao, tomorrow, 4:30 pm", at: 13.6 },
-  { id: "sent", title: "Confirmation sent", text: "WhatsApp or email, within seconds", at: 18 },
+  { id: "sent", title: "Confirmation sent", text: "A confirmation is sent by email", at: 18 },
 ] as const;
 
 /** Timestamps (seconds) into /audio/sample-call.m4a (about 20.4 s). */
@@ -140,12 +145,12 @@ export const CAPABILITIES = [
   },
   {
     title: "Every call on record",
-    text: "Transcript, outcome and booking for each call in your dashboard, with retention you control.",
+    text: "Transcript, outcome and booking for each call, in your dashboard.",
     span: "",
   },
   {
     title: "Consent at the start",
-    text: "Each call opens by telling the caller it is an AI assistant and that the call is recorded.",
+    text: "Every call opens with a short note that an AI assistant is answering and that the call may be transcribed.",
     span: "",
   },
 ] as const;
@@ -163,28 +168,28 @@ export const SPECIALTY_CARDS = [
     title: "Skin and hair",
     text: "Consultations and recurring treatment sessions.",
     img: "/img/spec-skin.webp",
-    status: "In pilot",
+    status: "Coming next",
   },
   {
     key: "eye",
     title: "Eye care",
     text: "Eye tests, follow-ups and procedure bookings.",
     img: "/img/spec-eye.webp",
-    status: "In pilot",
+    status: "Coming next",
   },
   {
     key: "physio",
     title: "Physiotherapy",
     text: "Multi-session plans and recurring slots.",
     img: "/img/spec-physio.webp",
-    status: "In pilot",
+    status: "Coming next",
   },
   {
     key: "diagnostics",
     title: "Diagnostics",
     text: "Sample collection and report-pickup scheduling.",
     img: "/img/spec-diagnostic.webp",
-    status: "In pilot",
+    status: "Coming next",
   },
 ] as const;
 
@@ -210,7 +215,7 @@ export const PLANS: readonly Plan[] = [
       "Up to 500 calls",
       "All 5 languages",
       "Booking against your calendar",
-      "Confirmation by WhatsApp or email",
+      "Email confirmations (WhatsApp coming soon)",
       "Dashboard and callbacks queue",
       "Hands-on set-up with us",
     ],
@@ -227,7 +232,7 @@ export const PLANS: readonly Plan[] = [
       "Up to 3,000 call-minutes",
       "Unlimited bookings",
       "5 languages",
-      "Email and WhatsApp confirmations",
+      "Email confirmations (WhatsApp coming soon)",
       "Dashboard",
       "Callbacks queue",
     ],
@@ -254,7 +259,7 @@ export const FAQS = [
   },
   {
     q: "Where is our data stored?",
-    a: "In India. Call data lives on Amazon Web Services in Mumbai (ap-south-1). Recordings are kept for 90 days by default and you can change that. Patient data belongs to your clinic, and we never sell it.",
+    a: "In India. Call data lives on Amazon Web Services in Mumbai (ap-south-1). Call transcripts are kept for 90 days by default. Recording storage and retention controls arrive with the call-centre release. Patient data belongs to your clinic, and we never sell it.",
   },
   {
     q: "How does booking work with our calendar?",
@@ -262,16 +267,19 @@ export const FAQS = [
   },
   {
     q: "How is pricing structured? What about overage?",
-    a: "The Pilot is free for 30 days for the first 10 Bengaluru clinics, up to 500 calls. Standard is ₹4,999 per month and includes up to 3,000 call-minutes. If you go beyond that, we bill a per-minute rate agreed in advance and tell you before it happens. No lock-in: cancel any month.",
+    a: "The Pilot is free for 30 days for the first 10 Bengaluru clinics, up to 500 calls. Standard is ₹4,999 per month and includes up to 3,000 call-minutes. If you go beyond that, we bill a per-minute rate agreed in advance and tell you before it happens. No lock-in, cancel any time.",
   },
   {
     q: "How long does set-up take?",
-    a: "Under 30 minutes. You add your clinic, doctors, services and hours in a guided set-up, try a test call from your browser, and you are ready.",
+    a: "Set-up takes about 30 minutes. You add your clinic, doctors, services and hours in a guided set-up, try a test call from your browser, and you are ready.",
   },
   {
     q: "Can it answer our existing clinic phone number?",
-    a: "Phone numbers and number porting are coming soon. Today you can take calls from your browser, which is the best way to hear Muxaris in your own clinic’s setup. Join the pilot and we will tell you the day dedicated numbers are ready.",
+    a: "Phone numbers and number porting are coming soon. Today you can take calls from your browser, which is the best way to hear Muxaris set up for your own clinic. Join the pilot and we will tell you the day dedicated numbers are ready.",
   },
 ] as const;
 
 export const FOOTER_LANGUAGES = "English · हिन्दी · ಕನ್ನಡ · தமிழ் · తెలుగు";
+
+export const COMING_NEXT =
+  "Coming next: WhatsApp confirmations, clinic phone numbers and number porting, and recording storage with retention controls.";

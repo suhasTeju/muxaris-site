@@ -41,7 +41,7 @@ export default function TermsPage() {
           <li>Do not attempt to disrupt, reverse-engineer or overload the service.</li>
           <li>
             You are responsible for having a lawful basis to handle your patients’ data and for
-            telling callers that calls are handled by an AI assistant and recorded.
+            telling callers that calls are handled by an AI assistant and may be transcribed.
           </li>
         </ul>
 

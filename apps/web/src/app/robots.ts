@@ -3,7 +3,19 @@ import { SITE_URL } from "@/lib/content";
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: { userAgent: "*", allow: "/", disallow: ["/app", "/onboarding", "/auth"] },
+    rules: {
+      userAgent: "*",
+      allow: "/",
+      disallow: [
+        "/app",
+        "/onboarding",
+        "/auth",
+        "/sign-in",
+        "/sign-up",
+        "/verify",
+        "/forgot-password",
+      ],
+    },
     sitemap: `${SITE_URL}/sitemap.xml`,
   };
 }

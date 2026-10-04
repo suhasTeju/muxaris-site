@@ -7,14 +7,15 @@ export function WhoItsFor() {
   return (
     <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
       <Reveal className="max-w-2xl">
-        <p className="text-accent-deep text-xs font-medium tracking-[0.16em] uppercase">
+        <p className="text-[color-mix(in_oklch,var(--color-accent),black_25%)] text-xs font-medium tracking-[0.16em] uppercase">
           Who it’s for
         </p>
         <h2 className="font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl">
           Built for dental clinics first.
         </h2>
         <p className="font-display text-muted mt-4 italic">
-          Other specialties are in pilot. If your clinic books by phone, we’d like to hear from you.
+          Dental first. Other specialties coming next. If your clinic books by phone, we’d like to
+          hear from you.
         </p>
       </Reveal>
       <div className="mt-12 grid gap-4 lg:grid-cols-2">
@@ -29,7 +30,7 @@ export function WhoItsFor() {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/10 to-transparent" />
             <div className="text-paper absolute inset-x-0 bottom-0 p-7">
-              <span className="bg-accent text-on-accent rounded-full px-3 py-1 text-xs font-medium">
+              <span className="bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent rounded-full px-3 py-1 text-xs font-medium">
                 {first.status}
               </span>
               <h3 className="font-display mt-3 text-3xl tracking-tight">{first.title}</h3>

@@ -50,9 +50,9 @@ export default function PrivacyPage() {
 
         <h2>Consent at the start of the call</h2>
         <p>
-          Every call begins with an announcement that the caller is speaking with an AI assistant
-          and that the call is recorded to provide the service. A caller who does not want this can
-          ask for a person.
+          Every call opens with a short note that an AI assistant is answering and that the call may
+          be transcribed to provide the service. A caller who does not want this can ask for a
+          person.
         </p>
 
         <h2>How we use it</h2>
@@ -86,10 +86,10 @@ export default function PrivacyPage() {
 
         <h2>Retention</h2>
         <p>
-          Call recordings are kept for 90 days by default. A clinic can change this period in its
-          settings. Transcripts, bookings and patient records are kept while the clinic’s account is
-          active, and deleted or returned after it ends, unless the law requires us to keep
-          something longer.
+          Call transcripts are kept for 90 days by default. Recording storage and retention controls
+          arrive with the call-centre release. Bookings and patient records are kept while the
+          clinic’s account is active, and deleted or returned after it ends, unless the law requires
+          us to keep something longer.
         </p>
 
         <h2>Your rights and the DPDP Act, 2023</h2>

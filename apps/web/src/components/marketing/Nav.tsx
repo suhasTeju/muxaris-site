@@ -47,7 +47,7 @@ export function Nav() {
           </Link>
           <Link
             href="/#demo"
-            className="bg-accent text-on-accent hover:bg-accent-deep flex min-h-11 items-center rounded-full px-5 text-sm font-medium transition-colors"
+            className="bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent hover:bg-[color-mix(in_oklch,var(--color-accent),black_28%)] flex min-h-11 items-center rounded-full px-5 text-sm font-medium transition-colors"
           >
             Book a demo
           </Link>
@@ -95,7 +95,7 @@ export function Nav() {
               <Link
                 href="/#demo"
                 onClick={() => setOpen(false)}
-                className="bg-accent text-on-accent flex min-h-12 flex-1 items-center justify-center rounded-full text-sm font-medium"
+                className="bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent flex min-h-12 flex-1 items-center justify-center rounded-full text-sm font-medium"
               >
                 Book a demo
               </Link>

@@ -7,18 +7,20 @@ export function Hero() {
     <section className="relative overflow-hidden">
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 pt-12 pb-16 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:gap-14 lg:pt-20 lg:pb-24">
         <div>
-          <p className="text-accent-deep text-xs font-medium tracking-[0.16em] uppercase">
+          <p className="text-[color-mix(in_oklch,var(--color-accent),black_25%)] text-xs font-medium tracking-[0.16em] uppercase">
             {HERO.eyebrow}
           </p>
           <h1 className="font-display mt-5 text-[2.6rem] leading-[1.02] font-medium tracking-[-0.035em] text-balance sm:text-6xl lg:text-[4.4rem]">
             Your front desk misses calls.{" "}
-            <span className="text-accent-deep italic">Muxaris doesn’t.</span>
+            <span className="text-[color-mix(in_oklch,var(--color-accent),black_25%)] italic">
+              Muxaris doesn’t.
+            </span>
           </h1>
           <p className="text-muted mt-6 max-w-xl text-lg leading-relaxed">{HERO.sub}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
               href="/#demo"
-              className="bg-accent text-on-accent hover:bg-accent-deep flex min-h-12 items-center justify-center rounded-full px-7 font-medium transition-colors"
+              className="bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent hover:bg-[color-mix(in_oklch,var(--color-accent),black_28%)] flex min-h-12 items-center justify-center rounded-full px-7 font-medium transition-colors"
             >
               Book a demo
             </Link>
@@ -48,8 +50,8 @@ export function Hero() {
               <span className="bg-accent relative inline-flex size-2.5 rounded-full" />
             </span>
             <p className="text-sm">
-              <span className="font-medium">Incoming call</span>
-              <span className="text-muted"> · answered on the first ring</span>
+              <span className="font-medium">Illustrative</span>
+              <span className="text-muted"> · a call, answered by Muxaris</span>
             </p>
           </div>
         </div>

@@ -15,7 +15,7 @@ export function Footer() {
             className="rounded-lg"
           />
           <p className="font-display mt-5 max-w-xs text-2xl leading-snug tracking-tight">
-            Every call answered,{" "}
+            A calmer front desk,{" "}
             <span className="text-accent-bright italic">in your language.</span>
           </p>
           <p className="text-dark-muted mt-4 text-sm">{FOOTER_LANGUAGES}</p>

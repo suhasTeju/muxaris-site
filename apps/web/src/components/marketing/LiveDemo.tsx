@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { TryLive } from "./TryLive";
 import { DEMO_STAGES, SAMPLE_CALL_DURATION, TRANSCRIPT } from "@/lib/content";
 
 const REDUCED_QUERY = "(prefers-reduced-motion: reduce)";
@@ -11,6 +12,10 @@ function subscribeReduced(cb: () => void) {
   return () => mq.removeEventListener("change", cb);
 }
 
+// Times (s) at which the visible state changes: transcript lines and stages after t=0.
+const BOUNDARIES = [...new Set([...TRANSCRIPT.map((l) => l.at), ...DEMO_STAGES.map((x) => x.at)])]
+  .filter((x) => x > 0)
+  .sort((x, y) => x - y);
 const LOOP_END = SAMPLE_CALL_DURATION + 3;
 
 /**
@@ -20,7 +25,8 @@ const LOOP_END = SAMPLE_CALL_DURATION + 3;
 export function LiveDemo() {
   const root = useRef<HTMLElement>(null);
   const audio = useRef<HTMLAudioElement>(null);
-  const [clock, setClock] = useState(0);
+  const clock = useRef(0);
+  const [step, setStep] = useState(0);
   const [visible, setVisible] = useState(false);
   const [playing, setPlaying] = useState(false);
   const reduced = useSyncExternalStore(
@@ -44,15 +50,18 @@ export function LiveDemo() {
     const id = window.setInterval(() => {
       const a = audio.current;
       if (a && !a.paused) {
-        setClock(a.currentTime);
+        clock.current = a.currentTime;
       } else if (visible) {
-        setClock((c) => (c + 0.2 >= LOOP_END ? 0 : c + 0.2));
+        clock.current = clock.current + 0.2 >= LOOP_END ? 0 : clock.current + 0.2;
       }
+      // Re-render only when a stage or transcript line changes.
+      const next = BOUNDARIES.filter((x) => clock.current >= x).length;
+      setStep((prev) => (prev === next ? prev : next));
     }, 200);
     return () => window.clearInterval(id);
   }, [visible, reduced]);
 
-  const t = reduced ? SAMPLE_CALL_DURATION : clock;
+  const t = reduced ? SAMPLE_CALL_DURATION : step === 0 ? 0 : BOUNDARIES[step - 1]!;
   const stageIndex = DEMO_STAGES.reduce((acc, s, i) => (t >= s.at ? i : acc), 0);
   const lines = TRANSCRIPT.filter((l) => t >= l.at);
 
@@ -60,7 +69,7 @@ export function LiveDemo() {
     const a = audio.current;
     if (!a) return;
     if (a.paused) {
-      void a.play();
+      void a.play().catch(() => {});
     } else {
       a.pause();
     }
@@ -100,7 +109,9 @@ export function LiveDemo() {
                 >
                   <span
                     className={`font-display flex size-9 shrink-0 items-center justify-center rounded-full text-lg italic transition-colors duration-500 motion-reduce:transition-none ${
-                      done || active ? "bg-accent text-on-accent" : "bg-white/10 text-dark-muted"
+                      done || active
+                        ? "bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent"
+                        : "bg-white/10 text-dark-muted"
                     }`}
                   >
                     {done ? "✓" : i + 1}
@@ -123,8 +134,7 @@ export function LiveDemo() {
               <button
                 type="button"
                 onClick={toggle}
-                aria-pressed={playing}
-                className="bg-accent text-on-accent hover:bg-accent-deep flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-medium transition-colors"
+                className="bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent hover:bg-[color-mix(in_oklch,var(--color-accent),black_28%)] flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-medium transition-colors"
               >
                 {playing ? "Pause audio" : "Play audio"}
               </button>
@@ -141,7 +151,7 @@ export function LiveDemo() {
                   className={`max-w-[85%] rounded-2xl px-4 py-3 text-[0.95rem] leading-relaxed ${
                     l.who === "caller"
                       ? "self-start bg-white/10"
-                      : "bg-accent/90 text-on-accent self-end"
+                      : "bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent self-end"
                   }`}
                 >
                   <span className="mb-0.5 block text-[0.65rem] font-medium tracking-[0.14em] uppercase opacity-70">
@@ -159,28 +169,20 @@ export function LiveDemo() {
               onPause={() => setPlaying(false)}
               onEnded={() => {
                 setPlaying(false);
-                setClock(0);
+                clock.current = 0;
               }}
             />
           </div>
         </div>
 
         <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Link
-            href="/app/assistant/try"
-            className="bg-paper text-ink hover:bg-accent-soft flex min-h-12 items-center justify-center rounded-full px-7 font-medium transition-colors"
-          >
-            Try it live
-          </Link>
+          <TryLive />
           <Link
             href="/#demo"
             className="flex min-h-12 items-center justify-center rounded-full border border-white/25 px-7 font-medium transition-colors hover:border-white/60"
           >
             Book a demo
           </Link>
-          <p className="font-display text-dark-muted text-sm italic sm:ml-2">
-            “Try it live” talks to your own clinic set-up; you will be asked to sign in.
-          </p>
         </div>
       </div>
     </section>

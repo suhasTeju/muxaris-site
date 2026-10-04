@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { GREETINGS } from "@/lib/content";
 
 const css = `
@@ -7,14 +10,18 @@ const css = `
 `;
 
 export function LanguageMarquee() {
+  const [paused, setPaused] = useState(false);
   const items = [...GREETINGS, ...GREETINGS];
   return (
     <section
       aria-label="Greetings in five languages"
-      className="border-line overflow-hidden border-y bg-surface py-5"
+      className="border-line bg-surface relative overflow-hidden border-y py-5"
     >
       <style>{css}</style>
-      <div className="mx-marquee-track flex w-max items-center gap-10 whitespace-nowrap">
+      <div
+        className="mx-marquee-track flex w-max items-center gap-10 whitespace-nowrap"
+        style={{ animationPlayState: paused ? "paused" : "running" }}
+      >
         {items.map((g, i) => (
           <span
             key={`${g.code}-${i}`}
@@ -26,6 +33,13 @@ export function LanguageMarquee() {
           </span>
         ))}
       </div>
+      <button
+        type="button"
+        onClick={() => setPaused((p) => !p)}
+        className="bg-surface text-ink/70 hover:text-ink absolute top-1/2 right-2 flex min-h-11 -translate-y-1/2 items-center rounded-full border border-[var(--color-line)] px-4 text-xs shadow-sm motion-reduce:hidden"
+      >
+        {paused ? "Play scrolling" : "Pause scrolling"}
+      </button>
     </section>
   );
 }

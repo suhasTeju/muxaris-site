@@ -25,18 +25,37 @@ export function createRateLimiter(max = MAX_PER_WINDOW, windowMs = WINDOW_MS, no
   };
 }
 
-function clientIp(c: Context): string {
-  const fwd = c.req.header("x-forwarded-for");
-  // Behind the load balancer the last hop is the one it appended; earlier entries are client-supplied.
-  const last = fwd?.split(",").pop()?.trim();
-  return last || c.req.header("x-real-ip") || "unknown";
+interface NodeBindings {
+  incoming?: { socket?: { remoteAddress?: string } };
+}
+
+/**
+ * Caller IP for rate limiting. Behind the load balancer (TRUST_PROXY=1) it is the last
+ * x-forwarded-for hop, the one the balancer appended. Otherwise the socket peer address is used
+ * and forwarded headers are ignored (they are client-controlled). Returns null when unknown.
+ */
+export function clientIp(c: Context, trustProxy: boolean): string | null {
+  if (trustProxy) {
+    const last = c.req.header("x-forwarded-for")?.split(",").pop()?.trim();
+    if (last) return last;
+  }
+  const peer = (c.env as NodeBindings | undefined)?.incoming?.socket?.remoteAddress;
+  return peer || null;
 }
 
 /** Public (no auth) marketing-site demo request intake. */
-export function demoRequestRoutes(db: Db, allow = createRateLimiter()) {
+export function demoRequestRoutes(
+  db: Db,
+  allow = createRateLimiter(),
+  trustProxy = process.env.TRUST_PROXY === "1",
+) {
   const r = new Hono();
   r.post("/demo-requests", async (c) => {
-    if (!allow(clientIp(c))) {
+    const ip = clientIp(c, trustProxy);
+    if (ip === null) {
+      // Never share one bucket between unidentifiable callers: allow, and make it visible.
+      console.warn("demo-requests: could not determine client IP; rate limit skipped");
+    } else if (!allow(ip)) {
       return c.json(
         { error: { code: "rate_limited", message: "Too many requests. Please try again later." } },
         429,

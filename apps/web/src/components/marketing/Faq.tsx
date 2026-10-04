@@ -6,7 +6,9 @@ export function Faq({ heading = true }: { heading?: boolean }) {
     <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 py-20 sm:px-6 lg:py-28">
       {heading && (
         <Reveal>
-          <p className="text-accent-deep text-xs font-medium tracking-[0.16em] uppercase">FAQ</p>
+          <p className="text-[color-mix(in_oklch,var(--color-accent),black_25%)] text-xs font-medium tracking-[0.16em] uppercase">
+            FAQ
+          </p>
           <h2 className="font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl">
             Questions clinics ask first.
           </h2>
@@ -19,7 +21,7 @@ export function Faq({ heading = true }: { heading?: boolean }) {
               {f.q}
               <span
                 aria-hidden="true"
-                className="text-accent-deep text-2xl leading-none transition-transform group-open:rotate-45 motion-reduce:transition-none"
+                className="text-[color-mix(in_oklch,var(--color-accent),black_25%)] text-2xl leading-none transition-transform group-open:rotate-45 motion-reduce:transition-none"
               >
                 +
               </span>
