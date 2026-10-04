@@ -1,0 +1,23 @@
+{
+  "name": "@muxaris/infra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "synth": "cdk synth",
+    "deploy:auth": "cdk deploy MuxarisAuth --require-approval never",
+    "cdk": "cdk"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.200",
+    "constructs": "^10"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1000",
+    "tsx": "^4",
+    "typescript": "^5.9",
+    "vitest": "^3"
+  }
+}
