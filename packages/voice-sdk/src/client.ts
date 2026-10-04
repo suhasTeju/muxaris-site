@@ -108,6 +108,7 @@ export class VoiceClient {
           this.emit(event.type, event as never);
           if (event.type === "ready" && !this.gotReady) {
             this.gotReady = true;
+            clearTimeout(timer);
             this.startMic().then(
               () => {
                 if (this.ended) settle(new Error("Call ended before it started"));

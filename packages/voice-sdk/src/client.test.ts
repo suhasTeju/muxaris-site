@@ -64,7 +64,7 @@ describe("VoiceClient", () => {
     expect(errors).toEqual(["denied"]);
   });
 
-  it("end() is idempotent and callable after failure", async () => {
+  it("end() is idempotent", async () => {
     const { client, sock } = make();
     const p = client.connect();
     sock.open();
@@ -73,6 +73,38 @@ describe("VoiceClient", () => {
     client.end();
     client.end();
     expect(sock.sentEvents().filter((e) => e.type === "end")).toHaveLength(1);
+  });
+
+  it("end() after a failure is safe and does not resend", async () => {
+    const { client, sock } = make();
+    const p = client.connect();
+    sock.open();
+    sock.emit({ type: "error", code: "auth_failed", message: "bad token" });
+    await expect(p).rejects.toThrow("bad token");
+    expect(() => client.end()).not.toThrow();
+    expect(sock.sentEvents().map((e) => e.type)).toEqual(["start"]);
+  });
+
+  it("does not time out while the mic permission prompt is pending", async () => {
+    vi.useFakeTimers();
+    try {
+      let grant!: () => void;
+      const mic = {
+        start: vi.fn(() => new Promise<void>((r) => (grant = r))),
+        stop: vi.fn(),
+      };
+      const { client, sock } = make({ mediaFactory: () => mic });
+      const p = client.connect();
+      sock.open();
+      await vi.advanceTimersByTimeAsync(1000);
+      sock.emit(readyEvent);
+      await vi.advanceTimersByTimeAsync(14_000);
+      grant();
+      await expect(p).resolves.toBeUndefined();
+      expect(sock.closeCode).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("times out waiting for ready", async () => {
