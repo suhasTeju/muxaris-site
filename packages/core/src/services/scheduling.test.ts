@@ -281,6 +281,15 @@ const at = (date: string, hhmm: string) => atLocal(date, hhmm, "Asia/Kolkata");
     });
   });
 
+  it("updateSlotRules ignores clinicId smuggled in the patch (mass assignment)", async () => {
+    const before = await getSlotRules(db, b.clinic.id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await updateSlotRules(db, a.clinic.id, { clinicId: b.clinic.id, slotGrainMin: 20 } as any);
+    expect((await getSlotRules(db, b.clinic.id)).slotGrainMin).toBe(before.slotGrainMin);
+    expect((await getSlotRules(db, a.clinic.id)).slotGrainMin).toBe(20);
+    await updateSlotRules(db, a.clinic.id, { slotGrainMin: 15 });
+  });
+
   it("validates working hours", async () => {
     await expect(
       setWorkingHours(db, a.clinic.id, aDocs[0]!.id, [

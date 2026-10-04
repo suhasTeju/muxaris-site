@@ -48,11 +48,11 @@ export async function loadDemoClinicData(db: Db, clinicId: string): Promise<void
       .values(DEF.services.map(({ key: _key, ...v }) => ({ ...v, id: newId("svc"), clinicId })));
     await tx
       .insert(slotRules)
-      .values({ clinicId, ...DEF.slotRules })
+      .values({ ...DEF.slotRules, clinicId })
       .onConflictDoUpdate({ target: slotRules.clinicId, set: { ...DEF.slotRules } });
     await tx
       .insert(assistantProfiles)
-      .values({ clinicId, ...DEF.assistant })
+      .values({ ...DEF.assistant, clinicId })
       .onConflictDoUpdate({ target: assistantProfiles.clinicId, set: { ...DEF.assistant } });
   });
 }

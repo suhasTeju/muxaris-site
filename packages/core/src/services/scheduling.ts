@@ -103,7 +103,16 @@ export async function setWorkingHours(
     if (hours.length === 0) return [];
     return tx
       .insert(workingHours)
-      .values(hours.map((h) => ({ id: newId("wh"), clinicId, doctorId, ...h })))
+      .values(
+        hours.map((h) => ({
+          id: newId("wh"),
+          clinicId,
+          doctorId,
+          weekday: h.weekday,
+          startTime: h.startTime,
+          endTime: h.endTime,
+        })),
+      )
       .returning();
   });
 }
@@ -167,12 +176,24 @@ export async function getSlotRules(db: Db, clinicId: string): Promise<SlotRulesR
   return row;
 }
 
+const SLOT_RULE_FIELDS = [
+  "slotGrainMin",
+  "leadTimeMin",
+  "maxDaysAhead",
+  "allowSameDay",
+  "maxPerSlot",
+] as const;
+
 export async function updateSlotRules(
   db: Db,
   clinicId: string,
   patch: Partial<Omit<SlotRulesRow, "clinicId">>,
 ) {
-  const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+  const clean: Partial<Pick<SlotRulesRow, (typeof SLOT_RULE_FIELDS)[number]>> = {};
+  for (const k of SLOT_RULE_FIELDS) {
+    const v = patch[k];
+    if (v !== undefined) (clean as Record<string, unknown>)[k] = v;
+  }
   for (const k of ["slotGrainMin", "maxPerSlot"] as const) {
     const v = clean[k];
     if (v !== undefined && (!Number.isInteger(v) || (v as number) < 1)) {
@@ -192,10 +213,11 @@ export async function updateSlotRules(
   if (!clinic) throw new CoreError("not_found", "clinic not found");
   const [row] = await db
     .insert(slotRules)
-    .values({ clinicId, ...clean })
+    .values({ ...clean, clinicId })
     .onConflictDoUpdate({
       target: slotRules.clinicId,
-      set: Object.keys(clean).length ? clean : { clinicId },
+      // never includes clinicId; a no-op assignment keeps RETURNING working for empty patches
+      set: Object.keys(clean).length ? clean : { maxPerSlot: sql`${slotRules.maxPerSlot}` },
     })
     .returning();
   return row!;
