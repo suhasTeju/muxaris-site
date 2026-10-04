@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { schema, newId, type Db } from "@muxaris/db";
 import { CoreError } from "./errors.js";
 
@@ -39,11 +39,32 @@ export interface CreateClinicInput {
   phone?: string;
 }
 
+/**
+ * Max clinics one user may own. Phase 1 has no generic write rate limiter by design (the
+ * Phase 5 WAF covers abuse); this cap is the only per-user guard on clinic creation.
+ */
+export const MAX_CLINICS_PER_USER = 5;
+
 export async function createClinicForUser(db: Db, input: CreateClinicInput) {
   const name = input.name?.trim();
   if (!name) throw new CoreError("validation", "clinic name is required");
   if (!input.city?.trim()) throw new CoreError("validation", "city is required");
   return db.transaction(async (tx) => {
+    // Serialise per user so concurrent creates cannot slip past the cap.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).for("update");
+    const [{ owned } = { owned: 0 }] = await tx
+      .select({ owned: sql<number>`count(*)::int` })
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.userId, input.userId),
+          eq(memberships.role, "owner"),
+          eq(memberships.status, "active"),
+        ),
+      );
+    if (owned >= MAX_CLINICS_PER_USER) {
+      throw new CoreError("clinic_limit", `you can own at most ${MAX_CLINICS_PER_USER} clinics`);
+    }
     const base = slugify(name);
     let slug = base;
     let n = 1;

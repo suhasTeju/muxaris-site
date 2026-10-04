@@ -113,6 +113,15 @@ warnIfUnreachable(reachable, "core demo/patient/call tests");
     });
     expect(done.status).toBe("completed");
     expect(done.endedAt).not.toBeNull();
+    // a second finish is a no-op and keeps the first outcome
+    const again = await finishCall(db, {
+      callId: call.id,
+      clinicId: a.clinic.id,
+      status: "failed",
+      outcome: "abandoned",
+      durationS: 99,
+    });
+    expect(again).toMatchObject({ status: "completed", outcome: "booked", durationS: 42 });
     const cb = await createCallback(db, {
       clinicId: a.clinic.id,
       callId: call.id,

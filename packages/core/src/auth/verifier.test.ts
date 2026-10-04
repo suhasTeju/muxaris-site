@@ -1,4 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  FetchError,
+  JwksNotAvailableInCacheError,
+  JwtExpiredError,
+  JwtInvalidAudienceError,
+  NonRetryableFetchError,
+} from "aws-jwt-verify/error";
 import { AuthUnavailableError, createCognitoVerifier, createDevVerifier } from "./verifier.js";
 
 describe("createDevVerifier", () => {
@@ -99,5 +106,46 @@ describe("createCognitoVerifier", () => {
     await v.verify("t");
     await v.verify("t");
     expect(fetchEmail).toHaveBeenCalledTimes(2);
+  });
+  describe("error classification", () => {
+    const mk = (err: unknown, fetchEmail?: () => Promise<string | undefined>) =>
+      createCognitoVerifier({
+        userPoolId: "ap-south-1_abc",
+        clientId: "c",
+        jwtVerifier: { verify: async () => Promise.reject(err) },
+        fetchEmail: fetchEmail ?? (async () => "a@x.in"),
+      });
+    it("keeps expired / wrong-audience tokens as plain rejections (401 upstream)", async () => {
+      for (const err of [
+        new JwtExpiredError("expired", 1, 2),
+        new JwtInvalidAudienceError("aud", "x", "y"),
+      ]) {
+        const r = mk(err).verify("t");
+        await expect(r).rejects.toBe(err);
+        await expect(r).rejects.not.toBeInstanceOf(AuthUnavailableError);
+      }
+    });
+    it("maps JWKS fetch/network failures to AuthUnavailableError (503 upstream)", async () => {
+      const errs = [
+        new FetchError("https://jwks", "ECONNRESET"),
+        new NonRetryableFetchError("https://jwks", "Status code is 500"),
+        new JwksNotAvailableInCacheError("not cached"),
+        Object.assign(new Error("aborted"), { name: "AbortError" }),
+        Object.assign(new Error("slow"), { name: "TimeoutError" }),
+      ];
+      for (const err of errs) {
+        await expect(mk(err).verify("t")).rejects.toBeInstanceOf(AuthUnavailableError);
+      }
+    });
+    it("passes Cognito UserNotFoundException through as a rejection (401 upstream)", async () => {
+      const gone = Object.assign(new Error("gone"), { name: "UserNotFoundException" });
+      const v = createCognitoVerifier({
+        userPoolId: "ap-south-1_abc",
+        clientId: "c",
+        jwtVerifier: { verify: async () => ({ sub: "s1", username: "u" }) },
+        fetchEmail: async () => Promise.reject(gone),
+      });
+      await expect(v.verify("t")).rejects.toBe(gone);
+    });
   });
 });

@@ -11,6 +11,7 @@ import {
   upsertUser,
 } from "./clinics.js";
 import { CoreError } from "./errors.js";
+import { MAX_CLINICS_PER_USER } from "./clinics.js";
 import { createDoctor, setWorkingHours } from "./scheduling.js";
 import { dbReachable, makeTestClinic, openDb, warnIfUnreachable } from "./test-support.js";
 
@@ -28,11 +29,13 @@ describe("slugify", () => {
 (reachable ? describe : describe.skip)("clinic service", () => {
   let ctx: Awaited<ReturnType<typeof makeTestClinic>>;
   const extra: string[] = [];
+  const extraUsers: string[] = [];
   beforeAll(async () => {
     ctx = await makeTestClinic(db, "clinics");
   });
   afterAll(async () => {
     for (const id of extra) await db.delete(schema.clinics).where(eq(schema.clinics.id, id));
+    for (const id of extraUsers) await db.delete(schema.users).where(eq(schema.users.id, id));
     await ctx?.cleanup();
     await pool.end();
   });
@@ -93,11 +96,23 @@ describe("slugify", () => {
     expect(full.services).toEqual([]);
   });
 
+  async function freshUser() {
+    const tag = newId("usr");
+    const [u] = await db
+      .insert(schema.users)
+      .values({ id: tag, cognitoSub: `fresh-${tag}`, email: `fresh-${tag}@x.test` })
+      .returning();
+    extraUsers.push(u!.id);
+    return u!;
+  }
+
   it("retries the slug on a unique violation from concurrent creates", async () => {
+    // distinct users: the per-user lock would otherwise serialise the race away
+    const users = await Promise.all([freshUser(), freshUser(), freshUser()]);
     const results = await Promise.all(
-      [1, 2, 3].map(() =>
+      users.map((u) =>
         createClinicForUser(db, {
-          userId: ctx.user.id,
+          userId: u.id,
           name: "Racing Slug Clinic",
           specialty: "dental",
           city: "Pune",
@@ -109,9 +124,10 @@ describe("slugify", () => {
   });
 
   it("skips taken slugs deterministically (-2 taken -> -3)", async () => {
+    const owner = await freshUser();
     const mk = () =>
       createClinicForUser(db, {
-        userId: ctx.user.id,
+        userId: owner.id,
         name: "Deterministic Slug Clinic",
         specialty: "dental",
         city: "Pune",
@@ -141,5 +157,39 @@ describe("slugify", () => {
       code: "not_found",
     });
     await expect(getClinicContext(db, "cl_missing")).rejects.toBeInstanceOf(CoreError);
+  });
+
+  it("caps owned clinics per user (clinic_limit)", async () => {
+    const [u] = await db
+      .insert(schema.users)
+      .values({
+        id: newId("usr"),
+        cognitoSub: `cap-${newId("usr")}`,
+        email: `cap-${newId("usr")}@x.test`,
+      })
+      .returning();
+    const made: string[] = [];
+    try {
+      for (let i = 0; i < MAX_CLINICS_PER_USER; i++) {
+        const { clinic } = await createClinicForUser(db, {
+          userId: u!.id,
+          name: `Cap Clinic ${i}`,
+          specialty: "dental",
+          city: "Pune",
+        });
+        made.push(clinic.id);
+      }
+      await expect(
+        createClinicForUser(db, {
+          userId: u!.id,
+          name: "One Too Many",
+          specialty: "dental",
+          city: "Pune",
+        }),
+      ).rejects.toMatchObject({ code: "clinic_limit" });
+    } finally {
+      for (const id of made) await db.delete(schema.clinics).where(eq(schema.clinics.id, id));
+      await db.delete(schema.users).where(eq(schema.users.id, u!.id));
+    }
   });
 });

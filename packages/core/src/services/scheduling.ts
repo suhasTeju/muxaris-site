@@ -1,10 +1,15 @@
 import { addMinutes } from "date-fns";
 import { and, asc, eq, gt, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { schema, newId, type Db } from "@muxaris/db";
-import { findSlots, type Slot } from "../scheduling/slot-engine.js";
+import {
+  findSlots,
+  localDateString,
+  type FindSlotsInput,
+  type Slot,
+} from "../scheduling/slot-engine.js";
 import { assertDateString, assertTimeString, atLocal } from "../scheduling/time.js";
 import type { DbLike } from "./db-types.js";
-import { CoreError } from "./errors.js";
+import { CoreError, slotUnavailable, type SlotUnavailableReason } from "./errors.js";
 import { upsertPatientByPhone } from "./patients.js";
 
 const {
@@ -174,7 +179,7 @@ export async function createService(db: Db, clinicId: string, input: ServiceInpu
 
 export type SlotRulesRow = typeof slotRules.$inferSelect;
 
-export async function getSlotRules(db: Db, clinicId: string): Promise<SlotRulesRow> {
+export async function getSlotRules(db: DbLike, clinicId: string): Promise<SlotRulesRow> {
   const [row] = await db.select().from(slotRules).where(eq(slotRules.clinicId, clinicId));
   if (!row) throw new CoreError("not_found", "slot rules not found");
   return row;
@@ -397,7 +402,7 @@ async function assertSlotFree(
       ),
     )
     .limit(1);
-  if (overlapping.length > 0) throw new CoreError("conflict", "that time is no longer available");
+  if (overlapping.length > 0) throw slotUnavailable("conflict", "that time is no longer available");
 
   const [rules] = await tx
     .select({ maxPerSlot: slotRules.maxPerSlot })
@@ -416,7 +421,151 @@ async function assertSlotFree(
         eq(appointments.startsAt, p.startsAt),
       ),
     );
-  if (n >= maxPerSlot) throw new CoreError("conflict", "that time is fully booked");
+  if (n >= maxPerSlot) throw slotUnavailable("full", "that time is fully booked");
+}
+
+/**
+ * Verifies `startsAt` is a slot the engine would offer for this doctor/service (hours, time off,
+ * holidays, lead time, horizon, grain), reusing findSlots. Existing appointments are checked
+ * separately by assertSlotFree. `allowOutsideRules` bypasses hours, lead time and grain only.
+ */
+async function assertBookable(
+  tx: DbLike,
+  p: {
+    clinicId: string;
+    doctorId: string;
+    service: { id: string; durationMin: number; bufferMin: number };
+    startsAt: Date;
+    now: Date;
+    allowOutsideRules: boolean;
+  },
+) {
+  const [clinic] = await tx.select().from(clinics).where(eq(clinics.id, p.clinicId));
+  if (!clinic) throw new CoreError("not_found", "clinic not found");
+  const rules = await getSlotRules(tx, p.clinicId);
+  const tz = clinic.timezone;
+  const t = p.startsAt;
+  if (t < p.now) throw slotUnavailable("past", "that time is in the past");
+  if (t.getTime() % 60_000 !== 0) {
+    throw slotUnavailable("not_on_grain", "start time must be on a whole minute");
+  }
+  const date = localDateString(t, tz);
+  const dayStart = atLocal(date, "00:00", tz);
+  const dayEnd = atLocal(date, "00:00", tz, 1);
+  const hoursRows = await tx
+    .select()
+    .from(workingHours)
+    .where(and(eq(workingHours.clinicId, p.clinicId), eq(workingHours.doctorId, p.doctorId)));
+  const offRows = await tx
+    .select()
+    .from(timeOff)
+    .where(
+      and(
+        eq(timeOff.clinicId, p.clinicId),
+        eq(timeOff.doctorId, p.doctorId),
+        lt(timeOff.startsAt, dayEnd),
+        gt(timeOff.endsAt, dayStart),
+      ),
+    );
+  const holidayRows = await tx
+    .select({ date: clinicHolidays.date })
+    .from(clinicHolidays)
+    .where(eq(clinicHolidays.clinicId, p.clinicId));
+
+  const realHours = hoursRows.map((h) => ({
+    weekday: h.weekday,
+    startTime: hhmm(h.startTime),
+    endTime: hhmm(h.endTime),
+  }));
+  const wholeDay = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+    weekday,
+    startTime: "00:00",
+    endTime: "24:00",
+  }));
+  const bypass = p.allowOutsideRules;
+  const holidays = holidayRows.map((h) => h.date);
+  const accepts = (o: {
+    hours: boolean;
+    grain: boolean;
+    holidays: boolean;
+    off: boolean;
+    horizon: boolean;
+    sameDay: boolean;
+    lead: boolean;
+  }) => {
+    const input: FindSlotsInput = {
+      date,
+      timezone: tz,
+      now: p.now,
+      rules: {
+        slotGrainMin: o.grain && !bypass ? rules.slotGrainMin : 1,
+        leadTimeMin: o.lead && !bypass ? rules.leadTimeMin : 0,
+        maxDaysAhead: o.horizon ? rules.maxDaysAhead : 1_000_000,
+        allowSameDay: o.sameDay && !bypass ? rules.allowSameDay : true,
+        maxPerSlot: rules.maxPerSlot,
+      },
+      doctors: [
+        {
+          doctorId: p.doctorId,
+          workingHours: bypass ? wholeDay : realHours,
+          timeOff: o.off ? offRows.map((x) => ({ startsAt: x.startsAt, endsAt: x.endsAt })) : [],
+        },
+      ],
+      service: {
+        serviceId: p.service.id,
+        durationMin: p.service.durationMin,
+        bufferMin: p.service.bufferMin,
+      },
+      holidays: o.holidays ? holidays : [],
+      appointments: [],
+    };
+    return findSlots(input).some((s) => s.startsAt.getTime() === t.getTime());
+  };
+  const all = {
+    hours: true,
+    grain: true,
+    holidays: true,
+    off: true,
+    horizon: true,
+    sameDay: true,
+    lead: true,
+  };
+  if (accepts(all)) return;
+  // Add rules one at a time; the first stage that rejects names the reason.
+  const none = {
+    hours: true,
+    grain: false,
+    holidays: false,
+    off: false,
+    horizon: false,
+    sameDay: false,
+    lead: false,
+  };
+  const stages: Array<[SlotUnavailableReason, string, Partial<typeof all>]> = [
+    ["outside_hours", "that time is outside the doctor's working hours", {}],
+    ["not_on_grain", "that start time does not fall on the appointment grid", { grain: true }],
+    ["holiday", "the clinic is closed that day", { grain: true, holidays: true }],
+    [
+      "time_off",
+      "the doctor is unavailable at that time",
+      { grain: true, holidays: true, off: true },
+    ],
+    [
+      "too_far_ahead",
+      "that date is too far ahead to book",
+      { grain: true, holidays: true, off: true, horizon: true },
+    ],
+    [
+      "lead_time",
+      "that time is too soon to book",
+      { grain: true, holidays: true, off: true, horizon: true, sameDay: true },
+    ],
+  ];
+  for (const [reason, message, add] of stages) {
+    if (!accepts({ ...none, ...add })) throw slotUnavailable(reason, message);
+  }
+  // Remaining difference is the lead time itself.
+  throw slotUnavailable("lead_time", "that time is too soon to book");
 }
 
 async function getClinicService(
@@ -459,6 +608,9 @@ export async function bookAppointment(
     source: Appointment["source"];
     createdByCallId?: string;
     notes?: string;
+    /** Explicit staff opt-in: bypass working hours, lead time and grain (never overlaps). */
+    allowOutsideRules?: boolean;
+    now?: Date;
   },
 ): Promise<Appointment> {
   assertValidDate(input.startsAt, "startsAt");
@@ -466,6 +618,14 @@ export async function bookAppointment(
     await lockDoctor(tx, input.clinicId, input.doctorId, { requireActive: true });
     const svc = await getClinicService(tx, input.clinicId, input.serviceId, {
       forAssistant: input.source === "ai_call",
+    });
+    await assertBookable(tx, {
+      clinicId: input.clinicId,
+      doctorId: input.doctorId,
+      service: svc,
+      startsAt: input.startsAt,
+      now: input.now ?? new Date(),
+      allowOutsideRules: input.allowOutsideRules ?? false,
     });
     const endsAt = addMinutes(input.startsAt, svc.durationMin);
     const patient = await upsertPatientByPhone(tx, input.clinicId, input.patient);
@@ -503,6 +663,9 @@ export async function rescheduleAppointment(
     newStartsAt: Date;
     /** Pass "ai_call" when the assistant is acting; enforces bookableByAi. */
     source?: Appointment["source"];
+    /** Explicit staff opt-in: bypass working hours, lead time and grain (never overlaps). */
+    allowOutsideRules?: boolean;
+    now?: Date;
   },
 ): Promise<Appointment> {
   assertValidDate(input.newStartsAt, "newStartsAt");
@@ -525,6 +688,14 @@ export async function rescheduleAppointment(
     const svc = await getClinicService(tx, input.clinicId, apt.serviceId, {
       forAssistant: input.source === "ai_call",
       allowInactive: true, // an already-booked service may have been retired since
+    });
+    await assertBookable(tx, {
+      clinicId: input.clinicId,
+      doctorId: apt.doctorId,
+      service: svc,
+      startsAt: input.newStartsAt,
+      now: input.now ?? new Date(),
+      allowOutsideRules: input.allowOutsideRules ?? false,
     });
     const endsAt = addMinutes(input.newStartsAt, svc.durationMin);
     await assertSlotFree(tx, {

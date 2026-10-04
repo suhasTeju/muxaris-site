@@ -1,5 +1,10 @@
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import {
+  FetchError,
+  JwksNotAvailableInCacheError,
+  JwksValidationError,
+} from "aws-jwt-verify/error";
+import {
   CognitoIdentityProviderClient,
   GetUserCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
@@ -41,6 +46,19 @@ export interface CognitoVerifierOptions {
   now?: () => number;
 }
 
+/** JWKS could not be fetched/read (an outage), as opposed to the token itself being bad. */
+function isJwksOutage(e: unknown): boolean {
+  if (
+    e instanceof FetchError || // includes NonRetryableFetchError
+    e instanceof JwksNotAvailableInCacheError ||
+    e instanceof JwksValidationError
+  ) {
+    return true;
+  }
+  const name = (e as { name?: string } | null)?.name ?? "";
+  return name === "AbortError" || name === "TimeoutError";
+}
+
 const EMAIL_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE = 5000;
 
@@ -68,7 +86,14 @@ export function createCognitoVerifier(opts: CognitoVerifierOptions): TokenVerifi
 
   return {
     async verify(token) {
-      const payload = await jwt.verify(token);
+      let payload;
+      try {
+        payload = await jwt.verify(token);
+      } catch (e) {
+        // Expired/invalid/wrong-audience stay as-is (caller maps to 401); JWKS outages are 503.
+        if (isJwksOutage(e)) throw new AuthUnavailableError({ cause: e });
+        throw e;
+      }
       const sub = payload.sub;
       const username = String(payload.username ?? sub);
       let hit = cache.get(sub);
@@ -79,7 +104,14 @@ export function createCognitoVerifier(opts: CognitoVerifierOptions): TokenVerifi
         } catch (e) {
           const name = (e as { name?: string })?.name ?? "";
           // A rejected/expired token is the caller's problem; anything else is transient.
-          if (name === "NotAuthorizedException" || name === "InvalidParameterException") throw e;
+          if (
+            name === "NotAuthorizedException" ||
+            name === "InvalidParameterException" ||
+            // the user was deleted/disabled after the token was issued
+            name === "UserNotFoundException"
+          ) {
+            throw e;
+          }
           throw new AuthUnavailableError({ cause: e });
         }
         hit = { email, expires: now() + EMAIL_TTL_MS };

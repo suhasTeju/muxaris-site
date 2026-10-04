@@ -94,10 +94,22 @@ export async function finishCall(
       ...(input.languageDetected ? { languageDetected: input.languageDetected } : {}),
       ...(input.metrics ? { metrics: input.metrics } : {}),
     })
-    .where(and(eq(calls.id, input.callId), eq(calls.clinicId, input.clinicId)))
+    .where(
+      and(
+        eq(calls.id, input.callId),
+        eq(calls.clinicId, input.clinicId),
+        eq(calls.status, "in_progress"),
+      ),
+    )
     .returning();
-  if (!row) throw new CoreError("not_found", "call not found");
-  return row;
+  if (row) return row;
+  // Already finished (e.g. shutdown and close handler both finishing): keep the first result.
+  const [existing] = await db
+    .select()
+    .from(calls)
+    .where(and(eq(calls.id, input.callId), eq(calls.clinicId, input.clinicId)));
+  if (!existing) throw new CoreError("not_found", "call not found");
+  return existing;
 }
 
 export async function createCallback(
