@@ -6,10 +6,10 @@ import { AmplifyProvider } from "@/components/auth/amplify-provider";
 const fraunces = Fraunces({
   subsets: ["latin"],
   variable: "--font-fraunces",
-  axes: ["opsz", "SOFT"],
   style: ["normal", "italic"],
+  display: "swap",
 });
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://muxaris.com"),
