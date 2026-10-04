@@ -1,30 +1,28 @@
 import Link from "next/link";
 import { PLANS, PRICING_NOTE } from "@/lib/content";
 import { Reveal } from "./Reveal";
+import { SectionHeader } from "./SectionHeader";
 
 export function Pricing({ heading = true }: { heading?: boolean }) {
   // On /pricing the page H1 is followed directly by the plans, so they are h2s there.
   const PlanTitle = heading ? "h3" : "h2";
   return (
-    <section id="pricing" className="bg-surface scroll-mt-16">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
+    <section id="pricing" className="bg-surface border-line scroll-mt-16 border-y">
+      <div className="mx-container mx-section">
         {heading && (
-          <Reveal className="max-w-2xl">
-            <p className="text-[color-mix(in_oklch,var(--color-accent),black_25%)] text-xs font-medium tracking-[0.16em] uppercase">
-              Pricing
-            </p>
-            <h2 className="font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl">
-              One honest price. <span className="text-muted italic">Start free.</span>
-            </h2>
-          </Reveal>
+          <SectionHeader eyebrow="Pricing" aside="Start free.">
+            One honest price.
+          </SectionHeader>
         )}
-        <div className={`grid gap-5 md:grid-cols-2 ${heading ? "mt-14" : ""}`}>
+        <div className={`grid gap-5 md:grid-cols-2 ${heading ? "mt-12" : ""}`}>
           {PLANS.map((p, i) => (
-            <Reveal key={p.id} delay={i * 100}>
+            <Reveal key={p.id} delay={i * 50}>
               <article
                 data-plan={p.id}
-                className={`flex h-full flex-col rounded-3xl p-7 sm:p-9 ${
-                  p.highlight ? "bg-ink text-dark-text shadow-card" : "border-line bg-paper border"
+                className={`flex h-full flex-col p-7 sm:p-9 ${
+                  p.highlight
+                    ? "mx-dark rounded-card shadow-card mx-card-ring border"
+                    : "mx-card bg-paper"
                 }`}
               >
                 <PlanTitle className="font-display text-2xl tracking-tight">{p.name}</PlanTitle>
@@ -42,7 +40,7 @@ export function Pricing({ heading = true }: { heading?: boolean }) {
                     <li key={f} className="flex gap-3 text-[0.95rem]">
                       <span
                         aria-hidden="true"
-                        className={`mt-0.5 ${p.highlight ? "text-accent-bright" : "text-[color-mix(in_oklch,var(--color-accent),black_25%)]"}`}
+                        className={`mt-0.5 ${p.highlight ? "text-accent-bright" : "text-accent-ink"}`}
                       >
                         ✓
                       </span>
@@ -52,10 +50,10 @@ export function Pricing({ heading = true }: { heading?: boolean }) {
                 </ul>
                 <Link
                   href="/#demo"
-                  className={`mt-9 flex min-h-12 items-center justify-center rounded-full px-7 font-medium transition-colors ${
+                  className={`mx-btn mt-9 ${
                     p.highlight
-                      ? "bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent hover:bg-accent-bright hover:text-ink"
-                      : "border-ink/20 hover:border-ink/50 border"
+                      ? "mx-btn-primary hover:!bg-accent-bright hover:!text-ink"
+                      : "mx-btn-secondary"
                   }`}
                 >
                   {p.cta}

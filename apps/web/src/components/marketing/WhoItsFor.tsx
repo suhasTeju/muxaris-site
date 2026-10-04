@@ -1,26 +1,21 @@
 import Image from "next/image";
 import { SPECIALTY_CARDS } from "@/lib/content";
 import { Reveal } from "./Reveal";
+import { SectionHeader } from "./SectionHeader";
 
 export function WhoItsFor() {
   const [first, ...rest] = SPECIALTY_CARDS;
   return (
-    <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
-      <Reveal className="max-w-2xl">
-        <p className="text-[color-mix(in_oklch,var(--color-accent),black_25%)] text-xs font-medium tracking-[0.16em] uppercase">
-          Who it’s for
-        </p>
-        <h2 className="font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl">
-          Built for dental clinics first.
-        </h2>
-        <p className="font-display text-muted mt-4 italic">
-          Dental first. Other specialties coming next. If your clinic books by phone, we’d like to
-          hear from you.
-        </p>
-      </Reveal>
+    <section className="mx-container mx-section">
+      <SectionHeader
+        eyebrow="Who it’s for"
+        lede="Dental first. Other specialties coming next. If your clinic books by phone, we’d like to hear from you."
+      >
+        Built for dental clinics first.
+      </SectionHeader>
       <div className="mt-12 grid gap-4 lg:grid-cols-2">
         {first && (
-          <Reveal className="relative min-h-80 overflow-hidden rounded-3xl lg:row-span-2 lg:min-h-full">
+          <Reveal className="relative min-h-80 overflow-hidden rounded-card lg:row-span-2 lg:min-h-full">
             <Image
               src={first.img}
               alt=""
@@ -30,11 +25,11 @@ export function WhoItsFor() {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/10 to-transparent" />
             <div className="text-paper absolute inset-x-0 bottom-0 p-7">
-              <span className="bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent rounded-full px-3 py-1 text-xs font-medium">
+              <span className="bg-accent-btn text-on-accent rounded-full px-3 py-1 text-xs font-medium shadow-sm">
                 {first.status}
               </span>
               <h3 className="font-display mt-3 text-3xl tracking-tight">{first.title}</h3>
-              <p className="mt-2 max-w-sm text-sm text-white/80">{first.text}</p>
+              <p className="mt-2 max-w-sm text-sm text-white/90">{first.text}</p>
             </div>
           </Reveal>
         )}
@@ -43,8 +38,8 @@ export function WhoItsFor() {
             <Reveal
               as="li"
               key={s.key}
-              delay={i * 80}
-              className="border-line bg-surface overflow-hidden rounded-3xl border"
+              delay={i * 50}
+              className="mx-card mx-card-hover overflow-hidden"
             >
               <div className="relative aspect-[4/3]">
                 <Image
@@ -58,7 +53,9 @@ export function WhoItsFor() {
               <div className="p-5">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="font-display text-xl tracking-tight">{s.title}</h3>
-                  <span className="text-muted text-xs">{s.status}</span>
+                  <span className="text-muted bg-ink/[0.06] rounded-full px-2.5 py-0.5 text-xs whitespace-nowrap">
+                    {s.status}
+                  </span>
                 </div>
                 <p className="text-muted mt-2 text-sm leading-relaxed">{s.text}</p>
               </div>

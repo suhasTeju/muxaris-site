@@ -36,7 +36,7 @@ export function LegalDoc({
         {title}
       </h1>
       <p className="font-display text-muted mt-4 italic">Last updated {updated}</p>
-      <div className="text-ink/85 mt-12 space-y-5 leading-relaxed [&_a]:text-[color-mix(in_oklch,var(--color-accent),black_25%)] [&_a]:underline [&_h2]:font-display [&_h2]:text-ink [&_h2]:mt-12 [&_h2]:text-2xl [&_h2]:tracking-tight [&_li]:ml-5 [&_li]:list-disc [&_li]:pl-1 [&_ul]:space-y-2">
+      <div className="text-ink/85 mt-12 space-y-5 leading-relaxed [&_a]:text-accent-ink [&_a]:underline [&_h2]:font-display [&_h2]:text-ink [&_h2]:mt-12 [&_h2]:text-2xl [&_h2]:tracking-tight [&_li]:ml-5 [&_li]:list-disc [&_li]:pl-1 [&_ul]:space-y-2">
         {children}
       </div>
     </article>

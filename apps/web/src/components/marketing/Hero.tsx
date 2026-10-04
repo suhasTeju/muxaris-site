@@ -5,36 +5,26 @@ import { HERO } from "@/lib/content";
 export function Hero() {
   return (
     <section className="relative overflow-hidden">
-      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 pt-12 pb-16 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:gap-14 lg:pt-20 lg:pb-24">
+      <div className="mx-container grid items-center gap-10 pt-12 pb-16 lg:grid-cols-[1.05fr_1fr] lg:gap-14 lg:pt-20 lg:pb-28">
         <div>
-          <p className="text-[color-mix(in_oklch,var(--color-accent),black_25%)] text-xs font-medium tracking-[0.16em] uppercase">
-            {HERO.eyebrow}
-          </p>
+          <p className="mx-eyebrow">{HERO.eyebrow}</p>
           <h1 className="font-display mt-5 text-[2.6rem] leading-[1.02] font-medium tracking-[-0.035em] text-balance sm:text-6xl lg:text-[4.4rem]">
             Your front desk misses calls.{" "}
-            <span className="text-[color-mix(in_oklch,var(--color-accent),black_25%)] italic">
-              Muxaris doesn’t.
-            </span>
+            <span className="text-accent-ink italic">Muxaris doesn’t.</span>
           </h1>
           <p className="text-muted mt-6 max-w-xl text-lg leading-relaxed">{HERO.sub}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Link
-              href="/#demo"
-              className="bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent hover:bg-[color-mix(in_oklch,var(--color-accent),black_28%)] flex min-h-12 items-center justify-center rounded-full px-7 font-medium transition-colors"
-            >
+            <Link href="/#demo" className="mx-btn mx-btn-primary">
               Book a demo
             </Link>
-            <Link
-              href="/#live-demo"
-              className="border-ink/15 hover:border-ink/40 flex min-h-12 items-center justify-center rounded-full border px-7 font-medium transition-colors"
-            >
+            <Link href="/#live-demo" className="mx-btn mx-btn-secondary">
               Hear a sample call
             </Link>
           </div>
-          <p className="font-display text-muted mt-6 text-sm italic">{HERO.note}</p>
+          <p className="text-muted mt-5 max-w-md text-sm leading-relaxed">{HERO.note}</p>
         </div>
         <div className="relative">
-          <div className="shadow-card relative aspect-[3/2] overflow-hidden rounded-[1.75rem]">
+          <div className="shadow-card relative aspect-[3/2] overflow-hidden rounded-card">
             <Image
               src="/img/hero-clinic.webp"
               alt="A quiet dental clinic reception in morning light, the phone handset slightly lifted as if a call is coming in"

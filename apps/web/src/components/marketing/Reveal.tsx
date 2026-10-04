@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+
+/** Longest stagger a caller can ask for (ms); keeps lists feeling snappy. */
+const MAX_DELAY = 180;
 
 /**
- * Fades and lifts children into view once. Disabled under prefers-reduced-motion.
- * Without IntersectionObserver the content is shown immediately; Shell adds a <noscript>
- * rule so it is also visible without JavaScript.
+ * Fades and lifts children into view once (220 ms, 10 px). Content already on screen at
+ * mount appears instantly, and elements start revealing 15% of a viewport *before* they
+ * scroll in, so nothing is ever seen half-faded. Reduced motion is handled in CSS
+ * (`.mx-reveal` in globals.css); Shell adds a <noscript> rule for no-JS visitors.
  */
 export function Reveal({
   children,
@@ -19,24 +23,33 @@ export function Reveal({
   as?: "div" | "li" | "section";
 }) {
   const ref = useRef<HTMLElement | null>(null);
-  const [shown, setShown] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (typeof IntersectionObserver === "undefined") {
-      el.style.opacity = "1";
-      el.style.transform = "none";
+    const show = (instant: boolean) => {
+      if (instant) el.dataset.instant = "";
+      el.dataset.in = "";
+    };
+    const reduced =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced || typeof IntersectionObserver === "undefined") {
+      show(true);
+      return;
+    }
+    if (el.getBoundingClientRect().top < window.innerHeight) {
+      show(true);
       return;
     }
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) {
-          setShown(true);
+          show(false);
           io.disconnect();
         }
       },
-      { rootMargin: "0px 0px -8% 0px", threshold: 0.08 },
+      { rootMargin: "0px 0px 15% 0px", threshold: 0 },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -45,10 +58,8 @@ export function Reveal({
   return (
     <Tag
       ref={ref as never}
-      style={{ transitionDelay: shown ? `${delay}ms` : "0ms" }}
-      className={`mx-reveal transition-[opacity,transform] duration-700 ease-out motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none ${
-        shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
-      } ${className}`}
+      style={delay ? { transitionDelay: `${Math.min(delay, MAX_DELAY)}ms` } : undefined}
+      className={`mx-reveal ${className}`}
     >
       {children}
     </Tag>

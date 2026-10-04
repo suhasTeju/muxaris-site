@@ -14,8 +14,8 @@ export const NAV_LINKS = [
 export const HERO = {
   eyebrow: "AI voice receptionist for Indian clinics",
   title: "Your front desk misses calls. Muxaris doesn’t.",
-  sub: "Muxaris answers every call in the caller’s own language, books the appointment into your clinic’s real calendar, and shows the booking on your dashboard the moment it is made. Email and WhatsApp confirmations are coming soon. Today you can hear it live in a browser call; clinic phone numbers are coming soon.",
-  note: "Dental first. Other specialties coming next. Free 30-day pilot for the first 10 Bengaluru clinics.",
+  sub: "Muxaris answers every call in the caller’s own language and books the appointment into your clinic’s real calendar, so it shows on your dashboard the moment it is made.",
+  note: "Browser calls today; clinic phone numbers, email and WhatsApp confirmations coming soon.",
 } as const;
 
 /** Real greeting clips, generated with the clinic greeting per language. */

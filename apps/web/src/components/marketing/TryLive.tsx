@@ -12,10 +12,7 @@ export function TryLive() {
   if (!signedIn) return null;
   return (
     <>
-      <Link
-        href="/app/assistant/try"
-        className="bg-paper text-ink hover:bg-accent-soft flex min-h-12 items-center justify-center rounded-full px-7 font-medium transition-colors"
-      >
+      <Link href="/app/assistant/try" className="mx-btn bg-paper text-ink hover:bg-accent-soft">
         Try it live
       </Link>
       <p className="font-display text-dark-muted text-sm italic sm:ml-2 sm:order-last">

@@ -62,8 +62,11 @@ export function LiveDemo() {
   }, [visible, reduced]);
 
   const t = reduced ? SAMPLE_CALL_DURATION : step === 0 ? 0 : BOUNDARIES[step - 1]!;
-  const stageIndex = DEMO_STAGES.reduce((acc, s, i) => (t >= s.at ? i : acc), 0);
-  const lines = TRANSCRIPT.filter((l) => t >= l.at);
+  const stageIndex = DEMO_STAGES.reduce((acc, x, i) => (t >= x.at ? i : acc), 0);
+  // Index of the line being spoken right now; later lines are shown but not yet "live".
+  const activeLine = TRANSCRIPT.reduce((acc, l, i) => (t >= l.at ? i : acc), 0);
+  const booked = t >= (DEMO_STAGES[1]?.at ?? Infinity);
+  const bookingStage = DEMO_STAGES[1];
 
   const toggle = () => {
     const a = audio.current;
@@ -79,20 +82,19 @@ export function LiveDemo() {
     <section
       id="live-demo"
       ref={root}
-      className="bg-ink-deep text-dark-text relative scroll-mt-16 overflow-hidden"
+      data-theme="dark"
+      className="mx-dark relative scroll-mt-16 overflow-hidden"
     >
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
+      <div className="mx-container mx-section">
         <div className="max-w-2xl">
-          <p className="text-accent-bright text-xs font-medium tracking-[0.16em] uppercase">
-            Live demo
-          </p>
-          <h2 className="font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl">
+          <p className="mx-eyebrow">Live demo</p>
+          <h2 className="mx-h2">
             One call, start to finish.{" "}
             <span className="text-dark-muted italic">Twenty seconds.</span>
           </h2>
         </div>
 
-        <div className="mt-12 grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
+        <div className="mt-12 grid gap-6 lg:grid-cols-[0.8fr_1.2fr] lg:gap-8">
           <ol className="space-y-3">
             {DEMO_STAGES.map((s, i) => {
               const done = i < stageIndex;
@@ -101,16 +103,12 @@ export function LiveDemo() {
                 <li
                   key={s.id}
                   aria-current={active ? "step" : undefined}
-                  className={`flex items-start gap-4 rounded-2xl border p-5 transition-colors duration-500 motion-reduce:transition-none ${
-                    active
-                      ? "border-accent-bright/50 bg-white/[0.06]"
-                      : "border-white/10 bg-white/[0.02]"
-                  }`}
+                  className={`mx-card-dark flex items-start gap-4 p-5 ${active ? "mx-card-ring" : ""}`}
                 >
                   <span
-                    className={`font-display flex size-9 shrink-0 items-center justify-center rounded-full text-lg italic transition-colors duration-500 motion-reduce:transition-none ${
+                    className={`font-display flex size-9 shrink-0 items-center justify-center rounded-full text-lg italic transition-colors duration-300 motion-reduce:transition-none ${
                       done || active
-                        ? "bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent"
+                        ? "bg-accent-btn text-on-accent"
                         : "bg-white/10 text-dark-muted"
                     }`}
                   >
@@ -125,7 +123,7 @@ export function LiveDemo() {
             })}
           </ol>
 
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 sm:p-7">
+          <div className="mx-card-dark p-5 sm:p-7">
             <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
               <div>
                 <p className="font-medium">Sunrise Dental Care</p>
@@ -134,33 +132,66 @@ export function LiveDemo() {
               <button
                 type="button"
                 onClick={toggle}
-                className="bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent hover:bg-[color-mix(in_oklch,var(--color-accent),black_28%)] flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-medium transition-colors"
+                className="mx-btn mx-btn-primary min-h-11 gap-2 px-5 text-sm"
               >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 14 14"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  {playing ? (
+                    <path d="M3 1.5h2.6v11H3zM8.4 1.5H11v11H8.4z" />
+                  ) : (
+                    <path d="M3.5 1.5v11l9-5.5z" />
+                  )}
+                </svg>
                 {playing ? "Pause audio" : "Play audio"}
               </button>
             </div>
-            <div
-              className="mt-5 flex min-h-72 flex-col gap-3"
-              role="log"
-              aria-live="off"
-              aria-label="Call transcript"
-            >
-              {lines.map((l) => (
-                <p
+            <ol className="mt-5 flex flex-col gap-3" aria-label="Call transcript">
+              {TRANSCRIPT.map((l, i) => (
+                <li
                   key={l.at}
-                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-[0.95rem] leading-relaxed ${
+                  aria-current={i === activeLine ? "true" : undefined}
+                  className={`rounded-inner max-w-[88%] px-4 py-3 text-[0.95rem] leading-relaxed transition-shadow duration-300 motion-reduce:transition-none ${
                     l.who === "caller"
-                      ? "self-start bg-white/10"
-                      : "bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent self-end"
-                  }`}
+                      ? "bg-white/10 self-start"
+                      : "bg-accent-btn text-on-accent self-end"
+                  } ${i === activeLine ? "ring-2 ring-white/40" : ""}`}
                 >
-                  <span className="mb-0.5 block text-[0.65rem] font-medium tracking-[0.14em] uppercase opacity-70">
+                  <span className="mb-0.5 block text-[0.65rem] font-semibold tracking-[0.14em] uppercase opacity-80">
                     {l.who === "caller" ? "Caller" : "Muxaris"}
                   </span>
                   {l.text}
-                </p>
+                </li>
               ))}
-            </div>
+            </ol>
+            {bookingStage && (
+              <div
+                className={`rounded-inner mt-4 flex items-center gap-4 border px-4 py-3 transition-colors duration-300 motion-reduce:transition-none ${
+                  booked
+                    ? "border-accent-bright/50 bg-accent-bright/10"
+                    : "border-white/10 bg-white/[0.03]"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`flex size-9 shrink-0 items-center justify-center rounded-full text-lg ${
+                    booked ? "bg-accent-btn text-on-accent" : "bg-white/10 text-dark-muted"
+                  }`}
+                >
+                  ✓
+                </span>
+                <div>
+                  <p className="text-sm font-medium">
+                    {booked ? "Booked" : "Booking"} · Sunrise Dental Care
+                  </p>
+                  <p className="text-dark-muted text-sm">{bookingStage.text}</p>
+                </div>
+              </div>
+            )}
             <audio
               ref={audio}
               src="/audio/sample-call.m4a"
@@ -177,10 +208,7 @@ export function LiveDemo() {
 
         <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
           <TryLive />
-          <Link
-            href="/#demo"
-            className="flex min-h-12 items-center justify-center rounded-full border border-white/25 px-7 font-medium transition-colors hover:border-white/60"
-          >
+          <Link href="/#demo" className="mx-btn mx-btn-secondary">
             Book a demo
           </Link>
         </div>

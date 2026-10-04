@@ -4,16 +4,14 @@ import { Reveal } from "./Reveal";
 
 export function FinalCta() {
   return (
-    <section id="demo" className="bg-ink-deep text-dark-text scroll-mt-16">
-      <div className="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16 lg:py-28">
+    <section id="demo" data-theme="dark" className="mx-dark border-t border-white/10 scroll-mt-16">
+      <div className="mx-container mx-section grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
         <Reveal>
-          <p className="text-accent-bright text-xs font-medium tracking-[0.16em] uppercase">
-            Book a demo
-          </p>
-          <h2 className="font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl">
+          <p className="mx-eyebrow">Book a demo</p>
+          <h2 className="mx-h2">
             Hear how it <span className="text-accent-bright italic">answers.</span>
           </h2>
-          <p className="text-dark-muted mt-5 max-w-md leading-relaxed">
+          <p className="mx-lede max-w-md text-base">
             Tell us about your clinic. We’ll set up a short walkthrough, and if you’re one of the
             first 10 Bengaluru clinics, a free 30-day pilot. Today the live product is a browser
             call; clinic phone numbers are coming soon.

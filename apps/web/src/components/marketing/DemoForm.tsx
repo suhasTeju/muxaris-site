@@ -131,7 +131,7 @@ export function DemoForm({
     return (
       <div>
         {live}
-        <div className="rounded-3xl border border-accent-bright/40 bg-white/[0.05] p-8 sm:p-10">
+        <div className="mx-card-dark mx-card-ring p-8 sm:p-10">
           <h3
             ref={doneHeading}
             tabIndex={-1}
@@ -148,11 +148,7 @@ export function DemoForm({
   }
 
   return (
-    <form
-      ref={formRef}
-      onSubmit={onSubmit}
-      className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8"
-    >
+    <form ref={formRef} onSubmit={onSubmit} className="mx-card-dark p-6 sm:p-8">
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="block text-sm">
           Your name
@@ -268,7 +264,7 @@ export function DemoForm({
       <button
         type="submit"
         disabled={status === "sending"}
-        className="bg-[color-mix(in_oklch,var(--color-accent),black_15%)] text-on-accent hover:bg-accent-bright hover:text-ink mt-6 flex min-h-12 w-full items-center justify-center rounded-full px-7 font-medium transition-colors disabled:opacity-60"
+        className="mx-btn-primary hover:bg-accent-bright hover:text-ink mx-btn mt-6 w-full disabled:opacity-60"
       >
         {status === "sending" ? "Sending…" : "Request a demo"}
       </button>

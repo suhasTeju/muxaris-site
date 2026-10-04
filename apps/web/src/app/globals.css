@@ -14,12 +14,132 @@
   --color-on-accent: #ffffff;
   --color-muted: #5b6472;
   --color-line: #e7e5df;
-  --color-dark-text: #e8eaee;
-  --color-dark-muted: #98a0ad;
+  --color-accent-ink: color-mix(in oklch, #15803d, black 25%);
+  --color-accent-btn: color-mix(in oklch, #15803d, black 15%);
+  --color-accent-btn-hover: color-mix(in oklch, #15803d, black 28%);
+  /* Dark surface system: ink -> ink-raised gradient, translucent cards, one highlight. */
+  --color-ink-raised: #151e35;
+  --color-dark-text: #eef0f4;
+  --color-dark-muted: #aeb6c4;
+  --color-dark-line: rgb(255 255 255 / 0.1);
+  --radius-card: 1.25rem;
+  --radius-inner: 1rem;
   --font-display: var(--font-fraunces), Georgia, serif;
   --font-body: var(--font-inter), -apple-system, sans-serif;
   --shadow-lift: 0 12px 32px -12px rgb(12 18 32 / 0.14);
   --shadow-card: 0 24px 60px -24px rgb(12 18 32 / 0.22);
+}
+
+@layer components {
+  /* Layout rhythm: 64px mobile, 96px tablet, 112px desktop. */
+  .mx-container {
+    @apply mx-auto max-w-6xl px-4 sm:px-6;
+  }
+  .mx-section {
+    @apply py-16 md:py-24 lg:py-28;
+  }
+  .mx-eyebrow {
+    @apply text-accent-ink text-xs font-semibold tracking-[0.16em] uppercase;
+  }
+  .mx-h2 {
+    @apply font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl;
+  }
+  .mx-lede {
+    @apply text-muted mt-5 max-w-xl text-lg leading-relaxed;
+  }
+  .mx-dark .mx-eyebrow {
+    @apply text-accent-bright;
+  }
+  .mx-dark .mx-lede {
+    @apply text-dark-muted;
+  }
+
+  /* Buttons: one height (48px), one radius, shared focus ring. */
+  .mx-btn {
+    @apply inline-flex min-h-12 items-center justify-center rounded-full px-7 text-[0.95rem] font-medium transition-colors duration-150 motion-reduce:transition-none;
+  }
+  .mx-btn-primary {
+    @apply bg-accent-btn text-on-accent hover:bg-accent-btn-hover;
+  }
+  .mx-btn-secondary {
+    @apply border-ink/20 hover:border-ink/50 hover:bg-ink/[0.03] border;
+  }
+  .mx-dark .mx-btn-secondary {
+    @apply border-white/25 hover:border-white/60 hover:bg-white/[0.06];
+  }
+
+  /* Cards: light and dark variants share radius, border weight and hover lift. */
+  .mx-card {
+    @apply rounded-card border-line bg-surface border shadow-[0_1px_2px_rgb(12_18_32/0.04)] transition-[box-shadow,transform] duration-200 motion-reduce:transition-none;
+  }
+  .mx-card-hover:hover {
+    @apply shadow-lift -translate-y-0.5 motion-reduce:translate-y-0;
+  }
+  .mx-card-dark {
+    @apply rounded-card border border-white/[0.08] transition-[transform,border-color,box-shadow] duration-200 motion-reduce:transition-none;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.065), rgb(255 255 255 / 0.025));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      0 1px 2px rgb(0 0 0 / 0.3);
+  }
+  .mx-card-dark:hover {
+    @apply -translate-y-0.5 motion-reduce:translate-y-0;
+    border-color: rgb(74 222 128 / 0.35);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.09),
+      0 18px 40px -18px rgb(0 0 0 / 0.6);
+  }
+  .mx-card-ring {
+    border-color: rgb(74 222 128 / 0.45);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 0 0 1px rgb(74 222 128 / 0.18),
+      0 12px 36px -16px rgb(74 222 128 / 0.25);
+  }
+
+  /* Dark band: ink slightly lifted at the top with a faint green bloom. */
+  .mx-dark {
+    color: var(--color-dark-text);
+    background:
+      radial-gradient(60% 55% at 50% 0%, rgb(74 222 128 / 0.07), transparent 70%),
+      linear-gradient(
+        180deg,
+        var(--color-ink-raised) 0%,
+        var(--color-ink) 38%,
+        var(--color-ink-deep) 100%
+      );
+  }
+
+  /* Reveal: short, subtle, and never blocks reading. */
+  .mx-reveal {
+    opacity: 0;
+    transform: translateY(10px);
+    transition:
+      opacity 220ms ease-out,
+      transform 220ms ease-out;
+  }
+  .mx-reveal[data-in] {
+    opacity: 1;
+    transform: none;
+  }
+  .mx-reveal[data-instant] {
+    transition: none;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.mx-dark :focus-visible {
+  outline-color: var(--color-accent-bright);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mx-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
 
 html {

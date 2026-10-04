@@ -1,26 +1,24 @@
 import { CAPABILITIES, COMING_NEXT } from "@/lib/content";
 import { Reveal } from "./Reveal";
+import { SectionHeader } from "./SectionHeader";
+
+/** Cards that carry the green ring: the two headline capabilities, one per row. */
+const FEATURED = new Set([0, 4]);
 
 export function WhatItHandles() {
   return (
-    <section id="handles" className="bg-ink text-dark-text scroll-mt-16">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
-        <Reveal className="max-w-2xl">
-          <p className="text-accent-bright text-xs font-medium tracking-[0.16em] uppercase">
-            What it handles
-          </p>
-          <h2 className="font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl">
-            The whole front-desk phone job.{" "}
-            <span className="text-dark-muted italic">Not just the easy calls.</span>
-          </h2>
-        </Reveal>
-        <ul className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <section id="handles" data-theme="dark" className="mx-dark scroll-mt-16">
+      <div className="mx-container mx-section">
+        <SectionHeader eyebrow="What it handles" aside="Not just the easy calls.">
+          The whole front-desk phone job.
+        </SectionHeader>
+        <ul className="mt-12 grid auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {CAPABILITIES.map((c, i) => (
             <Reveal
               as="li"
               key={c.title}
-              delay={(i % 4) * 70}
-              className={`group rounded-3xl border border-white/10 bg-white/[0.04] p-6 transition-colors hover:border-accent-bright/40 sm:p-7 ${c.span}`}
+              delay={(i % 4) * 40}
+              className={`mx-card-dark flex flex-col p-6 sm:p-7 ${FEATURED.has(i) ? "mx-card-ring" : ""}`}
             >
               <span className="font-display text-accent-bright text-sm italic">
                 {String(i + 1).padStart(2, "0")}
