@@ -87,7 +87,7 @@ describe("SarvamStt", () => {
       "t:hello:en-IN",
       "t::undefined",
       expect.stringContaining("e:Sarvam STT error: boom"),
-      expect.stringContaining("e:Sarvam STT sent non-JSON"),
+      expect.stringContaining("e:Sarvam STT sent a non-JSON"),
     ]);
   });
 

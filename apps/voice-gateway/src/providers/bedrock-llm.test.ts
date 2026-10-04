@@ -125,6 +125,7 @@ describe("BedrockLlm", () => {
       meta,
     ]);
     expect(await collect(llm.stream(req()))).toEqual([
+      { type: "text", text: "\n" },
       { type: "tool_call", id: "t1", name: "find_slots", input: { date: "2026-10-05" } },
       { type: "done", stopReason: "tool_use", usage: { inputTokens: 10, outputTokens: 5 } },
     ]);
