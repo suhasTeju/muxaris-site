@@ -50,3 +50,7 @@ Images are generated with `gpt-image-2` (`scripts/gen-image.sh`), converted to W
 |---|---|---|
 | `/audio/greet-{en,hi,kn,ta,te}.m4a` | Clinic greeting in each language (from the demo seed) | Language picker previews |
 | `/audio/sample-call.m4a` | Four-line sample call, 350 ms gaps | Hero / demo player |
+
+## Pending regeneration
+
+`apps/web/public/audio/greet-hi.m4a` must be regenerated with `scripts/gen-audio.sh` (`FORCE=1`) because the Hindi greeting text changed to the gender-neutral plural form.

@@ -1,7 +1,8 @@
 // packages/db/src/seed-data.ts
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Db } from "./client.js";
 import * as s from "./schema/index.js";
+import { newId } from "./ids.js";
 
 export const DEMO_CLINIC_ID = "cl_demo_sunrise";
 
@@ -85,7 +86,7 @@ export async function seedDemoClinic(db: Db): Promise<{ clinicId: string }> {
 
   const hours = ["doc_demo_rao", "doc_demo_shetty"].flatMap((doctorId) =>
     [1, 2, 3, 4, 5, 6].map((weekday) => ({
-      id: `wh_demo_${doctorId}_${weekday}`,
+      id: newId("wh"),
       clinicId: DEMO_CLINIC_ID,
       doctorId,
       weekday,
@@ -93,7 +94,11 @@ export async function seedDemoClinic(db: Db): Promise<{ clinicId: string }> {
       endTime: "20:00",
     })),
   );
-  await db.insert(s.workingHours).values(hours).onConflictDoNothing();
+  // Ids are random, so conflicts never fire: replace the demo clinic's hours to stay idempotent.
+  await db.transaction(async (tx) => {
+    await tx.delete(s.workingHours).where(eq(s.workingHours.clinicId, DEMO_CLINIC_ID));
+    await tx.insert(s.workingHours).values(hours);
+  });
 
   await db
     .insert(s.services)
@@ -171,17 +176,18 @@ export async function seedDemoClinic(db: Db): Promise<{ clinicId: string }> {
       handoffNumber: "+918041234567",
       greeting: {
         "en-IN": "Hello, Sunrise Dental Care. How may I help you today?",
-        "hi-IN": "नमस्ते, सनराइज़ डेंटल केयर। मैं आपकी कैसे मदद कर सकती हूँ?",
+        "hi-IN":
+          "नमस्ते, सनराइज़ डेंटल केयर में आपका स्वागत है। बताइए, हम आपकी कैसे मदद कर सकते हैं?",
         "kn-IN": "ನಮಸ್ಕಾರ, ಸನ್‌ರೈಸ್ ಡೆಂಟಲ್ ಕೇರ್. ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಲಿ?",
         "ta-IN": "வணக்கம், சன்ரைஸ் டென்டல் கேர். நான் உங்களுக்கு எப்படி உதவலாம்?",
         "te-IN": "నమస్కారం, సన్‌రైజ్ డెంటల్ కేర్. నేను మీకు ఎలా సహాయం చేయగలను?",
       },
       voices: {
-        "en-IN": "anushka",
-        "hi-IN": "anushka",
-        "kn-IN": "anushka",
-        "ta-IN": "anushka",
-        "te-IN": "anushka",
+        "en-IN": "shubh",
+        "hi-IN": "shubh",
+        "kn-IN": "shubh",
+        "ta-IN": "shubh",
+        "te-IN": "shubh",
       },
       faq: [
         {
@@ -197,7 +203,13 @@ export async function seedDemoClinic(db: Db): Promise<{ clinicId: string }> {
       knowledge:
         "Dr. Rao handles general dentistry, cleaning, fillings and root canals. Dr. Shetty handles braces and aligners. First consultation is ₹500.",
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: s.assistantProfiles.clinicId,
+      set: {
+        voices: sql`excluded.voices`,
+        greeting: sql`excluded.greeting`,
+      },
+    });
 
   return { clinicId: DEMO_CLINIC_ID };
 }

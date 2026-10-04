@@ -24,7 +24,7 @@ needed() { [[ ! -f "$1" || "${FORCE:-0}" == "1" ]] || { echo "SKIP $(basename "$
 # Greetings: from the demo seed greeting map (packages/db/src/seed-data.ts)
 GREET=(
 "en|en-IN|Hello, Sunrise Dental Care. How may I help you today?"
-"hi|hi-IN|नमस्ते, सनराइज़ डेंटल केयर। मैं आपकी कैसे मदद कर सकती हूँ?"
+"hi|hi-IN|नमस्ते, सनराइज़ डेंटल केयर में आपका स्वागत है। बताइए, हम आपकी कैसे मदद कर सकते हैं?"
 "kn|kn-IN|ನಮಸ್ಕಾರ, ಸನ್‌ರೈಸ್ ಡೆಂಟಲ್ ಕೇರ್. ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಲಿ?"
 "ta|ta-IN|வணக்கம், சன்ரைஸ் டென்டல் கேர். நான் உங்களுக்கு எப்படி உதவலாம்?"
 "te|te-IN|నమస్కారం, సన్‌రైజ్ డెంటల్ కేర్. నేను మీకు ఎలా సహాయం చేయగలను?"
