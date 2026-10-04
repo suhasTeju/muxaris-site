@@ -161,6 +161,7 @@ CREATE TABLE "assistant_profiles" (
 --> statement-breakpoint
 CREATE TABLE "call_turns" (
 	"id" text PRIMARY KEY NOT NULL,
+	"clinic_id" text NOT NULL,
 	"call_id" text NOT NULL,
 	"seq" integer NOT NULL,
 	"role" "turn_role" NOT NULL,
@@ -279,6 +280,7 @@ ALTER TABLE "working_hours" ADD CONSTRAINT "working_hours_clinic_id_clinics_id_f
 ALTER TABLE "working_hours" ADD CONSTRAINT "working_hours_doctor_id_doctors_id_fk" FOREIGN KEY ("doctor_id") REFERENCES "public"."doctors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "patients" ADD CONSTRAINT "patients_clinic_id_clinics_id_fk" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "assistant_profiles" ADD CONSTRAINT "assistant_profiles_clinic_id_clinics_id_fk" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "call_turns" ADD CONSTRAINT "call_turns_clinic_id_clinics_id_fk" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "call_turns" ADD CONSTRAINT "call_turns_call_id_calls_id_fk" FOREIGN KEY ("call_id") REFERENCES "public"."calls"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "callbacks" ADD CONSTRAINT "callbacks_clinic_id_clinics_id_fk" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "calls" ADD CONSTRAINT "calls_clinic_id_clinics_id_fk" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -290,10 +292,14 @@ CREATE UNIQUE INDEX "users_email_idx" ON "users" USING btree ("email");--> state
 CREATE INDEX "appointments_clinic_start_idx" ON "appointments" USING btree ("clinic_id","starts_at");--> statement-breakpoint
 CREATE INDEX "appointments_doctor_start_idx" ON "appointments" USING btree ("doctor_id","starts_at");--> statement-breakpoint
 CREATE INDEX "appointments_patient_idx" ON "appointments" USING btree ("patient_id");--> statement-breakpoint
+CREATE INDEX "clinic_holidays_clinic_idx" ON "clinic_holidays" USING btree ("clinic_id");--> statement-breakpoint
 CREATE INDEX "doctors_clinic_idx" ON "doctors" USING btree ("clinic_id");--> statement-breakpoint
 CREATE INDEX "services_clinic_idx" ON "services" USING btree ("clinic_id");--> statement-breakpoint
+CREATE INDEX "time_off_doctor_idx" ON "time_off" USING btree ("doctor_id");--> statement-breakpoint
 CREATE INDEX "working_hours_doctor_idx" ON "working_hours" USING btree ("doctor_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "patients_clinic_phone_idx" ON "patients" USING btree ("clinic_id","phone");--> statement-breakpoint
 CREATE INDEX "call_turns_call_seq_idx" ON "call_turns" USING btree ("call_id","seq");--> statement-breakpoint
+CREATE INDEX "call_turns_clinic_idx" ON "call_turns" USING btree ("clinic_id");--> statement-breakpoint
+CREATE INDEX "callbacks_clinic_idx" ON "callbacks" USING btree ("clinic_id");--> statement-breakpoint
 CREATE INDEX "calls_clinic_started_idx" ON "calls" USING btree ("clinic_id","started_at");--> statement-breakpoint
 CREATE INDEX "notifications_clinic_created_idx" ON "notifications" USING btree ("clinic_id","created_at");

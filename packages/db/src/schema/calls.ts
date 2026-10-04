@@ -46,6 +46,9 @@ export const callTurns = pgTable(
   "call_turns",
   {
     id: text("id").primaryKey(),
+    clinicId: text("clinic_id")
+      .notNull()
+      .references(() => clinics.id, { onDelete: "cascade" }),
     callId: text("call_id")
       .notNull()
       .references(() => calls.id, { onDelete: "cascade" }),
@@ -58,24 +61,31 @@ export const callTurns = pgTable(
     latencyMs: integer("latency_ms"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("call_turns_call_seq_idx").on(t.callId, t.seq)],
+  (t) => [
+    index("call_turns_call_seq_idx").on(t.callId, t.seq),
+    index("call_turns_clinic_idx").on(t.clinicId),
+  ],
 );
 
-export const callbacks = pgTable("callbacks", {
-  id: text("id").primaryKey(),
-  clinicId: text("clinic_id")
-    .notNull()
-    .references(() => clinics.id, { onDelete: "cascade" }),
-  callId: text("call_id"),
-  patientId: text("patient_id"),
-  phone: text("phone").notNull(),
-  reason: text("reason").notNull(),
-  priority: text("priority").notNull().default("normal"),
-  status: callbackStatusEnum("status").notNull().default("open"),
-  assignedTo: text("assigned_to"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  doneAt: timestamp("done_at", { withTimezone: true }),
-});
+export const callbacks = pgTable(
+  "callbacks",
+  {
+    id: text("id").primaryKey(),
+    clinicId: text("clinic_id")
+      .notNull()
+      .references(() => clinics.id, { onDelete: "cascade" }),
+    callId: text("call_id"),
+    patientId: text("patient_id"),
+    phone: text("phone").notNull(),
+    reason: text("reason").notNull(),
+    priority: text("priority").notNull().default("normal"),
+    status: callbackStatusEnum("status").notNull().default("open"),
+    assignedTo: text("assigned_to"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+  },
+  (t) => [index("callbacks_clinic_idx").on(t.clinicId)],
+);
 
 export const assistantProfiles = pgTable("assistant_profiles", {
   clinicId: text("clinic_id")
@@ -88,5 +98,8 @@ export const assistantProfiles = pgTable("assistant_profiles", {
   handoffNumber: text("handoff_number"),
   faq: jsonb("faq").$type<Array<{ q: string; a: string }>>().notNull().default([]),
   knowledge: text("knowledge"),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
 });

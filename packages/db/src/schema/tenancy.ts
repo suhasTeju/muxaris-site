@@ -18,7 +18,10 @@ export const clinics = pgTable("clinics", {
   settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),
   onboardingStep: text("onboarding_step").notNull().default("basics"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
 });
 
 export const users = pgTable(

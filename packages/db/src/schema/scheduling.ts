@@ -56,27 +56,35 @@ export const workingHours = pgTable(
   (t) => [index("working_hours_doctor_idx").on(t.doctorId)],
 );
 
-export const timeOff = pgTable("time_off", {
-  id: text("id").primaryKey(),
-  clinicId: text("clinic_id")
-    .notNull()
-    .references(() => clinics.id, { onDelete: "cascade" }),
-  doctorId: text("doctor_id")
-    .notNull()
-    .references(() => doctors.id, { onDelete: "cascade" }),
-  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
-  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
-  reason: text("reason"),
-});
+export const timeOff = pgTable(
+  "time_off",
+  {
+    id: text("id").primaryKey(),
+    clinicId: text("clinic_id")
+      .notNull()
+      .references(() => clinics.id, { onDelete: "cascade" }),
+    doctorId: text("doctor_id")
+      .notNull()
+      .references(() => doctors.id, { onDelete: "cascade" }),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    reason: text("reason"),
+  },
+  (t) => [index("time_off_doctor_idx").on(t.doctorId)],
+);
 
-export const clinicHolidays = pgTable("clinic_holidays", {
-  id: text("id").primaryKey(),
-  clinicId: text("clinic_id")
-    .notNull()
-    .references(() => clinics.id, { onDelete: "cascade" }),
-  date: date("date").notNull(),
-  name: text("name").notNull(),
-});
+export const clinicHolidays = pgTable(
+  "clinic_holidays",
+  {
+    id: text("id").primaryKey(),
+    clinicId: text("clinic_id")
+      .notNull()
+      .references(() => clinics.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    name: text("name").notNull(),
+  },
+  (t) => [index("clinic_holidays_clinic_idx").on(t.clinicId)],
+);
 
 export const services = pgTable(
   "services",
@@ -130,7 +138,10 @@ export const appointments = pgTable(
     reminder24hSentAt: timestamp("reminder_24h_sent_at", { withTimezone: true }),
     reminder2hSentAt: timestamp("reminder_2h_sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
   },
   (t) => [
     index("appointments_clinic_start_idx").on(t.clinicId, t.startsAt),

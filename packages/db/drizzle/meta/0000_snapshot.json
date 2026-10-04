@@ -1,5 +1,5 @@
 {
-  "id": "2dfb748e-21c4-47c8-b890-78226d75a57d",
+  "id": "85e4abd9-27c8-4a01-979a-0c7d2250f6f9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -630,7 +630,23 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "clinic_holidays_clinic_idx": {
+          "name": "clinic_holidays_clinic_idx",
+          "columns": [
+            {
+              "expression": "clinic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "clinic_holidays_clinic_id_clinics_id_fk": {
           "name": "clinic_holidays_clinic_id_clinics_id_fk",
@@ -963,7 +979,23 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "time_off_doctor_idx": {
+          "name": "time_off_doctor_idx",
+          "columns": [
+            {
+              "expression": "doctor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "time_off_clinic_id_clinics_id_fk": {
           "name": "time_off_clinic_id_clinics_id_fk",
@@ -1292,6 +1324,12 @@
           "primaryKey": true,
           "notNull": true
         },
+        "clinic_id": {
+          "name": "clinic_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "call_id": {
           "name": "call_id",
           "type": "text",
@@ -1370,9 +1408,37 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "call_turns_clinic_idx": {
+          "name": "call_turns_clinic_idx",
+          "columns": [
+            {
+              "expression": "clinic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
+        "call_turns_clinic_id_clinics_id_fk": {
+          "name": "call_turns_clinic_id_clinics_id_fk",
+          "tableFrom": "call_turns",
+          "tableTo": "clinics",
+          "columnsFrom": [
+            "clinic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "call_turns_call_id_calls_id_fk": {
           "name": "call_turns_call_id_calls_id_fk",
           "tableFrom": "call_turns",
@@ -1468,7 +1534,23 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "callbacks_clinic_idx": {
+          "name": "callbacks_clinic_idx",
+          "columns": [
+            {
+              "expression": "clinic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "callbacks_clinic_id_clinics_id_fk": {
           "name": "callbacks_clinic_id_clinics_id_fk",
