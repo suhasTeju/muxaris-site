@@ -1,8 +1,9 @@
 import Link from "next/link";
 import type { AssistantProfile, Clinic, Doctor, Service, SlotRules } from "@muxaris/shared";
-import { LANGUAGES } from "@muxaris/shared";
+import { LANGUAGES, clinicRecordCalls } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
 import { requireActiveClinic, serverApi } from "@/lib/api-server";
+import { RecordCallsToggle } from "@/components/app/RecordCallsToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,8 @@ export default async function SettingsPage() {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
   });
-  const [{ clinic }, doctors, services, rules, assistant] = await Promise.all([
-    serverApi<{ clinic: Clinic }>(`/v1/clinics/${active.clinicId}`),
+  const [{ clinic, role }, doctors, services, rules, assistant] = await Promise.all([
+    serverApi<{ clinic: Clinic; role: string }>(`/v1/clinics/${active.clinicId}`),
     serverApi<{ doctors: Doctor[] }>("/v1/doctors"),
     serverApi<{ services: Service[] }>("/v1/services"),
     serverApi<{ slotRules: SlotRules }>("/v1/slot-rules"),
@@ -133,6 +134,13 @@ export default async function SettingsPage() {
           ) : (
             <p className="text-muted">Assistant not set up yet.</p>
           )}
+          <div className="border-line mt-3 border-t pt-3">
+            <RecordCallsToggle
+              clinicId={clinic.id}
+              initial={clinicRecordCalls(clinic.settings)}
+              isOwner={role === "owner"}
+            />
+          </div>
         </Section>
       </div>
     </div>

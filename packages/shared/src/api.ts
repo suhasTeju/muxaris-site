@@ -152,6 +152,20 @@ export type RescheduleBody = z.infer<typeof rescheduleBody>;
 // Response DTOs: mirror DB rows, timestamps serialised as ISO strings.
 type Iso = string;
 
+export const clinicSettingsPatchBody = z.object({
+  settings: z.object({ recordCalls: z.boolean() }).partial(),
+});
+export type ClinicSettingsPatchBody = z.infer<typeof clinicSettingsPatchBody>;
+
+export interface ClinicSettings {
+  recordCalls: boolean;
+}
+
+/** Recording is on unless a clinic has explicitly turned it off. One definition for api, web, gateway. */
+export function clinicRecordCalls(settings: Record<string, unknown> | null | undefined): boolean {
+  return settings?.["recordCalls"] !== false;
+}
+
 export interface Clinic {
   id: string;
   name: string;

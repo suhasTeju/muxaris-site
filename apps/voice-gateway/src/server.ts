@@ -16,6 +16,7 @@ import {
 import type { Db } from "@muxaris/db";
 import {
   clientEventSchema,
+  clinicRecordCalls,
   LANGUAGE_CODES,
   postCallMessageSchema,
   type GatewayEvent,
@@ -532,8 +533,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
       ws.off("message", ctl.hold);
       for (const f of ctl.early) transport.feed(f.data, f.isBinary);
 
-      const wantRecording =
-        clinic.clinic.settings["recordCalls"] !== false && storage.blobs !== null;
+      const wantRecording = clinicRecordCalls(clinic.clinic.settings) && storage.blobs !== null;
       const session = new VoiceSession({
         transport,
         stt: providers.stt,

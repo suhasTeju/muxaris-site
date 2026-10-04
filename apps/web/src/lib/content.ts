@@ -150,7 +150,7 @@ export const CAPABILITIES = [
   },
   {
     title: "Consent at the start",
-    text: "Every call opens with a short note that an AI assistant is answering and that the call may be transcribed.",
+    text: "Every call opens with a short note that an AI assistant is answering and that the call may be recorded and transcribed.",
     span: "",
   },
 ] as const;
@@ -259,7 +259,7 @@ export const FAQS = [
   },
   {
     q: "Where is our data stored?",
-    a: "Your clinic’s data is stored in India (AWS Mumbai). Speech recognition and synthesis run with Sarvam AI in India. The conversation model runs on Amazon Bedrock and may be processed in other AWS regions. Call transcripts are kept for 90 days by default. Recording storage and retention controls arrive with the call-centre release. Patient data belongs to your clinic, and we never sell it.",
+    a: "Your clinic’s data is stored in India (AWS Mumbai). Speech recognition and synthesis run with Sarvam AI in India. The conversation model runs on Amazon Bedrock and may be processed in other AWS regions. Call recordings and transcripts are stored encrypted in AWS Mumbai and kept for 90 days by default, after which they are deleted automatically. Clinics can turn recording off in Settings, and then calls are transcribed but no audio is kept. Patient data belongs to your clinic, and we never sell it.",
   },
   {
     q: "How does booking work with our calendar?",
@@ -282,4 +282,4 @@ export const FAQS = [
 export const FOOTER_LANGUAGES = "English · हिन्दी · ಕನ್ನಡ · தமிழ் · తెలుగు";
 
 export const COMING_NEXT =
-  "Coming next: WhatsApp confirmations, clinic phone numbers and number porting, and recording storage with retention controls.";
+  "Coming next: WhatsApp confirmations, and clinic phone numbers with number porting.";

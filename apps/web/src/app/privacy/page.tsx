@@ -32,7 +32,8 @@ export default function PrivacyPage() {
           <li>
             <strong>Call audio and transcripts.</strong> When someone calls a clinic that uses
             Muxaris (or tries it from a browser), we process the audio and a text transcript so the
-            assistant can understand and reply.
+            assistant can understand and reply. Calls may be recorded: the audio is saved along with
+            the transcript unless the clinic has turned recording off in Settings.
           </li>
           <li>
             <strong>Booking details.</strong> Name, phone number, the appointment requested and any
@@ -51,8 +52,8 @@ export default function PrivacyPage() {
         <h2>Consent at the start of the call</h2>
         <p>
           Every call opens with a short note that an AI assistant is answering and that the call may
-          be transcribed to provide the service. A caller who does not want this can ask for a
-          person.
+          be recorded and transcribed to provide the service. A caller who does not want this can
+          ask for a person.
         </p>
 
         <h2>How we use it</h2>
@@ -86,10 +87,11 @@ export default function PrivacyPage() {
 
         <h2>Retention</h2>
         <p>
-          Call transcripts are kept for 90 days by default. Recording storage and retention controls
-          arrive with the call-centre release. Bookings and patient records are kept while the
-          clinic’s account is active, and deleted or returned after it ends, unless the law requires
-          us to keep something longer.
+          Call recordings and transcripts are stored encrypted in AWS Mumbai (ap-south-1) and kept
+          for 90 days by default, after which they are deleted automatically. Clinics can turn
+          recording off in Settings; calls are then transcribed but no audio is kept. Bookings and
+          patient records are kept while the clinic’s account is active, and deleted or returned
+          after it ends, unless the law requires us to keep something longer.
         </p>
 
         <h2>Your rights and the DPDP Act, 2023</h2>

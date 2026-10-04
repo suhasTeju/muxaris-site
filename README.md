@@ -120,6 +120,23 @@ gateway are not deployed by this config; infra for them arrives in Phase 5.
 
 `workers/post-call` consumes the `call.completed` messages the voice gateway sends to SQS. For each call it reads the turns from Postgres, asks Amazon Nova Pro on Bedrock (`apac.amazon.nova-pro-v1:0`) for a summary of at most 60 words, sentiment, entities and an outcome refinement, writes them back through core services (a staff or booking outcome is never overwritten) and creates a callback row when the caller asked for one and a phone number is known. It also runs the stale-call sweep every minute. Env keys: `POST_CALL_QUEUE_URL` (required to start), `POST_CALL_MODEL_ID`, `AWS_REGION`, `DATABASE_URL`. `src/lambda.ts` exports the SQS and schedule handlers for Phase 5.
 
+### Phase 2: call recordings and summaries
+
+Calls are recorded as stereo WAV and stored with a transcript in S3, then summarised by the
+post-call worker. Deploy the bucket and queue once with
+`npm run deploy:storage -w @muxaris/infra` (secondary AWS account only). Env keys:
+
+- `CALLS_BUCKET`: S3 bucket for recordings and transcripts
+- `POST_CALL_QUEUE_URL`: SQS queue the gateway publishes `call.completed` to
+- `STORAGE_DISABLED`: set to `1` to skip S3 and SQS locally (calls then have no recording)
+- `POST_CALL_MODEL_ID`: Bedrock model for the summary (default `apac.amazon.nova-pro-v1:0`)
+
+Run the worker locally with `npm run workers:dev`. Clinics can turn recording off in Settings
+(`settings.recordCalls`); the assistant's opening note says calls may be recorded and transcribed.
+To check the whole pipeline against real providers, run
+`E2E_WITH_WORKER=1 E2E_EXPECT_SUMMARY=1 bash scripts/e2e-voice.sh`; it also checks that the
+presigned recording URL serves a WAV. See [Architecture](docs/ARCHITECTURE.md).
+
 ### E2E voice smoke
 
     bash scripts/e2e-voice.sh        # needs Postgres up, .env with SARVAM_TTS_API_KEY, AWS secondary profile
@@ -136,6 +153,7 @@ the speech-end to first-reply-audio latency, and exits 0 on success. Output (`e2
 ## Docs
 
 - [Spike results (Sarvam, Bedrock)](docs/SPIKES.md)
+- [Architecture and call pipeline](docs/ARCHITECTURE.md)
 - [Brand and assets](docs/BRAND.md)
 - [Platform design spec](docs/superpowers/specs/2026-10-04-muxaris-platform-design.md)
 - [Phase 0 plan](docs/superpowers/plans/2026-10-04-phase-0-foundation.md)

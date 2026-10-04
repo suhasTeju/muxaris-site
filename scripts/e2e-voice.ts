@@ -328,6 +328,20 @@ async function main(): Promise<void> {
   if (!rec.recordingS3Key) fail("recordingS3Key not set");
   log(`recording ready in ${Date.now() - recStart} ms`);
 
+  // (h1) presigned playback. The URL is signed for GET, so a HEAD is rejected (403): fetch one
+  // byte with a Range request and read the total size from content-range. URL is never logged.
+  const { url: recUrl } = await api(`/v1/calls/${callId}/recording-url`, token, {}, clinicId);
+  const head = await fetch(recUrl as string, { headers: { Range: "bytes=0-0" } });
+  if (!head.ok) fail(`recording fetch failed with status ${head.status}`);
+  await head.arrayBuffer();
+  const wavBytes = Number(
+    head.headers.get("content-range")?.split("/")[1] ?? head.headers.get("content-length") ?? 0,
+  );
+  const wavType = head.headers.get("content-type") ?? "";
+  if (!(wavBytes > 44)) fail(`recording too small: ${wavBytes} bytes`);
+  if (!wavType.startsWith("audio/wav")) fail(`unexpected recording content-type: ${wavType}`);
+  log(`presigned recording OK: ${wavBytes} bytes, ${wavType}`);
+
   // (h2) post-call analysis (needs the worker; E2E_WITH_WORKER=1 in e2e-voice.sh)
   if (process.env["E2E_EXPECT_SUMMARY"] === "1") {
     const analysedBy = Date.now() + 60_000;

@@ -21,4 +21,12 @@ describe("marketing copy guard", () => {
   it.each(files)("%s has no banned or overclaiming phrases", (f) => {
     expect(readFileSync(join(root, f), "utf8")).not.toMatch(BANNED);
   });
+
+  it("privacy page and content state the shipped recording behaviour", () => {
+    for (const f of ["lib/content.ts", "app/privacy/page.tsx"]) {
+      const text = readFileSync(join(root, f), "utf8");
+      expect(text).not.toMatch(/arrive with the call-centre release/);
+      expect(text).toMatch(/90 days/);
+    }
+  });
 });
