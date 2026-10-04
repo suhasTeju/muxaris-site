@@ -1,15 +1,16 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { confirmSignUp, resendSignUpCode } from "aws-amplify/auth";
 import { authErrorMessage } from "@/lib/auth-errors";
+import { verifyEmail } from "@/lib/client-store";
 import { Field, FormError, FormNotice, PrimaryButton } from "./auth-shell";
 
 export function VerifyForm() {
   const router = useRouter();
-  const params = useSearchParams();
-  const [email, setEmail] = useState(params.get("email") ?? "");
+  const [email, setEmail] = useState(() => verifyEmail.get() ?? "");
+  const [resending, setResending] = useState(false);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export function VerifyForm() {
     setBusy(true);
     try {
       await confirmSignUp({ username: email.trim(), confirmationCode: code.trim() });
-      router.push(`/sign-in?verified=1`);
+      router.push("/sign-in?verified=1");
     } catch (err) {
       setError(authErrorMessage(err));
     } finally {
@@ -31,6 +32,8 @@ export function VerifyForm() {
   }
 
   async function resend() {
+    if (resending) return;
+    setResending(true);
     setError(null);
     setNotice(null);
     try {
@@ -38,6 +41,8 @@ export function VerifyForm() {
       setNotice("We sent a new code. It can take a minute to arrive.");
     } catch (err) {
       setError(authErrorMessage(err));
+    } finally {
+      setResending(false);
     }
   }
 
@@ -67,10 +72,10 @@ export function VerifyForm() {
       <button
         type="button"
         onClick={resend}
-        disabled={!email}
-        className="text-accent-deep w-full text-sm hover:underline disabled:opacity-50"
+        disabled={!email || resending}
+        className="text-accent-deep focus-visible:ring-accent-soft w-full rounded text-sm outline-none hover:underline focus-visible:ring-4 disabled:opacity-50"
       >
-        Send a new code
+        {resending ? "Sending…" : "Send a new code"}
       </button>
     </form>
   );

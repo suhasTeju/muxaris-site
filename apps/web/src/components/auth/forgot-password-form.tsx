@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { confirmResetPassword, resetPassword } from "aws-amplify/auth";
-import { authErrorMessage } from "@/lib/auth-errors";
+import { RESET_SENT_NOTICE, authErrorMessage, resetErrorMessage } from "@/lib/auth-errors";
 import { Field, FormError, FormNotice, PrimaryButton } from "./auth-shell";
 
 export function ForgotPasswordForm() {
@@ -18,14 +18,19 @@ export function ForgotPasswordForm() {
 
   async function request(e?: React.FormEvent) {
     e?.preventDefault();
+    if (busy) return;
     setError(null);
     setBusy(true);
     try {
       await resetPassword({ username: email.trim() });
       setStep("confirm");
-      setNotice("We emailed you a code. Enter it below with your new password.");
+      setNotice(RESET_SENT_NOTICE);
     } catch (err) {
-      setError(authErrorMessage(err));
+      const msg = resetErrorMessage(err);
+      if (msg === null) {
+        setStep("confirm");
+        setNotice(RESET_SENT_NOTICE);
+      } else setError(msg);
     } finally {
       setBusy(false);
     }
@@ -93,10 +98,11 @@ export function ForgotPasswordForm() {
       </PrimaryButton>
       <button
         type="button"
+        disabled={busy}
         onClick={() => request()}
-        className="text-accent-deep w-full text-sm hover:underline"
+        className="text-accent-deep focus-visible:ring-accent-soft w-full rounded text-sm outline-none hover:underline focus-visible:ring-4 disabled:opacity-50"
       >
-        Send a new code
+        {busy ? "Sending…" : "Send a new code"}
       </button>
     </form>
   );

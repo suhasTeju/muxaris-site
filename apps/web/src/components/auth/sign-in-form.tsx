@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { getCurrentUser, signIn } from "aws-amplify/auth";
-import { authErrorMessage, authErrorName, safeNext } from "@/lib/auth-errors";
-import { Field, FormError, PrimaryButton } from "./auth-shell";
+import { signIn } from "aws-amplify/auth";
+import { authErrorMessage, authErrorName, safeNext, signInStepMessage } from "@/lib/auth-errors";
+import { verifyEmail } from "@/lib/client-store";
+import { Field, FormError, FormNotice, PrimaryButton } from "./auth-shell";
 import { GoogleButton } from "./google-button";
 
 export function SignInForm() {
@@ -16,10 +17,19 @@ export function SignInForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const notice = params.get("verified")
+    ? "Email confirmed. Sign in to continue."
+    : params.get("reset")
+      ? "Password updated. Sign in with your new password."
+      : null;
 
   function done() {
     router.replace(next);
     router.refresh();
+  }
+  function toVerify() {
+    verifyEmail.set(email.trim());
+    router.push("/verify");
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -28,22 +38,13 @@ export function SignInForm() {
     setBusy(true);
     try {
       const res = await signIn({ username: email.trim(), password });
-      if (res.nextStep.signInStep === "CONFIRM_SIGN_UP") {
-        router.push(`/verify?email=${encodeURIComponent(email.trim())}`);
-        return;
-      }
+      if (res.nextStep.signInStep === "CONFIRM_SIGN_UP") return toVerify();
       if (res.isSignedIn) return done();
-      setError(`Additional step required: ${res.nextStep.signInStep}`);
+      setError(signInStepMessage(res.nextStep.signInStep));
     } catch (err) {
       const name = authErrorName(err);
-      if (name === "UserNotConfirmedException") {
-        router.push(`/verify?email=${encodeURIComponent(email.trim())}`);
-        return;
-      }
-      if (name === "UserAlreadyAuthenticatedException") {
-        await getCurrentUser().catch(() => null);
-        return done();
-      }
+      if (name === "UserNotConfirmedException") return toVerify();
+      if (name === "UserAlreadyAuthenticatedException") return done();
       setError(authErrorMessage(err));
     } finally {
       setBusy(false);
@@ -52,7 +53,8 @@ export function SignInForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <GoogleButton onError={(err) => setError(authErrorMessage(err))} />
+      <FormNotice message={notice} />
+      <GoogleButton next={next} onError={(err) => setError(authErrorMessage(err))} />
       <Field
         label="Email"
         type="email"
@@ -70,7 +72,10 @@ export function SignInForm() {
         onChange={(e) => setPassword(e.target.value)}
       />
       <div className="text-right text-sm">
-        <Link href="/forgot-password" className="text-accent-deep hover:underline">
+        <Link
+          href="/forgot-password"
+          className="text-accent-deep focus-visible:ring-accent-soft rounded outline-none hover:underline focus-visible:ring-4"
+        >
           Forgot password?
         </Link>
       </div>

@@ -10,6 +10,20 @@ const FRIENDLY: Record<string, string> = {
   UserNotConfirmedException: "Please confirm your email first.",
 };
 
+/** Forgot-password must not reveal whether an account exists. */
+export function resetErrorMessage(err: unknown): string | null {
+  return authErrorName(err) === "UserNotFoundException" ? null : authErrorMessage(err);
+}
+
+export const RESET_SENT_NOTICE =
+  "If an account exists for that email, a code has been sent. Enter it below with your new password.";
+
+export function signInStepMessage(step: string): string {
+  return step === "CONFIRM_SIGN_UP"
+    ? "Please confirm your email first."
+    : "Additional verification required. This sign-in method isn’t supported yet.";
+}
+
 export function authErrorName(err: unknown): string {
   return err instanceof Error ? err.name : "";
 }

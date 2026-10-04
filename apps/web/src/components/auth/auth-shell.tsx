@@ -15,7 +15,11 @@ export function AuthShell({
 }) {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-6 py-16">
-      <Link href="/" aria-label="Muxaris home" className="mb-10">
+      <Link
+        href="/"
+        aria-label="Muxaris home"
+        className="focus-visible:ring-accent-soft mb-10 rounded outline-none focus-visible:ring-4"
+      >
         <Image src="/brand/muxaris-wordmark.svg" alt="Muxaris" width={140} height={37} priority />
       </Link>
       <section className="border-line bg-surface shadow-card w-full max-w-md rounded-2xl border p-8 sm:p-10">
@@ -64,7 +68,7 @@ export function PrimaryButton({
     <button
       {...props}
       disabled={busy || props.disabled}
-      className="bg-accent hover:bg-accent-deep focus-visible:ring-accent-soft w-full rounded-lg px-4 py-3 font-medium text-white transition-colors outline-none focus-visible:ring-4 disabled:opacity-60"
+      className="bg-accent hover:bg-accent-deep focus-visible:ring-accent-soft w-full rounded-lg px-4 py-3 font-medium text-on-accent transition-colors outline-none focus-visible:ring-4 disabled:opacity-60"
     >
       {busy ? "One moment…" : children}
     </button>
@@ -75,7 +79,7 @@ export function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElem
   return (
     <button
       {...props}
-      className="border-line text-ink hover:bg-paper w-full rounded-lg border bg-white px-4 py-3 font-medium transition-colors disabled:opacity-60"
+      className="border-line text-ink hover:bg-paper bg-surface focus-visible:ring-accent-soft w-full rounded-lg border px-4 py-3 font-medium transition-colors outline-none focus-visible:ring-4 disabled:opacity-60"
     />
   );
 }
@@ -83,7 +87,7 @@ export function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElem
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p role="alert" className="rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-800">
+    <p role="alert" className="bg-danger-soft text-danger rounded-lg px-3.5 py-2.5 text-sm">
       {message}
     </p>
   );

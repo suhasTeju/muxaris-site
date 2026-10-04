@@ -1,3 +1,4 @@
+import "server-only";
 import { createServerRunner } from "@aws-amplify/adapter-nextjs";
 import { buildAmplifyConfig } from "./amplify";
 

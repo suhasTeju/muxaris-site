@@ -12,7 +12,11 @@ export function proxy(request: NextRequest) {
       (c) =>
         c.name.startsWith("CognitoIdentityServiceProvider.") && c.name.endsWith(".accessToken"),
     );
-  if (hasSession) return NextResponse.next();
+  if (hasSession) {
+    const headers = new Headers(request.headers);
+    headers.set("x-next-path", request.nextUrl.pathname + request.nextUrl.search);
+    return NextResponse.next({ request: { headers } });
+  }
   const url = request.nextUrl.clone();
   const next = request.nextUrl.pathname + request.nextUrl.search;
   url.pathname = "/sign-in";

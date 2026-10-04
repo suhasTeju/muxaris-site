@@ -1,34 +1,36 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Hub } from "aws-amplify/utils";
 import { fetchAuthSession } from "aws-amplify/auth";
-import { authErrorMessage, safeNext } from "@/lib/auth-errors";
+import { safeNext } from "@/lib/auth-errors";
+import { pendingNext } from "@/lib/client-store";
+
+const GENERIC_ERROR = "We couldn’t complete Google sign-in. Please try again.";
 
 export function CallbackHandler() {
   const router = useRouter();
   const params = useSearchParams();
-  const [error, setError] = useState<string | null>(params.get("error_description"));
+  const [error, setError] = useState<string | null>(params.get("error") ? GENERIC_ERROR : null);
 
   useEffect(() => {
     if (error) return;
-    const next = safeNext(params.get("next"));
     let finished = false;
     const go = () => {
       if (finished) return;
       finished = true;
-      router.replace(next);
+      router.replace(safeNext(pendingNext.take() ?? params.get("next")));
       router.refresh();
     };
     const stop = Hub.listen("auth", ({ payload }) => {
       if (payload.event === "signInWithRedirect") go();
       if (payload.event === "signInWithRedirect_failure") {
         finished = true;
-        setError(authErrorMessage(payload.data ?? new Error("Google sign-in failed.")));
+        setError(GENERIC_ERROR);
       }
     });
-    // Already signed in (e.g. code exchanged before the listener attached).
     fetchAuthSession()
       .then((s) => {
         if (s.tokens?.accessToken) go();
@@ -39,11 +41,11 @@ export function CallbackHandler() {
 
   if (error) {
     return (
-      <p role="alert" className="rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-800">
+      <p role="alert" className="bg-danger-soft text-danger rounded-lg px-3.5 py-2.5 text-sm">
         {error}{" "}
-        <a href="/sign-in" className="underline">
+        <Link href="/sign-in" className="underline">
           Back to sign in
-        </a>
+        </Link>
       </p>
     );
   }

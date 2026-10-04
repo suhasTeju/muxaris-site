@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 import { apiFetch, type ApiInit } from "./api";
 import { configureAmplify } from "./amplify";
+import { useOptionalClinic } from "@/components/app/clinic-context";
 
 export async function getAccessToken(): Promise<string | undefined> {
   configureAmplify();
@@ -11,10 +12,16 @@ export async function getAccessToken(): Promise<string | undefined> {
   return session.tokens?.accessToken?.toString();
 }
 
+/** Defaults X-Clinic-Id to the resolved active clinic shown in the UI. */
 export function useApi() {
+  const activeId = useOptionalClinic()?.activeClinic.id;
   return useCallback(
     async <T>(path: string, init: ApiInit = {}): Promise<T> =>
-      apiFetch<T>(path, init, { token: await getAccessToken() }),
-    [],
+      apiFetch<T>(
+        path,
+        { ...init, clinicId: init.clinicId ?? activeId },
+        { token: await getAccessToken() },
+      ),
+    [activeId],
   );
 }

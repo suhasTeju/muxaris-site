@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { signUp } from "aws-amplify/auth";
 import { authErrorMessage } from "@/lib/auth-errors";
+import { verifyEmail } from "@/lib/client-store";
 import { Field, FormError, PrimaryButton } from "./auth-shell";
 import { GoogleButton } from "./google-button";
 
@@ -21,7 +22,8 @@ export function SignUpForm() {
     try {
       const username = email.trim();
       await signUp({ username, password, options: { userAttributes: { email: username } } });
-      router.push(`/verify?email=${encodeURIComponent(username)}`);
+      verifyEmail.set(username);
+      router.push("/verify");
     } catch (err) {
       setError(authErrorMessage(err));
     } finally {
