@@ -1,14 +1,15 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { confirmSignUp, resendSignUpCode } from "aws-amplify/auth";
-import { authErrorMessage } from "@/lib/auth-errors";
+import { authErrorMessage, safeNext } from "@/lib/auth-errors";
 import { verifyEmail } from "@/lib/client-store";
 import { Field, FormError, FormNotice, PrimaryButton } from "./auth-shell";
 
 export function VerifyForm() {
   const router = useRouter();
+  const next = safeNext(useSearchParams().get("next"));
   const [email, setEmail] = useState(() => verifyEmail.get() ?? "");
   const [resending, setResending] = useState(false);
   const [code, setCode] = useState("");
@@ -23,7 +24,10 @@ export function VerifyForm() {
     setBusy(true);
     try {
       await confirmSignUp({ username: email.trim(), confirmationCode: code.trim() });
-      router.push("/sign-in?verified=1");
+      verifyEmail.clear();
+      router.push(
+        `/sign-in?verified=1${next === "/app" ? "" : `&next=${encodeURIComponent(next)}`}`,
+      );
     } catch (err) {
       setError(authErrorMessage(err));
     } finally {

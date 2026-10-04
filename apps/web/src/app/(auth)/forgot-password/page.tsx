@@ -11,7 +11,10 @@ export default function ForgotPasswordPage() {
       title="Reset your password"
       aside="It happens to everyone."
       footer={
-        <Link href="/sign-in" className="text-accent-deep hover:underline">
+        <Link
+          href="/sign-in"
+          className="text-accent-deep focus-visible:ring-accent-soft rounded outline-none hover:underline focus-visible:ring-4"
+        >
           Back to sign in
         </Link>
       }

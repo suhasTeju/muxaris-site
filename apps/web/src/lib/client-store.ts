@@ -28,8 +28,20 @@ function take(key: string): string | null {
 export const verifyEmail = {
   get: () => get(VERIFY_EMAIL),
   set: (email: string) => set(VERIFY_EMAIL, email),
+  clear: () => take(VERIFY_EMAIL),
 };
 export const pendingNext = {
   set: (next: string) => set(NEXT, next),
   take: () => take(NEXT),
 };
+
+/** Drops every `muxaris_*` key (sign-out). */
+export function clearClientStore(): void {
+  try {
+    for (const key of Object.keys(sessionStorage)) {
+      if (key.startsWith("muxaris_")) sessionStorage.removeItem(key);
+    }
+  } catch {
+    /* storage unavailable */
+  }
+}

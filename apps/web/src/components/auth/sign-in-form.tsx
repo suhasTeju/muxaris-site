@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
-import { signIn } from "aws-amplify/auth";
+import { useEffect, useRef, useState } from "react";
+import { signIn, signOut } from "aws-amplify/auth";
 import { authErrorMessage, authErrorName, safeNext, signInStepMessage } from "@/lib/auth-errors";
 import { verifyEmail } from "@/lib/client-store";
 import { Field, FormError, FormNotice, PrimaryButton } from "./auth-shell";
@@ -17,11 +17,27 @@ export function SignInForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const notice = params.get("verified")
-    ? "Email confirmed. Sign in to continue."
-    : params.get("reset")
-      ? "Password updated. Sign in with your new password."
-      : null;
+  // The API rejected the session (or the user asked to sign out): clear any stale Amplify session
+  // before the form shows, otherwise UserAlreadyAuthenticated would bounce back to /app forever.
+  const reason = params.get("reason");
+  const clearing = reason === "session" || reason === "signout";
+  const [cleared, setCleared] = useState(!clearing);
+  const started = useRef(false);
+  useEffect(() => {
+    if (!clearing || started.current) return;
+    started.current = true;
+    signOut()
+      .catch(() => undefined)
+      .finally(() => setCleared(true));
+  }, [clearing]);
+  const notice =
+    reason === "session"
+      ? "Your session expired. Please sign in again."
+      : params.get("verified")
+        ? "Email confirmed. Sign in to continue."
+        : params.get("reset")
+          ? "Password updated. Sign in with your new password."
+          : null;
 
   function done() {
     router.replace(next);
@@ -29,7 +45,7 @@ export function SignInForm() {
   }
   function toVerify() {
     verifyEmail.set(email.trim());
-    router.push("/verify");
+    router.push(next === "/app" ? "/verify" : `/verify?next=${encodeURIComponent(next)}`);
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -49,6 +65,14 @@ export function SignInForm() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!cleared) {
+    return (
+      <p role="status" className="text-muted text-sm">
+        One moment…
+      </p>
+    );
   }
 
   return (

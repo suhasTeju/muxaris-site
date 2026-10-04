@@ -103,7 +103,7 @@ redeploy after changing them):
 | `NEXT_PUBLIC_COGNITO_DOMAIN`       | Cognito hosted UI domain                                       |
 | `NEXT_PUBLIC_API_URL`              | Public https URL of the API                                    |
 | `NEXT_PUBLIC_VOICE_WS_URL`         | Public `wss://` URL of the voice gateway (`ws://` is rejected) |
-| `NEXT_PUBLIC_GOOGLE_ENABLED`       | `true` to show Google sign-in, otherwise `false`               |
+| `NEXT_PUBLIC_GOOGLE_ENABLED`       | `1` to show Google sign-in, otherwise unset               |
 
 If the Cognito variables are unset, every `/app` request redirects to sign-in. The API and voice
 gateway are not deployed by this config; infra for them arrives in Phase 5.

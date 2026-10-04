@@ -43,7 +43,10 @@ export function CallbackHandler() {
     return (
       <p role="alert" className="bg-danger-soft text-danger rounded-lg px-3.5 py-2.5 text-sm">
         {error}{" "}
-        <Link href="/sign-in" className="underline">
+        <Link
+          href="/sign-in"
+          className="focus-visible:ring-accent-soft rounded underline outline-none focus-visible:ring-4"
+        >
           Back to sign in
         </Link>
       </p>
