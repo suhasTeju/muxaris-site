@@ -11,34 +11,75 @@ This is an npm-workspaces monorepo.
 | Path                   | What it is                                                              |
 | ---------------------- | ----------------------------------------------------------------------- |
 | `apps/web`             | Next.js app: marketing site, Cognito auth, onboarding, dashboard        |
-| `apps/api`             | Hono REST API on Fargate: health endpoint; auth and routes in Phase 1  |
+| `apps/api`             | Hono REST API (Cognito-authenticated routes)  |
 | `apps/voice-gateway`   | WebSocket voice session engine: Sarvam STT/TTS, Bedrock, recorder       |
-| `workers/post-call`    | Lambda: call summary, outcome and sentiment (planned, Phase 1+)                             |
-| `workers/notifier`     | Lambda: dispatches notifications from a queue (planned, Phase 1+)                           |
-| `workers/reminders`    | Lambda (cron): finds appointments due for reminders (planned, Phase 1+)                     |
+| `workers/post-call`    | Lambda: call summary, outcome and sentiment (planned)                             |
+| `workers/notifier`     | Lambda: dispatches notifications from a queue (planned)                           |
+| `workers/reminders`    | Lambda (cron): finds appointments due for reminders (planned)                     |
 | `packages/db`          | Drizzle schema, migrations, demo seed, typed client                     |
-| `packages/core`        | Domain services: scheduling, patients, calls, notifications, plans (planned, Phase 1+)      |
+| `packages/core`        | Domain services: scheduling, auth helpers      |
 | `packages/shared`      | Zod schemas, API types, tool definitions, constants                     |
-| `packages/voice-sdk`   | Browser client: mic capture, playback, barge-in, events (planned, Phase 1+)                 |
+| `packages/voice-sdk`   | Browser client: mic capture, playback, barge-in, events, React hook                 |
 | `infra`                | AWS CDK app: network, data, services, workers, observability, CI/CD    |
-
-## Prerequisites
-
-Node 22, npm 10+ (npm workspaces; pnpm is not supported), and Docker (for local Postgres).
 
 ## Local setup
 
-1. `cp .env.example .env` and fill in the values.
-2. `npm install`
-3. `npm run db:up` to start Postgres on port 5433.
-4. `npm run db:migrate && npm run db:seed`
-5. `npm run dev`
+Prerequisites: Node 22, npm 10+ (npm workspaces; pnpm is not supported) and Docker (for local Postgres).
 
-Other root scripts: `npm run build`, `lint`, `typecheck`, `test`, `format`.
+1. `npm install`
+2. `cp .env.example .env`, then fill in the keys below.
+3. `scripts/dev.sh` (also `npm run dev`).
 
-`npm test` needs Postgres up and migrated (`docker compose up -d && npm run db:migrate`). If the
-database is unreachable, the db suite is skipped with a warning instead of failing.
-`build`, `test` and `typecheck` first build `@muxaris/shared` and `@muxaris/db` (`npm run build:packages`).
+Keys needed for a local run:
+
+- `SARVAM_TTS_API_KEY`: one Sarvam key serves speech-to-text and text-to-speech.
+- `BEDROCK_MODEL_ID`: use `global.amazon.nova-2-lite-v1:0`. Amazon Nova only.
+- The five Cognito keys: `NEXT_PUBLIC_COGNITO_USER_POOL_ID`, `NEXT_PUBLIC_COGNITO_CLIENT_ID`,
+  `NEXT_PUBLIC_COGNITO_DOMAIN`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`. `scripts/bootstrap-aws.sh`
+  prints them after deploying the Auth stack, or copy them from the Cognito console of the secondary
+  AWS account.
+- `AUTH_MODE`: `cognito` (the default when unset). See "Auth modes".
+
+`scripts/dev.sh` starts Postgres, builds the shared packages, runs migrations and the demo seed,
+then runs the API, voice gateway and web app together. It fails early if `AUTH_MODE=cognito` and
+`COGNITO_USER_POOL_ID` or `COGNITO_CLIENT_ID` is empty.
+
+| Service       | Port |
+| ------------- | ---- |
+| web           | 3000 |
+| api           | 4000 |
+| voice-gateway | 4100 |
+| Postgres      | 5433 |
+
+Checks: `npm test`, `npm run typecheck` and `npm run lint`. Other root scripts: `build`, `format`,
+`format:check`, `db:up`, `db:down`, `db:migrate`, `db:seed`.
+
+`npm test` needs Postgres up and migrated (`npm run db:up && npm run db:migrate`). If the database
+is unreachable, the db suite is skipped with a warning instead of failing. `build`, `test` and
+`typecheck` first build the workspace packages (`npm run build:packages`).
+
+### Try the assistant
+
+1. Open <http://localhost:3000/sign-up> and sign up with a real email; enter the verification code
+   Cognito emails you.
+2. In onboarding, choose "Load demo clinic" (Sunrise Dental Care).
+3. Open `/app/assistant/try` and allow the microphone.
+4. Say "I want a teeth cleaning tomorrow afternoon" and confirm the slot the assistant offers.
+5. Open `/app/appointments` to see the booking.
+
+### Auth modes
+
+- `AUTH_MODE=cognito` (default): the API and voice gateway verify real Cognito access tokens using
+  `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID`. Use this to run the full stack.
+- `AUTH_MODE=dev`: accepts `dev:<sub>:<email>` tokens. It is for API and gateway tests only, is
+  refused when `NODE_ENV=production`, and does not sign you in to the web app.
+
+### Voice stack
+
+Sarvam Saaras (speech-to-text) and Bulbul (text-to-speech) run over WebSocket. The reasoning step
+is Amazon Bedrock Nova 2 Lite called through the Converse API with tools (Amazon Nova only; no
+Anthropic models). Browser calls are capped at `MAX_CALL_SECONDS`, and each gateway instance allows
+at most `MAX_SESSIONS` concurrent calls, kept under Sarvam's limit of 20 sockets.
 
 ## AWS
 
