@@ -72,10 +72,16 @@ const descriptions: Record<ToolName, string> = {
   end_call: "End the call politely once the caller's needs are met. Include a one-line summary.",
 };
 
+function toInputSchema(name: ToolName): ToolDefinition["inputSchema"] {
+  const schema = z.toJSONSchema(toolInputSchemas[name], { io: "input" }) as Record<string, unknown>;
+  delete schema["$schema"];
+  return { ...schema, type: "object" };
+}
+
 export const ASSISTANT_TOOLS: ToolDefinition[] = (Object.keys(toolInputSchemas) as ToolName[]).map(
   (name) => ({
     name,
     description: descriptions[name],
-    inputSchema: z.toJSONSchema(toolInputSchemas[name]) as ToolDefinition["inputSchema"],
+    inputSchema: toInputSchema(name),
   }),
 );

@@ -36,4 +36,21 @@ describe("assistant tools", () => {
     expect(t.inputSchema.type).toBe("object");
     expect(Object.keys(t.inputSchema.properties ?? {})).toContain("date");
   });
+
+  it("marks defaulted fields optional in request_callback input schema", () => {
+    const t = ASSISTANT_TOOLS.find((x) => x.name === "request_callback")!;
+    const required = (t.inputSchema.required ?? []) as string[];
+    expect(required).not.toContain("priority");
+    expect(required).toContain("patient_phone");
+    expect(required).toContain("reason");
+  });
+
+  it("emits clean object schemas with descriptions for all tools", () => {
+    expect(ASSISTANT_TOOLS).toHaveLength(9);
+    for (const t of ASSISTANT_TOOLS) {
+      expect(t.inputSchema.type).toBe("object");
+      expect(t.inputSchema).not.toHaveProperty("$schema");
+      expect(t.description.length).toBeGreaterThan(0);
+    }
+  });
 });
