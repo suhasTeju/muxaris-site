@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     template: "%s | Muxaris",
   },
   description:
-    "Muxaris answers every call to your clinic in Kannada, Hindi, Tamil, Telugu or English, books the appointment against your real calendar, and confirms it to the patient.",
+    "Muxaris answers every call to your clinic in Kannada, Hindi, Tamil, Telugu or English, and books the appointment against your real calendar.",
   openGraph: {
     type: "website",
     siteName: "Muxaris",

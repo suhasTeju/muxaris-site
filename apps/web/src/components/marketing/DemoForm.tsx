@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { env } from "@/lib/env";
+import { assertRuntimeEnv, env } from "@/lib/env";
 
 interface Option {
   value: string;
@@ -47,15 +47,17 @@ export function DemoForm({
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.currentTarget));
+    const { company_url: trap, ...data } = Object.fromEntries(new FormData(e.currentTarget));
     setStatus("sending");
     setMessage("Sending…");
     setErrors({});
     try {
+      assertRuntimeEnv();
       const res = await fetch(`${env.apiUrl}/v1/demo-requests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        // The API's honeypot field is `website`; the DOM input uses a less autofill-friendly name.
+        body: JSON.stringify({ ...data, website: trap ?? "" }),
       });
       if (res.ok) {
         setStatus("done");
@@ -90,9 +92,13 @@ export function DemoForm({
           "Something went wrong on our side. Please try again, or email hello@muxaris.com.",
         );
       }
-    } catch {
+    } catch (e) {
       setStatus("error");
-      setMessage("We couldn’t reach the server. Check your connection and try again.");
+      setMessage(
+        e instanceof Error && e.message.startsWith("This deployment is misconfigured")
+          ? e.message
+          : "We couldn’t reach the server. Check your connection and try again.",
+      );
     }
   }
 
@@ -252,8 +258,8 @@ export function DemoForm({
       {/* Honeypot: hidden from people and assistive tech; bots fill it. */}
       <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
         <label>
-          Website
-          <input name="website" tabIndex={-1} autoComplete="off" />
+          Leave this field empty
+          <input name="company_url" tabIndex={-1} autoComplete="off" />
         </label>
       </div>
 

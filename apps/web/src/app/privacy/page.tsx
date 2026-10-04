@@ -58,15 +58,15 @@ export default function PrivacyPage() {
         <h2>How we use it</h2>
         <p>
           Only to provide Muxaris: understanding the caller, booking and changing appointments,
-          sending confirmations, showing the clinic its calls and bookings, keeping the service
-          secure, and fixing faults. We do not sell personal data. We do not use patient
-          conversations for advertising.
+          showing the clinic its calls and bookings, keeping the service secure, and fixing faults.
+          We do not sell personal data. We do not use patient conversations for advertising.
         </p>
 
         <h2>Where it is stored</h2>
         <p>
-          Data is stored in Amazon Web Services’ Mumbai region (ap-south-1), in India. Our service
-          providers are listed below.
+          Your clinic’s data is stored in India (AWS Mumbai, ap-south-1). Speech recognition and
+          synthesis run with Sarvam AI in India. The conversation model runs on Amazon Bedrock and
+          may be processed in other AWS regions. Our service providers are listed below.
         </p>
 
         <h2>Service providers</h2>
@@ -95,12 +95,12 @@ export default function PrivacyPage() {
         <h2>Your rights and the DPDP Act, 2023</h2>
         <p>
           We design Muxaris to align with India’s Digital Personal Data Protection Act, 2023:
-          purpose-limited processing, notice and consent at the start of every call, data kept in
-          India, and a clear route to access, correct or erase your data. Because the clinic
-          controls patient data, requests from patients are best sent to the clinic; you can also
-          write to us at <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and we will pass
-          the request on or act on it. If you are unhappy with our response you may complain to the
-          Data Protection Board of India once it is operational.
+          purpose-limited processing, notice and consent at the start of every call, clinic data
+          stored in India, and a clear route to access, correct or erase your data. Because the
+          clinic controls patient data, requests from patients are best sent to the clinic; you can
+          also write to us at <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and we will
+          pass the request on or act on it. If you are unhappy with our response you may complain to
+          the Data Protection Board of India once it is operational.
         </p>
 
         <h2>Cookies</h2>
@@ -109,12 +109,12 @@ export default function PrivacyPage() {
           advertising or cross-site tracking cookies.
         </p>
 
+        {/* TODO(Phase 5): restore an at-rest encryption claim only once RDS and S3 encryption are deployed. */}
         <h2>Security</h2>
         <p>
-          Data is encrypted in transit and at rest, access is limited to people who need it, and
-          each clinic’s data is kept separate from other clinics’. No system is perfectly secure; if
-          we learn of a breach affecting your data we will tell the affected clinic without undue
-          delay.
+          Data is encrypted in transit, access is limited to people who need it, and each clinic’s
+          data is kept separate from other clinics’. No system is perfectly secure; if we learn of a
+          breach affecting your data we will tell the affected clinic without undue delay.
         </p>
 
         <h2>Changes</h2>

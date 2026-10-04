@@ -14,7 +14,7 @@ export const NAV_LINKS = [
 export const HERO = {
   eyebrow: "AI voice receptionist for Indian clinics",
   title: "Your front desk misses calls. Muxaris doesn’t.",
-  sub: "Muxaris answers every call in the caller’s own language, books the appointment into your clinic’s real calendar, and a confirmation is sent by email. Today you can hear it live in a browser call; clinic phone numbers are coming soon.",
+  sub: "Muxaris answers every call in the caller’s own language, books the appointment into your clinic’s real calendar, and shows the booking on your dashboard the moment it is made. Email and WhatsApp confirmations are coming soon. Today you can hear it live in a browser call; clinic phone numbers are coming soon.",
   note: "Dental first. Other specialties coming next. Free 30-day pilot for the first 10 Bengaluru clinics.",
 } as const;
 
@@ -73,8 +73,8 @@ export const STEPS = [
   },
   {
     n: "03",
-    title: "The patient is confirmed",
-    text: "A confirmation is sent by email with the doctor, date and time (WhatsApp is coming soon). You see the call, transcript and booking in your dashboard.",
+    title: "You see the booking",
+    text: "Bookings appear on your dashboard the moment they are made, with the call and transcript beside them. Email and WhatsApp confirmations are coming soon.",
     img: "/img/step-confirm.webp",
     alt: "A hand holding a phone showing a message confirmation",
   },
@@ -88,7 +88,7 @@ export const DEMO_STAGES = [
     at: 0,
   },
   { id: "booked", title: "Slot booked", text: "Doctor Rao, tomorrow, 4:30 pm", at: 13.6 },
-  { id: "sent", title: "Confirmation sent", text: "A confirmation is sent by email", at: 18 },
+  { id: "sent", title: "On your dashboard", text: "The booking appears on your dashboard", at: 18 },
 ] as const;
 
 /** Timestamps (seconds) into /audio/sample-call.m4a (about 20.4 s). */
@@ -108,7 +108,7 @@ export const TRANSCRIPT = [
   {
     at: 13.6,
     who: "muxaris",
-    text: "Done, Ananya. You’re booked at Sunrise Dental Care for tomorrow at four thirty. You’ll get a confirmation message shortly.",
+    text: "Done, Ananya. You’re booked at Sunrise Dental Care for tomorrow at four thirty. The clinic will confirm with you.",
   },
 ] as const;
 
@@ -144,7 +144,7 @@ export const CAPABILITIES = [
     span: "",
   },
   {
-    title: "Every call on record",
+    title: "Every call logged",
     text: "Transcript, outcome and booking for each call, in your dashboard.",
     span: "",
   },
@@ -215,7 +215,7 @@ export const PLANS: readonly Plan[] = [
       "Up to 500 calls",
       "All 5 languages",
       "Booking against your calendar",
-      "Email confirmations (WhatsApp coming soon)",
+      "Email confirmations (coming soon)",
       "Dashboard and callbacks queue",
       "Hands-on set-up with us",
     ],
@@ -232,7 +232,7 @@ export const PLANS: readonly Plan[] = [
       "Up to 3,000 call-minutes",
       "Unlimited bookings",
       "5 languages",
-      "Email confirmations (WhatsApp coming soon)",
+      "Email confirmations (coming soon)",
       "Dashboard",
       "Callbacks queue",
     ],
@@ -259,7 +259,7 @@ export const FAQS = [
   },
   {
     q: "Where is our data stored?",
-    a: "In India. Call data lives on Amazon Web Services in Mumbai (ap-south-1). Call transcripts are kept for 90 days by default. Recording storage and retention controls arrive with the call-centre release. Patient data belongs to your clinic, and we never sell it.",
+    a: "Your clinic’s data is stored in India (AWS Mumbai). Speech recognition and synthesis run with Sarvam AI in India. The conversation model runs on Amazon Bedrock and may be processed in other AWS regions. Call transcripts are kept for 90 days by default. Recording storage and retention controls arrive with the call-centre release. Patient data belongs to your clinic, and we never sell it.",
   },
   {
     q: "How does booking work with our calendar?",

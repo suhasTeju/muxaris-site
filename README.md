@@ -2,7 +2,7 @@
 
 Muxaris is an AI voice receptionist for Indian dental clinics. It answers calls in the caller's
 language, checks the clinic's real schedule, books, reschedules and cancels appointments, and hands
-emergencies to staff. Every call is transcribed, summarised and shown on a clinic dashboard.
+emergencies to staff. Every call is transcribed and shown on a clinic dashboard with its outcome.
 
 ## Layout
 
@@ -20,7 +20,7 @@ This is an npm-workspaces monorepo.
 | `packages/core`        | Domain services: scheduling, auth helpers      |
 | `packages/shared`      | Zod schemas, API types, tool definitions, constants                     |
 | `packages/voice-sdk`   | Browser client: mic capture, playback, barge-in, events, React hook                 |
-| `infra`                | AWS CDK app: network, data, services, workers, observability, CI/CD    |
+| `infra`                | AWS CDK app. Phase 1 has the Auth stack (Cognito) only; the rest lands in Phase 5 |
 
 ## Local setup
 
@@ -84,6 +84,29 @@ at most `MAX_SESSIONS` concurrent calls, kept under Sarvam's limit of 20 sockets
 ## AWS
 
 Only the `aws-secondary-account` profile is ever used; see `scripts/lib/aws-guard.sh`. Infra scripts run CDK through `infra/scripts/cdk.sh`, which applies the guard. Setup: `scripts/bootstrap-aws.sh`.
+
+## Deploy (Netlify)
+
+The web app deploys from the repo root with `netlify.toml` (build command
+`npm run build:packages && npm run build -w @muxaris/web`, publish `apps/web/.next`, Node 22,
+`@netlify/plugin-nextjs`). Leave the Netlify base directory empty (the repository root): the web
+app imports `@muxaris/shared` and `@muxaris/voice-sdk`, which must be built first, so a base of
+`apps/web` will not build.
+
+Set these environment variables in the Netlify site settings (they are inlined at build time, so
+redeploy after changing them):
+
+| Variable                           | Value                                                          |
+| ---------------------------------- | -------------------------------------------------------------- |
+| `NEXT_PUBLIC_COGNITO_USER_POOL_ID` | Cognito user pool id (from `scripts/bootstrap-aws.sh`)         |
+| `NEXT_PUBLIC_COGNITO_CLIENT_ID`    | Cognito app client id                                          |
+| `NEXT_PUBLIC_COGNITO_DOMAIN`       | Cognito hosted UI domain                                       |
+| `NEXT_PUBLIC_API_URL`              | Public https URL of the API                                    |
+| `NEXT_PUBLIC_VOICE_WS_URL`         | Public `wss://` URL of the voice gateway (`ws://` is rejected) |
+| `NEXT_PUBLIC_GOOGLE_ENABLED`       | `true` to show Google sign-in, otherwise `false`               |
+
+If the Cognito variables are unset, every `/app` request redirects to sign-in. The API and voice
+gateway are not deployed by this config; infra for them arrives in Phase 5.
 
 ## Scripts
 

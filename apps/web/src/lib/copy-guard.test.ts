@@ -15,7 +15,7 @@ const files = [
     .map((f) => `components/marketing/${f}`),
 ];
 const BANNED =
-  /HIPAA|trusted by|first ring|within seconds|in pilot|Svara|Langfuse|before the patient hangs up/i;
+  /HIPAA|trusted by|first ring|within seconds|in pilot|Svara|Langfuse|before the patient hangs up|sent by email|email confirmations\b(?! \(coming soon\))|confirmation is sent|Confirmation sent|encrypted at rest|at rest|Every call on record|data kept in India/i;
 
 describe("marketing copy guard", () => {
   it.each(files)("%s has no banned or overclaiming phrases", (f) => {

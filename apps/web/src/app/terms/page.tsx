@@ -22,8 +22,8 @@ export default function TermsPage() {
         <h2>The service</h2>
         <p>
           Muxaris is an AI voice receptionist: it answers calls, books and changes appointments in
-          your calendar, and sends confirmations. You configure your doctors, services, hours and
-          the information the assistant may share.
+          your calendar, and shows them on your dashboard. You configure your doctors, services,
+          hours and the information the assistant may share.
         </p>
 
         <h2>Pilot</h2>

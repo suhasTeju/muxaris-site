@@ -1,11 +1,15 @@
 [build]
-  base = "apps/web"
-  command = "npm run build"
-  publish = ".next"
+  # Repo root, so the workspace packages (@muxaris/shared, @muxaris/voice-sdk) can be built first.
+  base = "/"
+  command = "npm run build:packages && npm run build -w @muxaris/web"
+  publish = "apps/web/.next"
 
 [build.environment]
   NODE_VERSION = "22"
-  NPM_FLAGS = "--workspaces --include-workspace-root"
+
+# Required env vars (set in the Netlify UI; see README "Deploy (Netlify)"):
+#   NEXT_PUBLIC_COGNITO_USER_POOL_ID, NEXT_PUBLIC_COGNITO_CLIENT_ID, NEXT_PUBLIC_COGNITO_DOMAIN,
+#   NEXT_PUBLIC_API_URL, NEXT_PUBLIC_VOICE_WS_URL (wss), NEXT_PUBLIC_GOOGLE_ENABLED
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
@@ -16,3 +20,4 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "microphone=(self), camera=(), geolocation=()"
