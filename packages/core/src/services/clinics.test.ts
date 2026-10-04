@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { schema } from "@muxaris/db";
+import { newId, schema } from "@muxaris/db";
 import {
   createClinicForUser,
   getClinicContext,
@@ -11,6 +11,7 @@ import {
   upsertUser,
 } from "./clinics.js";
 import { CoreError } from "./errors.js";
+import { createDoctor, setWorkingHours } from "./scheduling.js";
 import { dbReachable, makeTestClinic, openDb, warnIfUnreachable } from "./test-support.js";
 
 const { db, pool } = openDb();
@@ -37,8 +38,7 @@ describe("slugify", () => {
   });
 
   it("createClinicForUser creates owner membership and defaults", async () => {
-    const { clinic, membership } = ctx;
-    expect(membership).toBeUndefined();
+    const { clinic } = ctx;
     const m = await getMembership(db, { userId: ctx.user.id, clinicId: clinic.id });
     expect(m).toEqual({ role: "owner" });
     const full = await getClinicContext(db, clinic.id);
@@ -72,6 +72,40 @@ describe("slugify", () => {
     extra.push(a.clinic.id, b.clinic.id, c.clinic.id);
     expect(b.clinic.slug).toBe(`${a.clinic.slug}-2`);
     expect(c.clinic.slug).toBe(`${a.clinic.slug}-3`);
+  });
+
+  it("getClinicContext includes doctor working hours and holidays", async () => {
+    const doc = await createDoctor(db, ctx.clinic.id, { name: "Dr Ctx" });
+    await setWorkingHours(db, ctx.clinic.id, doc.id, [
+      { weekday: 3, startTime: "09:00", endTime: "13:00" },
+      { weekday: 1, startTime: "10:00", endTime: "14:30" },
+    ]);
+    await db
+      .insert(schema.clinicHolidays)
+      .values({ id: newId("hol"), clinicId: ctx.clinic.id, date: "2026-12-25", name: "Christmas" });
+    const full = await getClinicContext(db, ctx.clinic.id);
+    const d = full.doctors.find((x) => x.id === doc.id)!;
+    expect(d.workingHours).toEqual([
+      { weekday: 1, startTime: "10:00", endTime: "14:30" },
+      { weekday: 3, startTime: "09:00", endTime: "13:00" },
+    ]);
+    expect(full.holidays).toEqual([{ date: "2026-12-25", name: "Christmas" }]);
+    expect(full.services).toEqual([]);
+  });
+
+  it("retries the slug on a unique violation from concurrent creates", async () => {
+    const results = await Promise.all(
+      [1, 2, 3].map(() =>
+        createClinicForUser(db, {
+          userId: ctx.user.id,
+          name: "Racing Slug Clinic",
+          specialty: "dental",
+          city: "Pune",
+        }),
+      ),
+    );
+    extra.push(...results.map((r) => r.clinic.id));
+    expect(new Set(results.map((r) => r.clinic.slug)).size).toBe(3);
   });
 
   it("upserts users by cognito sub", async () => {

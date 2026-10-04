@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TZDate } from "@date-fns/tz";
 import { addDays, format } from "date-fns";
-import { DEMO_CLINIC_ID, seedDemoClinic } from "@muxaris/db";
+import { eq } from "drizzle-orm";
+import { DEMO_CLINIC_ID, schema, seedDemoClinic } from "@muxaris/db";
 import {
   bookAppointment,
   cancelAppointment,
@@ -52,7 +53,12 @@ const at = (date: string, hhmm: string) => atLocal(date, hhmm, "Asia/Kolkata");
   beforeAll(async () => {
     await seedDemoClinic(db);
     a = await makeTestClinic(db, "sched-a");
-    b = await makeTestClinic(db, "sched-b");
+    try {
+      b = await makeTestClinic(db, "sched-b");
+    } catch (e) {
+      await a.cleanup();
+      throw e;
+    }
     await loadDemoClinicData(db, a.clinic.id);
     aDocs = await listDoctors(db, a.clinic.id);
     const svcs = await listServices(db, a.clinic.id);
@@ -211,19 +217,32 @@ const at = (date: string, hhmm: string) => atLocal(date, hhmm, "Asia/Kolkata");
   });
 
   it("enforces maxPerSlot as an additional cap (exact same start)", async () => {
+    const doctorId = aDocs[0]!.id;
+    const startsAt = at(TUESDAY, "19:00");
+    await bookAppointment(db, {
+      clinicId: a.clinic.id,
+      patient: { phone: "+919800000030" },
+      doctorId,
+      serviceId: aSvc.id,
+      startsAt,
+      source: "dashboard",
+    });
     await updateSlotRules(db, a.clinic.id, { maxPerSlot: 2 });
-    expect((await getSlotRules(db, a.clinic.id)).maxPerSlot).toBe(2);
-    await expect(
-      bookAppointment(db, {
-        clinicId: a.clinic.id,
-        patient: { phone: "+919800000012" },
-        doctorId: aDocs[0]!.id,
-        serviceId: aSvc.id,
-        startsAt: at(TUESDAY, "18:00"),
-        source: "ai_call",
-      }),
-    ).rejects.toMatchObject({ code: "conflict" });
-    await updateSlotRules(db, a.clinic.id, { maxPerSlot: 1 });
+    try {
+      expect((await getSlotRules(db, a.clinic.id)).maxPerSlot).toBe(2);
+      await expect(
+        bookAppointment(db, {
+          clinicId: a.clinic.id,
+          patient: { phone: "+919800000012" },
+          doctorId,
+          serviceId: aSvc.id,
+          startsAt,
+          source: "ai_call",
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+    } finally {
+      await updateSlotRules(db, a.clinic.id, { maxPerSlot: 1 });
+    }
   });
 
   it("reschedules and cancels, freeing the slot", async () => {
@@ -288,6 +307,173 @@ const at = (date: string, hhmm: string) => atLocal(date, hhmm, "Asia/Kolkata");
     expect((await getSlotRules(db, b.clinic.id)).slotGrainMin).toBe(before.slotGrainMin);
     expect((await getSlotRules(db, a.clinic.id)).slotGrainMin).toBe(20);
     await updateSlotRules(db, a.clinic.id, { slotGrainMin: 15 });
+  });
+
+  it("refuses inactive doctors and inactive services", async () => {
+    const doc = await createDoctor(db, a.clinic.id, { name: "Dr Inactive", active: false });
+    const svc = await createService(db, a.clinic.id, {
+      name: "Retired",
+      durationMin: 15,
+      active: false,
+    });
+    const base = { clinicId: a.clinic.id, patient, source: "dashboard" as const };
+    await expect(
+      bookAppointment(db, {
+        ...base,
+        doctorId: doc.id,
+        serviceId: aSvc.id,
+        startsAt: at(TUESDAY, "11:00"),
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      bookAppointment(db, {
+        ...base,
+        doctorId: aDocs[0]!.id,
+        serviceId: svc.id,
+        startsAt: at(TUESDAY, "11:00"),
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      findAvailableSlots(db, { clinicId: a.clinic.id, date: TUESDAY, serviceId: svc.id }),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("enforces bookableByAi for ai_call and forAssistant", async () => {
+    const svc = await createService(db, a.clinic.id, {
+      name: "Staff only",
+      durationMin: 15,
+      bookableByAi: false,
+    });
+    const doctorId = aDocs[0]!.id;
+    await expect(
+      bookAppointment(db, {
+        clinicId: a.clinic.id,
+        patient,
+        doctorId,
+        serviceId: svc.id,
+        startsAt: at(TUESDAY, "11:00"),
+        source: "ai_call",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden", message: "service not bookable by assistant" });
+    await expect(
+      findAvailableSlots(db, {
+        clinicId: a.clinic.id,
+        date: TUESDAY,
+        serviceId: svc.id,
+        forAssistant: true,
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    // humans may still use it
+    const apt = await bookAppointment(db, {
+      clinicId: a.clinic.id,
+      patient,
+      doctorId,
+      serviceId: svc.id,
+      startsAt: at(TUESDAY, "11:00"),
+      source: "dashboard",
+    });
+    expect(
+      (await findAvailableSlots(db, { clinicId: a.clinic.id, date: TUESDAY, serviceId: svc.id }))
+        .length,
+    ).toBeGreaterThan(0);
+    await expect(
+      rescheduleAppointment(db, {
+        clinicId: a.clinic.id,
+        appointmentId: apt.id,
+        newStartsAt: at(TUESDAY, "11:30"),
+        source: "ai_call",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+  });
+
+  it("cancel then reschedule conflicts; reschedule then cancel is ok", async () => {
+    const doctorId = aDocs[1]!.id;
+    const mk = (phone: string, hhmm: string) =>
+      bookAppointment(db, {
+        clinicId: a.clinic.id,
+        patient: { phone },
+        doctorId,
+        serviceId: aSvc.id,
+        startsAt: at(TUESDAY, hhmm),
+        source: "dashboard",
+      });
+    const x = await mk("+919800000040", "14:00");
+    await cancelAppointment(db, { clinicId: a.clinic.id, appointmentId: x.id });
+    await expect(
+      rescheduleAppointment(db, {
+        clinicId: a.clinic.id,
+        appointmentId: x.id,
+        newStartsAt: at(TUESDAY, "14:30"),
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    const y = await mk("+919800000041", "15:00");
+    await rescheduleAppointment(db, {
+      clinicId: a.clinic.id,
+      appointmentId: y.id,
+      newStartsAt: at(TUESDAY, "15:30"),
+    });
+    const cancelled = await cancelAppointment(db, { clinicId: a.clinic.id, appointmentId: y.id });
+    expect(cancelled.status).toBe("cancelled");
+  });
+
+  it("concurrent cancel and reschedule never resurrect a cancelled appointment", async () => {
+    const second = createDb(TEST_DB_URL);
+    try {
+      const doctorId = aDocs[1]!.id;
+      const apt = await bookAppointment(db, {
+        clinicId: a.clinic.id,
+        patient: { phone: "+919800000042" },
+        doctorId,
+        serviceId: aSvc.id,
+        startsAt: at(TUESDAY, "17:00"),
+        source: "dashboard",
+      });
+      await Promise.allSettled([
+        cancelAppointment(db, { clinicId: a.clinic.id, appointmentId: apt.id }),
+        rescheduleAppointment(second.db, {
+          clinicId: a.clinic.id,
+          appointmentId: apt.id,
+          newStartsAt: at(TUESDAY, "17:30"),
+        }),
+      ]);
+      const [row] = await listAppointments(db, {
+        clinicId: a.clinic.id,
+        from: at(TUESDAY, "16:59"),
+        to: at(TUESDAY, "18:00"),
+        doctorId,
+      }).then((r) => r.filter((x) => x.id === apt.id));
+      // serialised: either cancelled last (cancelled) or rescheduled then cancelled
+      expect(row?.status).toBe("cancelled");
+    } finally {
+      await second.pool.end();
+    }
+  });
+
+  it("refuses to reschedule or cancel completed and no_show appointments (conflict)", async () => {
+    for (const [i, status] of (["completed", "no_show"] as const).entries()) {
+      const apt = await bookAppointment(db, {
+        clinicId: a.clinic.id,
+        patient: { phone: `+91980000005${i}` },
+        doctorId: aDocs[0]!.id,
+        serviceId: aSvc.id,
+        startsAt: at(TUESDAY, i === 0 ? "10:30" : "11:30"),
+        source: "dashboard",
+      });
+      await db
+        .update(schema.appointments)
+        .set({ status })
+        .where(eq(schema.appointments.id, apt.id));
+      await expect(
+        rescheduleAppointment(db, {
+          clinicId: a.clinic.id,
+          appointmentId: apt.id,
+          newStartsAt: at(TUESDAY, "12:30"),
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+      await expect(
+        cancelAppointment(db, { clinicId: a.clinic.id, appointmentId: apt.id }),
+      ).rejects.toMatchObject({ code: "conflict" });
+    }
   });
 
   it("validates working hours", async () => {

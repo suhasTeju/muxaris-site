@@ -234,6 +234,8 @@ export async function findAvailableSlots(
     doctorId?: string;
     partOfDay?: "morning" | "afternoon" | "evening";
     now?: Date;
+    /** Also require the service to be bookable by the AI assistant. */
+    forAssistant?: boolean;
   },
 ): Promise<Slot[]> {
   const { clinicId, date } = input;
@@ -245,11 +247,9 @@ export async function findAvailableSlots(
   }
   const [clinic] = await db.select().from(clinics).where(eq(clinics.id, clinicId));
   if (!clinic) throw new CoreError("not_found", "clinic not found");
-  const [service] = await db
-    .select()
-    .from(services)
-    .where(and(eq(services.id, input.serviceId), eq(services.clinicId, clinicId)));
-  if (!service) throw new CoreError("not_found", "service not found");
+  const service = await getClinicService(db, clinicId, input.serviceId, {
+    forAssistant: input.forAssistant ?? false,
+  });
   const rules = await getSlotRules(db, clinicId);
 
   const docRows = await db
@@ -347,7 +347,7 @@ async function lockDoctor(tx: DbLike, clinicId: string, doctorId: string) {
   const rows = await tx
     .select({ id: doctors.id })
     .from(doctors)
-    .where(and(eq(doctors.id, doctorId), eq(doctors.clinicId, clinicId)))
+    .where(and(eq(doctors.id, doctorId), eq(doctors.clinicId, clinicId), eq(doctors.active, true)))
     .for("update");
   if (rows.length === 0) throw new CoreError("not_found", "doctor not found");
 }
@@ -404,12 +404,22 @@ async function assertSlotFree(
   if (n >= maxPerSlot) throw new CoreError("conflict", "that time is fully booked");
 }
 
-async function getClinicService(tx: DbLike, clinicId: string, serviceId: string) {
+async function getClinicService(
+  tx: DbLike,
+  clinicId: string,
+  serviceId: string,
+  opts: { forAssistant?: boolean } = {},
+) {
   const [svc] = await tx
     .select()
     .from(services)
-    .where(and(eq(services.id, serviceId), eq(services.clinicId, clinicId)));
+    .where(
+      and(eq(services.id, serviceId), eq(services.clinicId, clinicId), eq(services.active, true)),
+    );
   if (!svc) throw new CoreError("not_found", "service not found");
+  if (opts.forAssistant && !svc.bookableByAi) {
+    throw new CoreError("forbidden", "service not bookable by assistant");
+  }
   return svc;
 }
 
@@ -435,7 +445,9 @@ export async function bookAppointment(
   assertValidDate(input.startsAt, "startsAt");
   return db.transaction(async (tx) => {
     await lockDoctor(tx, input.clinicId, input.doctorId);
-    const svc = await getClinicService(tx, input.clinicId, input.serviceId);
+    const svc = await getClinicService(tx, input.clinicId, input.serviceId, {
+      forAssistant: input.source === "ai_call",
+    });
     const endsAt = addMinutes(input.startsAt, svc.durationMin);
     const patient = await upsertPatientByPhone(tx, input.clinicId, input.patient);
     await assertSlotFree(tx, {
@@ -466,7 +478,13 @@ export async function bookAppointment(
 
 export async function rescheduleAppointment(
   db: Db,
-  input: { clinicId: string; appointmentId: string; newStartsAt: Date },
+  input: {
+    clinicId: string;
+    appointmentId: string;
+    newStartsAt: Date;
+    /** Pass "ai_call" when the assistant is acting; enforces bookableByAi. */
+    source?: Appointment["source"];
+  },
 ): Promise<Appointment> {
   assertValidDate(input.newStartsAt, "newStartsAt");
   return db.transaction(async (tx) => {
@@ -485,7 +503,9 @@ export async function rescheduleAppointment(
     if (!ACTIVE.includes(apt.status)) {
       throw new CoreError("conflict", `cannot reschedule a ${apt.status} appointment`);
     }
-    const svc = await getClinicService(tx, input.clinicId, apt.serviceId);
+    const svc = await getClinicService(tx, input.clinicId, apt.serviceId, {
+      forAssistant: input.source === "ai_call",
+    });
     const endsAt = addMinutes(input.newStartsAt, svc.durationMin);
     await assertSlotFree(tx, {
       clinicId: input.clinicId,
@@ -498,36 +518,58 @@ export async function rescheduleAppointment(
     const [row] = await tx
       .update(appointments)
       .set({ startsAt: input.newStartsAt, endsAt, status: "rescheduled" })
-      .where(and(eq(appointments.id, apt.id), eq(appointments.clinicId, input.clinicId)))
+      .where(
+        and(
+          eq(appointments.id, apt.id),
+          eq(appointments.clinicId, input.clinicId),
+          inArray(appointments.status, ACTIVE),
+        ),
+      )
       .returning();
-    return row!;
+    if (!row) throw new CoreError("conflict", "appointment already finalised");
+    return row;
   });
 }
 
+/** Cancelling a completed/no_show appointment is a conflict; cancelling a cancelled one is a no-op. */
 export async function cancelAppointment(
   db: Db,
   input: { clinicId: string; appointmentId: string; reason?: string },
 ): Promise<Appointment> {
-  const [apt] = await db
-    .select()
-    .from(appointments)
-    .where(
-      and(eq(appointments.id, input.appointmentId), eq(appointments.clinicId, input.clinicId)),
-    );
-  if (!apt) throw new CoreError("not_found", "appointment not found");
-  if (apt.status === "cancelled") return apt;
-  if (apt.status === "completed" || apt.status === "no_show") {
-    throw new CoreError("conflict", `cannot cancel a ${apt.status} appointment`);
-  }
-  const notes = input.reason
-    ? [apt.notes, `Cancelled: ${input.reason}`].filter(Boolean).join("\n")
-    : apt.notes;
-  const [row] = await db
-    .update(appointments)
-    .set({ status: "cancelled", notes })
-    .where(and(eq(appointments.id, apt.id), eq(appointments.clinicId, input.clinicId)))
-    .returning();
-  return row!;
+  return db.transaction(async (tx) => {
+    const find = () =>
+      tx
+        .select()
+        .from(appointments)
+        .where(
+          and(eq(appointments.id, input.appointmentId), eq(appointments.clinicId, input.clinicId)),
+        );
+    const [pre] = await find();
+    if (!pre) throw new CoreError("not_found", "appointment not found");
+    await lockDoctor(tx, input.clinicId, pre.doctorId);
+    const [apt] = await find(); // re-read under the lock
+    if (!apt) throw new CoreError("not_found", "appointment not found");
+    if (apt.status === "cancelled") return apt;
+    if (!ACTIVE.includes(apt.status)) {
+      throw new CoreError("conflict", `cannot cancel a ${apt.status} appointment`);
+    }
+    const notes = input.reason
+      ? [apt.notes, `Cancelled: ${input.reason}`].filter(Boolean).join("\n")
+      : apt.notes;
+    const [row] = await tx
+      .update(appointments)
+      .set({ status: "cancelled", notes })
+      .where(
+        and(
+          eq(appointments.id, apt.id),
+          eq(appointments.clinicId, input.clinicId),
+          inArray(appointments.status, ACTIVE),
+        ),
+      )
+      .returning();
+    if (!row) throw new CoreError("conflict", "appointment already finalised");
+    return row;
+  });
 }
 
 export async function listAppointments(

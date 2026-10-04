@@ -16,7 +16,12 @@ warnIfUnreachable(reachable, "core demo/patient/call tests");
   let b: Awaited<ReturnType<typeof makeTestClinic>>;
   beforeAll(async () => {
     a = await makeTestClinic(db, "misc-a");
-    b = await makeTestClinic(db, "misc-b");
+    try {
+      b = await makeTestClinic(db, "misc-b");
+    } catch (e) {
+      await a.cleanup();
+      throw e;
+    }
   });
   afterAll(async () => {
     await a?.cleanup();
