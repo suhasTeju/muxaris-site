@@ -13,6 +13,8 @@ import {
   CoreError,
 } from "@muxaris/core";
 import {
+  BULBUL_V3_SPEAKERS,
+  LANGUAGE_CODES,
   assistantProfileBody,
   doctorBody,
   serviceBody,
@@ -31,14 +33,49 @@ const slotsQuery = z.object({
   partOfDay: z.enum(["morning", "afternoon", "evening"]).optional(),
 });
 
+const previewBody = z.object({
+  text: z.string().trim().min(1).max(300),
+  language: z.enum(LANGUAGE_CODES),
+  speaker: z.enum(BULBUL_V3_SPEAKERS),
+});
+
+const PREVIEW_WINDOW_MS = 60 * 60 * 1000;
+const PREVIEW_MAX = 30;
+const SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech";
+
+export interface CatalogOptions {
+  /** Defaults to SARVAM_TTS_API_KEY from the process environment, read per request. */
+  env?: { provider: "sarvam" | "mock"; sarvamKey: string | null };
+  fetch?: typeof fetch;
+  now?: () => number;
+}
+
+/** Per-clinic in-memory sliding window (per-process). */
+function createPreviewLimiter(now: () => number) {
+  const hits = new Map<string, number[]>();
+  return (key: string): boolean => {
+    const t = now();
+    const recent = (hits.get(key) ?? []).filter((x) => t - x < PREVIEW_WINDOW_MS);
+    if (recent.length >= PREVIEW_MAX) {
+      hits.set(key, recent);
+      return false;
+    }
+    recent.push(t);
+    hits.set(key, recent);
+    return true;
+  };
+}
+
 const stripUndefined = <T extends object>(o: T) =>
   Object.fromEntries(Object.entries(o).filter(([, x]) => x !== undefined)) as {
     [K in keyof T]?: Exclude<T[K], undefined>;
   };
 const hhmm = (t: string) => t.slice(0, 5);
 
-export function catalogRoutes(db: Db) {
+export function catalogRoutes(db: Db, opts: CatalogOptions = {}) {
   const r = new Hono<AppEnv>();
+  const doFetch = opts.fetch ?? fetch;
+  const allowPreview = createPreviewLimiter(opts.now ?? Date.now);
   const member = requireClinic(db);
   const owner = requireClinic(db, "owner");
 
@@ -124,6 +161,53 @@ export function catalogRoutes(db: Db) {
       })
       .returning();
     return c.json({ assistant: row });
+  });
+
+  r.post("/assistant/preview", member, v("json", previewBody), async (c) => {
+    const key = opts.env ? opts.env.sarvamKey : process.env.SARVAM_TTS_API_KEY?.trim() || null;
+    const provider = opts.env ? opts.env.provider : key ? "sarvam" : "mock";
+    if (provider === "mock" || !key) {
+      return c.json(
+        { error: { code: "provider_unavailable", message: "voice preview is not configured" } },
+        503,
+      );
+    }
+    if (!allowPreview(c.get("clinic").id)) {
+      return c.json({ error: { code: "rate_limited", message: "too many previews" } }, 429);
+    }
+    const b = c.req.valid("json");
+    let res: Response;
+    try {
+      res = await doFetch(SARVAM_TTS_URL, {
+        method: "POST",
+        headers: { "api-subscription-key": key, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: b.text,
+          target_language_code: b.language,
+          speaker: b.speaker,
+          model: "bulbul:v3",
+          speech_sample_rate: 24000,
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      return c.json({ error: { code: "tts_failed", message: "voice provider unreachable" } }, 502);
+    }
+    if (!res.ok) {
+      return c.json(
+        { error: { code: "tts_failed", message: `voice provider error (${res.status})` } },
+        502,
+      );
+    }
+    const data = (await res.json().catch(() => null)) as { audios?: unknown } | null;
+    const audio = Array.isArray(data?.audios) ? data.audios[0] : undefined;
+    if (typeof audio !== "string" || !audio) {
+      return c.json({ error: { code: "tts_failed", message: "no audio returned" } }, 502);
+    }
+    return new Response(Buffer.from(audio, "base64"), {
+      status: 200,
+      headers: { "Content-Type": "audio/wav", "Cache-Control": "private, max-age=3600" },
+    });
   });
 
   r.get("/slots", member, v("query", slotsQuery), async (c) => {

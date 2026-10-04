@@ -1,7 +1,18 @@
-export default function OnboardingPage() {
+import { getActiveClinic, getServerMe } from "@/lib/api-server";
+import { Wizard } from "@/components/onboarding/Wizard";
+
+export const dynamic = "force-dynamic";
+
+export default async function OnboardingPage() {
+  const me = await getServerMe();
+  const active = await getActiveClinic();
+  const membership = active
+    ? me.memberships.find((m) => m.clinicId === active.clinicId)
+    : undefined;
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl items-center justify-center px-6">
-      <p className="font-display text-2xl">Onboarding (next task)</p>
-    </main>
+    <Wizard
+      initialClinic={membership ? { id: membership.clinicId, name: membership.clinic.name } : null}
+      cookieStale={active?.cookieStale ?? false}
+    />
   );
 }
