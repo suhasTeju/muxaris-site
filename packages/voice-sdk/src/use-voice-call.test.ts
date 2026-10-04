@@ -204,4 +204,33 @@ describe("useVoiceCall", () => {
     expect(h.hook.result.current.phase).toBe("ended");
     expect(h.hook.result.current.error).toBeNull();
   });
+
+  it("a denied microphone is errorCode unsupported and opens no socket", async () => {
+    const sock = new FakeSocket();
+    const wsFactory = vi.fn(() => sock);
+    const denied = Object.assign(new Error("Permission denied"), { name: "NotAllowedError" });
+    const hook = renderHook(() =>
+      useVoiceCall({
+        url: "ws://x",
+        token: "t",
+        clinicId: "c1",
+        language: "en-IN",
+        wsFactory,
+        mediaFactory: () => ({
+          start: vi.fn(async () => {
+            throw denied;
+          }),
+          stop: vi.fn(),
+        }),
+        playerFactory: () => ({ enqueue: vi.fn(), flush: vi.fn(), close: vi.fn() }),
+      }),
+    );
+    await act(async () => {
+      await hook.result.current.start();
+    });
+    expect(hook.result.current.phase).toBe("error");
+    expect(hook.result.current.errorCode).toBe("unsupported");
+    expect(hook.result.current.error).toBe("Permission denied");
+    expect(wsFactory).not.toHaveBeenCalled();
+  });
 });

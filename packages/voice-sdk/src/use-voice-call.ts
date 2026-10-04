@@ -127,7 +127,7 @@ export function useVoiceCall(opts: UseVoiceCallOptions): UseVoiceCall {
     } catch (e) {
       if (current() && stoppedRef.current !== client) {
         setError((prev) => prev ?? (e instanceof Error ? e.message : String(e)));
-        setErrorCode((prev) => prev ?? (e as Partial<VoiceError>).errorCode ?? "internal");
+        setErrorCode((e as Partial<VoiceError>).errorCode ?? "internal");
         setPhase("error");
       }
     }

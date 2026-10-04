@@ -58,7 +58,7 @@ describe("VoiceClient", () => {
     client.on("error", (e) => errors.push(e.message));
     await expect(client.connect()).rejects.toMatchObject({
       message: "denied",
-      errorCode: "unsupported",
+      errorCode: "internal",
     });
     expect(wsFactory).not.toHaveBeenCalled();
     expect(mic.stop).toHaveBeenCalled();

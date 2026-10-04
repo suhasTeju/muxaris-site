@@ -123,9 +123,16 @@ export class VoiceClient {
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      const name = e instanceof Error ? e.name : "";
+      const blocked = ["NotAllowedError", "NotFoundError", "SecurityError"].includes(name);
       this.teardown();
-      this.emit("error", { type: "error", code: "internal", message });
-      throw new VoiceError(message, "unsupported");
+      // Same category on the event and the thrown error ("not_implemented" maps to unsupported).
+      this.emit("error", {
+        type: "error",
+        code: blocked ? "not_implemented" : "internal",
+        message,
+      });
+      throw new VoiceError(message, blocked ? "unsupported" : "internal");
     }
     if (this.ended) {
       this.teardown();
