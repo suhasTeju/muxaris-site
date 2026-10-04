@@ -111,7 +111,7 @@ describe("fakes", () => {
 
 ```ts
 // keys.ts
-const ID = /^[a-z]+_[0-9a-z]{6,32}$/;
+const ID = /^[a-z]+_[0-9a-z_]{4,40}$/; // newId() = prefix + "_" + 16 lowercase alnum; demo clinic is "cl_demo_sunrise"
 function assertId(id: string): string { if (!ID.test(id)) throw new Error("invalid id"); return id; }
 export const callKeys = {
   recording: (clinicId: string, callId: string) => `clinics/${assertId(clinicId)}/calls/${assertId(callId)}/recording.wav`,
@@ -470,7 +470,7 @@ it("writes a valid 44-byte header for 16 kHz stereo PCM16", ...);
 
 **Files:**
 - Modify: `apps/web/src/app/privacy/page.tsx` + `apps/web/src/lib/content.ts` (FAQ "Where is our data stored?" and the "Every call logged" card): recordings and transcripts are kept 90 days by default and stored encrypted in AWS Mumbai; the assistant says calls may be recorded; clinics can turn recording off in Settings.
-- Modify: `packages/shared/src/api.ts` (`clinicPatchBody` gains `settings: z.object({ recordCalls: z.boolean() }).partial().optional()`), `apps/api/src/routes/me.ts` (owner-only `PATCH /v1/clinics/:id` merges `settings` into the jsonb column), `apps/api/src/routes/me.test.ts`, `apps/web/src/app/(app)/app/settings/page.tsx` (a "Record calls" switch under Assistant, owner-only, with the sentence "When off, calls are transcribed but no audio is kept.")
+- Modify: `packages/shared/src/api.ts` (new `clinicSettingsPatchBody = z.object({ settings: z.object({ recordCalls: z.boolean() }).partial() })`; the clinic DTO returned by `/v1/me` and `/v1/clinics` gains `settings: { recordCalls: boolean }` with `recordCalls` defaulting to `true` when unset), `apps/api/src/routes/me.ts` (new owner-only `PATCH /v1/clinics/:id` — there is no clinic PATCH route yet; `:id` must equal the active clinic from `X-Clinic-Id` else 404; merges `settings` into the jsonb column with `sql\`settings || ${json}::jsonb\``), `apps/api/src/routes/me.test.ts`, `apps/web/src/app/(app)/app/settings/page.tsx` (a "Record calls" switch under Assistant, owner-only, with the sentence "When off, calls are transcribed but no audio is kept.")
 - Modify: `apps/web/src/lib/copy-guard.test.ts`: allow the word "recorded"; allow "recordings are encrypted" (the bucket uses SSE-S3); keep banning "encrypted at rest" as a blanket claim until the database claim is true in Phase 5.
 - Modify: `README.md` (Phase 2 section: StorageStack deploy, env keys, `workers:dev`, e2e flags), `docs/SPIKES.md` or `docs/ARCHITECTURE.md` stub (short "Call pipeline" section with the key layout and lifecycle)
 - Modify: `scripts/e2e-voice.ts` (after `ended`: poll `recordingStatus === "ready"`, fetch `/v1/calls/:id/recording-url`, HEAD the URL and assert `content-length > 44` and `content-type: audio/wav`; with `E2E_EXPECT_SUMMARY=1`, poll for `analysedAt`), `scripts/e2e-voice.sh` (optionally start `workers:dev` with `E2E_WITH_WORKER=1`)
