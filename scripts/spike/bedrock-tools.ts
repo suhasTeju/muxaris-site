@@ -9,6 +9,8 @@ if (
   console.error("run via: source scripts/lib/aws-guard.sh first");
   process.exit(1);
 }
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+const userText = process.env.USER_TEXT ?? "Hi, I need a teeth cleaning tomorrow afternoon.";
 const client = new BedrockRuntimeClient({ region: "ap-south-1" });
 const candidates = [
   process.env.BEDROCK_MODEL_ID,
@@ -25,12 +27,10 @@ for (const modelId of candidates) {
         modelId,
         system: [
           {
-            text: "You are Muxaris, the receptionist for Sunrise Dental Care. Use tools to check availability before offering times. Today is 2026-10-04 (Asia/Kolkata). Reply in at most two short sentences.",
+            text: `You are Muxaris, the receptionist for Sunrise Dental Care. Use tools to check availability before offering times. Today is ${today} (Asia/Kolkata). Reply in at most two short sentences.`,
           },
         ],
-        messages: [
-          { role: "user", content: [{ text: "Hi, I need a teeth cleaning tomorrow afternoon." }] },
-        ],
+        messages: [{ role: "user", content: [{ text: userText }] }],
         toolConfig: {
           tools: ASSISTANT_TOOLS.map((t) => ({
             toolSpec: {
@@ -63,11 +63,18 @@ for (const modelId of candidates) {
     );
     console.log(`  text="${text}"`);
     console.log(`  toolUse=${toolName ? `${toolName} ${toolInput}` : "(none)"}`);
+    if (toolName) {
+      try {
+        console.log(`  toolInput parsed: ${JSON.stringify(JSON.parse(toolInput))}`);
+      } catch (e) {
+        console.log(`  toolInput JSON parse FAILED: ${(e as Error).message}`);
+      }
+    }
     process.exit(0);
   } catch (e) {
     const err = e as Error & { $metadata?: { httpStatusCode?: number } };
     console.log(
-      `step failed: status=${err.$metadata?.httpStatusCode ?? "?"} body=${err.name}: ${err.message.slice(0, 200)} (model=${modelId})`,
+      `bedrock-converse failed: status=${err.$metadata?.httpStatusCode ?? "?"} body=${err.name}: ${err.message.slice(0, 200)} (model=${modelId})`,
     );
   }
 }

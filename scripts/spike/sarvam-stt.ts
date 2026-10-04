@@ -51,5 +51,6 @@ ws.on("close", (code, reason) => {
   console.log(
     `stt ws closed ${code} ${reason.toString()}; first-transcript=${firstTranscript} ms since open-start (${firstTranscript && sendEnd ? Math.round(firstTranscript - (sendEnd - t0)) : "?"} ms after last audio)`,
   );
+  if (!firstTranscript) fail("stt-ws", code, "no data transcript received");
   process.exit(0);
 });
