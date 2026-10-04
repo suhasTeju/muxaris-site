@@ -173,6 +173,8 @@ export class VoiceSession {
   private turn: TurnInfo | null = null;
   private speechEndAt: number | null = null;
   private endRequested = false;
+  /** End forced by a fallback (tool cap); unlike a normal end_call it survives barge-in. */
+  private forcedEnd = false;
   private turnsPending = 0;
   private lastAudioSentAt = 0;
   private playbackEndsAt = 0;
@@ -221,6 +223,11 @@ export class VoiceSession {
     };
     this.callerPhone = norm("callerPhone", deps.ctx.callerPhone);
     this.verifiedPhone = norm("verifiedPhone", deps.ctx.verifiedPhone);
+    // Self-asserted claims are allowed only on the browser channel. Any other channel (or an
+    // unset one) needs a valid verified/caller-ID number, else identity is unverifiable.
+    if (deps.ctx.channel !== "browser" && !this.verifiedPhone && !this.callerPhone) {
+      unverifiable = true;
+    }
     this.tctx = {
       clinic: deps.ctx.clinic,
       callId: deps.ctx.callId,
@@ -513,7 +520,7 @@ export class VoiceSession {
 
   private interrupt(): void {
     this.epoch++;
-    this.endRequested = false; // barge-in during the closing sentence cancels the hang-up
+    if (!this.forcedEnd) this.endRequested = false; // barge-in during the closing sentence cancels the hang-up
     this.lastAudioSentAt = 0;
     this.playbackEndsAt = 0;
     this.turnAbort?.abort();
@@ -745,6 +752,7 @@ export class VoiceSession {
         assistantSeqs.push({ seq: this.seq++, text: fb });
         this.transport.sendEvent({ type: "transcript", role: "assistant", text: fb, final: true });
         this.endRequested = true;
+        this.forcedEnd = true;
         this.enqueueSpeech(fb, epoch);
       }
     } finally {
@@ -764,7 +772,12 @@ export class VoiceSession {
       }
     }
 
-    if (this.ended || epoch !== this.epoch) return;
+    if (this.ended) return;
+    if (this.forcedEnd) {
+      await this.finish("assistant", false);
+      return;
+    }
+    if (epoch !== this.epoch) return;
     if (this.endRequested) {
       await this.finish("assistant", false);
       return;

@@ -357,8 +357,11 @@ async function run(db: Db, ctx: ToolContext, name: ToolName, input: unknown): Pr
 
     case "request_callback": {
       const a = toolInputSchemas.request_callback.parse(input);
-      const patient = await findPatientByPhone(db, clinicId, a.patient_phone);
-      const reason = a.patient_name ? `${a.patient_name}: ${a.reason}` : a.reason;
+      // Unverified identity: still record the request, but never link it to a patient record.
+      const unverified = ctx.identityUnverifiable === true;
+      const patient = unverified ? null : await findPatientByPhone(db, clinicId, a.patient_phone);
+      const base = a.patient_name ? `${a.patient_name}: ${a.reason}` : a.reason;
+      const reason = unverified ? `unverified: ${base}` : base;
       const cb = await createCallback(db, {
         clinicId,
         callId: ctx.callId,

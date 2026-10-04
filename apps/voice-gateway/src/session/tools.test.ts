@@ -187,4 +187,21 @@ const PHONE_B = "+919876500022";
     expect((b.result as { error: string }).error).toBe("verification_required");
     expect(ctx.claimedPhone).toBeUndefined();
   });
+
+  it("request_callback with unverified identity is not linked to a patient", async () => {
+    const callId = await a.newCall();
+    const out = await executeTool(
+      db,
+      ctxFor({ identityUnverifiable: true, callId }),
+      "request_callback",
+      {
+        patient_phone: PHONE_A,
+        reason: "pain",
+      },
+    );
+    const id = (out.result as { callback_id: string }).callback_id;
+    const [row] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, id));
+    expect(row!.patientId).toBeNull();
+    expect(row!.reason.startsWith("unverified:")).toBe(true);
+  });
 });

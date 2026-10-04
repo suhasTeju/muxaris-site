@@ -47,7 +47,7 @@ afterAll(async () => {
     now?: () => Date;
     callId?: string;
     callerPhone?: string;
-    channel?: "browser" | "phone";
+    channel?: "browser" | "phone" | "unset";
     waitListening?: boolean;
   }) {
     const transport = new TestTransport();
@@ -70,7 +70,7 @@ afterAll(async () => {
         maxDurationS: opts.maxDurationS ?? 600,
         secondsRemaining: opts.secondsRemaining ?? 3600,
         ...(opts.callerPhone ? { callerPhone: opts.callerPhone } : {}),
-        ...(opts.channel ? { channel: opts.channel } : {}),
+        ...(opts.channel === "unset" ? {} : { channel: opts.channel ?? "browser" }),
       },
     });
     await session.start();
@@ -444,5 +444,43 @@ afterAll(async () => {
     say("what appointments do I have");
     await waitFor(() => transport.ofType("tool").some((e) => e.status === "done"), 4000, "tool");
     await session.end("caller");
+  });
+
+  for (const channel of ["phone", "unset"] as const) {
+    it(`channel ${channel} without caller id refuses claims`, async () => {
+      const llm = new ScriptedLlm([
+        () => [call("l1", "lookup_patient", { patient_phone: "+919876500011" })],
+        () => [{ type: "text", text: "Let me transfer you." }],
+      ]);
+      const { transport, say, session } = await setup({ llm, channel });
+      say("what appointments do I have");
+      await waitFor(
+        () => transport.ofType("tool").some((e) => e.status === "failed"),
+        4000,
+        "tool",
+      );
+      expect(transport.ofType("tool").at(-1)!.summary).toBe("verification_required");
+      await session.end("caller");
+    });
+  }
+
+  it("a forced hang-up (tool cap) survives barge-in during the fallback", async () => {
+    const llm = {
+      async *stream() {
+        yield call("x", "get_clinic_info", {});
+        yield { type: "done" as const, stopReason: "tool_use" };
+      },
+    };
+    const tts = new FakeTts({ chunks: 30, delayMs: 10 });
+    const { transport, stt, say } = await setup({ llm, tts });
+    transport.hook = (e) => {
+      if (e.type === "transcript" && e.role === "assistant") {
+        transport.hook = undefined;
+        setTimeout(() => stt.push({ type: "speech_start" }), 30);
+      }
+    };
+    say("hello");
+    await waitFor(() => transport.ofType("ended").length === 1, 8000, "ended");
+    expect(transport.ofType("ended")[0]).toMatchObject({ reason: "assistant", outcome: "handoff" });
   });
 });
