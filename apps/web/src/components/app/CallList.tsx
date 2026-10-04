@@ -14,11 +14,17 @@ export function CallList({
   calls,
   tz,
   emptyText = "No calls yet. Try your assistant to place a first test call.",
+  filtered = false,
 }: {
   calls: Call[];
   tz: string;
   emptyText?: string;
+  /** A filter is active: an empty list means "no matches", not "no calls yet". */
+  filtered?: boolean;
 }) {
+  if (calls.length === 0 && filtered) {
+    return <EmptyState>No calls match these filters.</EmptyState>;
+  }
   if (calls.length === 0) {
     return (
       <EmptyState action={{ href: "/app/assistant/try", label: "Place a test call" }}>

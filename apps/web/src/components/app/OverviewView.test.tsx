@@ -17,6 +17,15 @@ const call = {
   status: "completed",
 } as unknown as Call;
 
+const stats = {
+  date: "2026-10-06",
+  callsToday: 7,
+  bookedToday: 3,
+  openCallbacks: 2,
+  avgDurationS: 125,
+  byOutcome: { booked: 3 },
+};
+
 const usage = {
   month: "2026-10",
   callSeconds: 600,
@@ -31,11 +40,11 @@ describe("OverviewView", () => {
       <OverviewView
         clinicName="Smile"
         tz="Asia/Kolkata"
-        todayCalls={{ ok: true, data: [call] }}
+        stats={{ ok: true, data: stats }}
         usage={{ ok: true, data: usage }}
         appointments={{
           ok: true,
-          data: { appointments: [], doctors: [], services: [], patients: [] },
+          data: { appointments: [], doctors: [], services: [] },
         }}
         recentCalls={{ ok: false }}
       />,
@@ -46,21 +55,41 @@ describe("OverviewView", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
+  it("shows the KPIs from the stats endpoint and links open callbacks to the queue", () => {
+    render(
+      <OverviewView
+        clinicName="Smile"
+        tz="Asia/Kolkata"
+        stats={{ ok: true, data: stats }}
+        usage={{ ok: true, data: usage }}
+        appointments={{ ok: false }}
+        recentCalls={{ ok: false }}
+      />,
+    );
+    const kpis = screen.getByLabelText("Key numbers", { selector: "section" });
+    expect(within(kpis).getByText("Calls today").nextSibling?.textContent).toBe("7");
+    expect(within(kpis).getByText("Booked by assistant").nextSibling?.textContent).toBe("3");
+    expect(within(kpis).getByText("Average 2m 05s")).toBeTruthy();
+    const link = within(kpis).getByRole("link", { name: /Open callbacks/ });
+    expect(link.getAttribute("href")).toBe("/app/callbacks");
+    expect(within(link).getByText("2")).toBeTruthy();
+  });
+
   it("falls back on KPIs and appointments independently, and masks caller phones", () => {
     render(
       <OverviewView
         clinicName="Smile"
         tz="Asia/Kolkata"
-        todayCalls={{ ok: false }}
+        stats={{ ok: false }}
         usage={{ ok: false }}
         appointments={{ ok: false }}
         recentCalls={{ ok: true, data: [call] }}
       />,
     );
     expect(screen.getByText(/Couldn't load today's appointments/)).toBeTruthy();
-    expect(screen.getAllByText("Couldn't load")).toHaveLength(3);
+    expect(screen.getAllByText("Couldn't load")).toHaveLength(4);
     const recent = screen.getByLabelText("Recent calls", { selector: "section" });
-    expect(within(recent).getByText("•••• 3210")).toBeTruthy();
+    expect(within(recent).getByText("+91 •••• ••3210")).toBeTruthy();
     expect(screen.queryByText(/9876543210/)).toBeNull();
   });
 });

@@ -1,9 +1,6 @@
-"use client";
-
-import { useState } from "react";
 import { EmptyState } from "./EmptyState";
-import type { Appointment, Doctor, Patient, Service } from "@muxaris/shared";
-import { formatTime, groupByDoctor, maskPhone } from "@/lib/dashboard";
+import type { Appointment, Doctor, Service } from "@muxaris/shared";
+import { formatTime, groupByDoctor } from "@/lib/dashboard";
 import { AppointmentStatusBadge } from "./Badge";
 import { ghostBtn } from "./Modal";
 
@@ -11,7 +8,6 @@ export interface AppointmentListProps {
   appointments: Appointment[];
   doctors: Pick<Doctor, "id" | "name" | "color">[];
   services: Pick<Service, "id" | "name">[];
-  patients: Pick<Patient, "id" | "phone" | "name">[];
   tz: string;
   onCancel?: (a: Appointment) => void;
   onReschedule?: (a: Appointment) => void;
@@ -20,29 +16,10 @@ export interface AppointmentListProps {
 
 const ACTIVE: Appointment["status"][] = ["scheduled", "confirmed", "rescheduled"];
 
-function PhoneCell({ phone }: { phone: string }) {
-  const [shown, setShown] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => setShown((s) => !s)}
-      aria-label={
-        shown
-          ? `Phone ${phone}. Hide full number`
-          : `Phone ending ${maskPhone(phone)}. Show full number`
-      }
-      className="text-muted min-h-8 rounded px-1 text-sm tabular-nums hover:text-[var(--color-ink)] focus-visible:outline-2 focus-visible:outline-[var(--color-accent)]"
-    >
-      {shown ? phone : maskPhone(phone)}
-    </button>
-  );
-}
-
 export function AppointmentList({
   appointments,
   doctors,
   services,
-  patients,
   tz,
   onCancel,
   onReschedule,
@@ -52,7 +29,6 @@ export function AppointmentList({
     return <EmptyState>{emptyText}</EmptyState>;
   }
   const service = new Map(services.map((s) => [s.id, s.name]));
-  const patient = new Map(patients.map((p) => [p.id, p]));
   const groups = groupByDoctor(appointments, doctors);
   return (
     <div className="flex flex-col gap-6">
@@ -69,7 +45,7 @@ export function AppointmentList({
           </h3>
           <ul className="border-line bg-surface divide-line divide-y rounded-card border">
             {g.items.map((a) => {
-              const p = patient.get(a.patientId);
+              const p = a.patient;
               return (
                 <li key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
                   <span className="w-20 text-[15px] font-medium tabular-nums">
@@ -80,7 +56,9 @@ export function AppointmentList({
                       {service.get(a.serviceId) ?? "Appointment"}
                       {p?.name ? <span className="text-muted"> · {p.name}</span> : null}
                     </span>
-                    {p ? <PhoneCell phone={p.phone} /> : null}
+                    {p ? (
+                      <span className="text-muted block text-sm tabular-nums">{p.phoneMasked}</span>
+                    ) : null}
                   </span>
                   <AppointmentStatusBadge status={a.status} />
                   {(onCancel || onReschedule) && ACTIVE.includes(a.status) ? (

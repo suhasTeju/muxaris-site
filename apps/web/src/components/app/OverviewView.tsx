@@ -1,6 +1,6 @@
 import Link from "next/link";
-import type { Appointment, Call, Doctor, Patient, Service } from "@muxaris/shared";
-import { computeKpis, type Section, type Usage } from "@/lib/dashboard";
+import type { Appointment, Call, Doctor, Service } from "@muxaris/shared";
+import { formatDuration, type OverviewStats, type Section, type Usage } from "@/lib/dashboard";
 import { AppointmentList } from "./AppointmentList";
 import { CallList } from "./CallList";
 import { KpiCard } from "./KpiCard";
@@ -9,7 +9,6 @@ export interface TodayAppointments {
   appointments: Appointment[];
   doctors: Doctor[];
   services: Service[];
-  patients: Patient[];
 }
 
 function Unavailable({ what }: { what: string }) {
@@ -25,44 +24,51 @@ const DASH = "–";
 export function OverviewView({
   clinicName,
   tz,
-  todayCalls,
+  stats,
   usage,
   appointments,
   recentCalls,
 }: {
   clinicName: string;
   tz: string;
-  todayCalls: Section<Call[]>;
+  stats: Section<OverviewStats>;
   usage: Section<Usage>;
   appointments: Section<TodayAppointments>;
   recentCalls: Section<Call[]>;
 }) {
-  const kpis = computeKpis({
-    calls: todayCalls.ok ? todayCalls.data : [],
-    usage: usage.ok ? usage.data : null,
-    tz,
-  });
+  const minutesUsed = usage.ok ? Math.ceil(usage.data.callSeconds / 60) : 0;
+  const minutesIncluded = usage.ok ? usage.data.includedCallMinutes : 0;
+  const usageRatio = minutesIncluded > 0 ? Math.min(1, minutesUsed / minutesIncluded) : 0;
+  const fail = stats.ok ? undefined : "Couldn't load";
   return (
     <div className="px-4 py-8 sm:px-8">
       <h1 className="font-display text-3xl">Overview</h1>
       <p className="text-muted mt-1">{clinicName}</p>
 
-      <section aria-label="Key numbers" className="mt-6 grid gap-4 sm:grid-cols-3">
+      <section aria-label="Key numbers" className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Calls today"
-          value={todayCalls.ok ? String(kpis.callsToday) : DASH}
-          hint={todayCalls.ok ? undefined : "Couldn't load"}
+          value={stats.ok ? String(stats.data.callsToday) : DASH}
+          hint={
+            fail ?? (stats.ok ? `Average ${formatDuration(stats.data.avgDurationS)}` : undefined)
+          }
         />
         <KpiCard
-          label="Booked today"
-          value={todayCalls.ok ? String(kpis.bookedToday) : DASH}
-          hint={todayCalls.ok ? "Calls that ended in a booking" : "Couldn't load"}
+          label="Booked by assistant"
+          value={stats.ok ? String(stats.data.bookedToday) : DASH}
+          hint={fail ?? "Calls that ended in a booking today"}
+        />
+        <KpiCard
+          label="Open callbacks"
+          value={stats.ok ? String(stats.data.openCallbacks) : DASH}
+          hint={fail ?? "View the callback queue"}
+          href="/app/callbacks"
         />
         {usage.ok ? (
           <KpiCard
             label="Minutes used this month"
-            value={`${kpis.minutesUsed} / ${kpis.minutesIncluded}`}
-            ratio={kpis.usageRatio}
+            value={`${minutesUsed} / ${minutesIncluded}`}
+            ratio={usageRatio}
             hint={`${usage.data.plan === "pilot" ? "Pilot" : "Standard"} plan`}
           />
         ) : (
@@ -88,7 +94,6 @@ export function OverviewView({
               appointments={appointments.data.appointments}
               doctors={appointments.data.doctors}
               services={appointments.data.services}
-              patients={appointments.data.patients}
               tz={tz}
             />
           ) : (

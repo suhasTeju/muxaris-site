@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Appointment, Doctor, Patient, Service } from "@muxaris/shared";
+import type { Appointment, Doctor, Service } from "@muxaris/shared";
 import { useApi } from "@/lib/api-client";
 import { addDays, dayRange, localDateKey } from "@/lib/dashboard";
 import { AppointmentList } from "./AppointmentList";
@@ -38,7 +38,6 @@ function AppointmentsInner() {
     appointments: Appointment[];
     doctors: Doctor[];
     services: Service[];
-    patients: Patient[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -59,16 +58,14 @@ function AppointmentsInner() {
       api<{ appointments: Appointment[] }>(`/v1/appointments?${new URLSearchParams({ from, to })}`),
       api<{ doctors: Doctor[] }>("/v1/doctors"),
       api<{ services: Service[] }>("/v1/services"),
-      api<{ patients: Patient[] }>("/v1/patients?limit=200"),
     ])
-      .then(([a, d, s, p]) => {
+      .then(([a, d, s]) => {
         if (!live) return;
         setLoaded({
           key: rangeKey,
           appointments: a.appointments,
           doctors: d.doctors,
           services: s.services,
-          patients: p.patients,
         });
       })
       .catch((e: unknown) => {
@@ -87,7 +84,6 @@ function AppointmentsInner() {
     appointments: data.appointments,
     doctors: data.doctors,
     services: data.services,
-    patients: data.patients,
     tz,
     onCancel: setCancelling,
     onReschedule: setRescheduling,

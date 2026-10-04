@@ -1,4 +1,9 @@
-import type { Appointment, Call, Doctor } from "@muxaris/shared";
+import {
+  maskPhone as maskPhoneShared,
+  type Appointment,
+  type Call,
+  type Doctor,
+} from "@muxaris/shared";
 
 export const DEFAULT_TZ = "Asia/Kolkata";
 export const CALLS_PAGE_SIZE = 50;
@@ -89,10 +94,9 @@ export function dayRange(dateKey: string, days: number, tz?: string) {
   };
 }
 
-/** "•••• 4321": only the last 4 digits of a phone number. */
+/** `+919876543210` -> `+91 •••• ••3210`. One implementation, shared with the API. */
 export function maskPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  return digits.length <= 4 ? digits : `•••• ${digits.slice(-4)}`;
+  return maskPhoneShared(phone);
 }
 
 export function formatDuration(seconds: number | null | undefined): string {
@@ -117,32 +121,14 @@ export interface Usage {
   plan: string;
 }
 
-export interface Kpis {
+/** GET /v1/stats/overview. */
+export interface OverviewStats {
+  date: string;
   callsToday: number;
   bookedToday: number;
-  minutesUsed: number;
-  minutesIncluded: number;
-  /** 0..1, capped. */
-  usageRatio: number;
-}
-
-export function computeKpis(input: {
-  calls: Pick<Call, "startedAt" | "outcome">[];
-  usage: Usage | null;
-  now?: Date;
-  tz?: string;
-}): Kpis {
-  const today = localDateKey(input.now ?? new Date(), input.tz);
-  const todays = input.calls.filter((c) => localDateKey(c.startedAt, input.tz) === today);
-  const minutesUsed = Math.ceil((input.usage?.callSeconds ?? 0) / 60);
-  const minutesIncluded = input.usage?.includedCallMinutes ?? 0;
-  return {
-    callsToday: todays.length,
-    bookedToday: todays.filter((c) => c.outcome === "booked").length,
-    minutesUsed,
-    minutesIncluded,
-    usageRatio: minutesIncluded > 0 ? Math.min(1, minutesUsed / minutesIncluded) : 0,
-  };
+  openCallbacks: number;
+  avgDurationS: number | null;
+  byOutcome: Record<string, number>;
 }
 
 export interface DoctorGroup {

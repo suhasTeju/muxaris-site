@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Appointment } from "@muxaris/shared";
 import { AppointmentList } from "./AppointmentList";
@@ -13,27 +13,35 @@ const appt = {
   serviceId: "s1",
   startsAt: "2026-10-06T04:00:00Z",
   status: "scheduled",
+  patient: { name: "Asha", phoneMasked: "+91 •••• ••3210" },
 } as unknown as Appointment;
 
-describe("AppointmentList phone reveal", () => {
-  it("click is the only toggle: hover and focus do not reveal, tap shows then hides", () => {
+describe("AppointmentList patient", () => {
+  it("renders the name and masked phone from the appointment DTO, no patients prop", () => {
     render(
       <AppointmentList
         appointments={[appt]}
         doctors={[{ id: "d1", name: "Dr. Rao", color: "#0f766e" }]}
         services={[{ id: "s1", name: "Cleaning" }]}
-        patients={[{ id: "p1", phone: "+919876543210", name: "Asha" }]}
         tz="Asia/Kolkata"
       />,
     );
-    const btn = screen.getByRole("button", { name: /Phone ending/ });
-    expect(btn.textContent).toBe("•••• 3210");
-    fireEvent.mouseEnter(btn);
-    fireEvent.focus(btn);
-    expect(btn.textContent).toBe("•••• 3210");
-    fireEvent.click(btn);
-    expect(btn.textContent).toBe("+919876543210");
-    fireEvent.click(btn);
-    expect(btn.textContent).toBe("•••• 3210");
+    expect(screen.getByText(/Asha/)).toBeTruthy();
+    expect(screen.getByText("+91 •••• ••3210")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("omits the patient line when the DTO has no patient", () => {
+    const bare = { ...appt, patient: undefined };
+    render(
+      <AppointmentList
+        appointments={[bare as unknown as Appointment]}
+        doctors={[{ id: "d1", name: "Dr. Rao", color: "#0f766e" }]}
+        services={[{ id: "s1", name: "Cleaning" }]}
+        tz="Asia/Kolkata"
+      />,
+    );
+    expect(screen.getByText("Cleaning")).toBeTruthy();
+    expect(screen.queryByText(/••••/)).toBeNull();
   });
 });

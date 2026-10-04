@@ -21,7 +21,7 @@ describe("CallList", () => {
       },
     ] as unknown as Call[];
     const { container } = render(<CallList calls={calls} tz="Asia/Kolkata" />);
-    expect(screen.getByText("•••• 3210")).toBeTruthy();
+    expect(screen.getByText("+91 •••• ••3210")).toBeTruthy();
     expect(container.textContent).not.toContain("9876543210");
   });
 });

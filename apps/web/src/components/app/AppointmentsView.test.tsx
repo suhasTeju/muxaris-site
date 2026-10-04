@@ -43,6 +43,7 @@ const appt = (id: string, serviceId: string) => ({
   startsAt: "2026-10-06T04:00:00Z",
   endsAt: "2026-10-06T04:30:00Z",
   status: "scheduled",
+  patient: { name: "Asha", phoneMasked: "+91 •••• ••3210" },
 });
 const catalog = (path: string) => {
   if (path === "/v1/doctors") return { doctors: [{ id: "d1", name: "Dr. Rao", color: null }] };
@@ -53,8 +54,6 @@ const catalog = (path: string) => {
         { id: "sB", name: "Cleaning B" },
       ],
     };
-  if (path.startsWith("/v1/patients"))
-    return { patients: [{ id: "p1", phone: "+919876543210", name: "Asha" }] };
   return null;
 };
 
@@ -130,7 +129,7 @@ describe("AppointmentsView", () => {
     );
     const { rerender } = render(<AppointmentsView />);
     await screen.findByText(/Cleaning A/);
-    expect(screen.getByRole("button", { name: /Phone ending/ })).toBeTruthy();
+    expect(screen.getByText("+91 •••• ••3210")).toBeTruthy();
 
     const pending = defer<unknown>();
     state.api.mockImplementation((path: string) =>
@@ -140,7 +139,7 @@ describe("AppointmentsView", () => {
     rerender(<AppointmentsView />);
     expect(screen.getByText("Loading appointments…")).toBeTruthy();
     expect(screen.queryByText(/Cleaning A/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /Phone ending/ })).toBeNull();
+    expect(screen.queryByText("+91 •••• ••3210")).toBeNull();
   });
 
   it("shows an inline error with Retry when the clinic profile fails, not endless loading", async () => {

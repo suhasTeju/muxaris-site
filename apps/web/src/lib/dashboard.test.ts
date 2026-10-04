@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { Appointment } from "@muxaris/shared";
 import {
   addDays,
-  computeKpis,
   dayRange,
   formatDuration,
   formatTime,
@@ -39,53 +38,7 @@ describe("time formatting", () => {
     expect(formatDuration(125)).toBe("2m 05s");
     expect(formatDuration(42)).toBe("42s");
     expect(formatDuration(null)).toBe("-");
-    expect(maskPhone("+919876543210")).toBe("•••• 3210");
-  });
-});
-
-describe("computeKpis", () => {
-  const now = new Date("2026-10-06T06:00:00Z");
-  const calls = [
-    { startedAt: "2026-10-06T03:00:00Z", outcome: "booked" as const },
-    { startedAt: "2026-10-06T05:00:00Z", outcome: "info" as const },
-    { startedAt: "2026-10-05T10:00:00Z", outcome: "booked" as const },
-  ];
-  it("counts today's calls and bookings in the clinic timezone", () => {
-    const k = computeKpis({
-      calls,
-      now,
-      tz: "Asia/Kolkata",
-      usage: {
-        month: "2026-10",
-        callSeconds: 610,
-        calls: 5,
-        includedCallMinutes: 100,
-        plan: "pilot",
-      },
-    });
-    expect(k).toMatchObject({
-      callsToday: 2,
-      bookedToday: 1,
-      minutesUsed: 11,
-      minutesIncluded: 100,
-    });
-    expect(k.usageRatio).toBeCloseTo(0.11);
-  });
-  it("handles missing usage and a local-midnight boundary", () => {
-    const k = computeKpis({
-      calls: [{ startedAt: "2026-10-05T19:00:00Z", outcome: "booked" }],
-      usage: null,
-      now,
-      tz: "Asia/Kolkata",
-    });
-    expect(k).toMatchObject({ callsToday: 1, bookedToday: 1, minutesUsed: 0, usageRatio: 0 });
-  });
-  it("caps the ratio at 1", () => {
-    const k = computeKpis({
-      calls: [],
-      usage: { month: "m", callSeconds: 99999, calls: 1, includedCallMinutes: 10, plan: "pilot" },
-    });
-    expect(k.usageRatio).toBe(1);
+    expect(maskPhone("+919876543210")).toBe("+91 •••• ••3210");
   });
 });
 

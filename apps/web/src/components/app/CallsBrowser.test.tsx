@@ -42,7 +42,7 @@ describe("CallsBrowser", () => {
     await waitFor(() => expect(api).toHaveBeenCalledWith("/v1/calls?limit=2&offset=2"));
     // "b" came back again (a call arrived between pages): shown once; short page means done.
     await waitFor(() => expect(screen.queryByRole("button", { name: "Load more" })).toBeNull());
-    expect(screen.getAllByText("•••• 0002")).toHaveLength(1);
+    expect(screen.getAllByText("+91 •••• ••0002")).toHaveLength(1);
   });
   it("shows an inline error and keeps Load more when the request fails", async () => {
     api.mockRejectedValue(new Error("boom"));
@@ -55,5 +55,22 @@ describe("CallsBrowser", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     expect((await screen.findByRole("alert")).textContent).toBe("boom");
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+  });
+  it("sends the active filters with every Load more page and explains an empty result", async () => {
+    api.mockResolvedValue({ calls: [] });
+    render(
+      <CallsBrowser
+        initial={[call("a", "+919000000001"), call("b", "+919000000002")]}
+        tz="Asia/Kolkata"
+        filters={{ outcome: "booked" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith("/v1/calls?outcome=booked&limit=2&offset=2"),
+    );
+    cleanup();
+    render(<CallsBrowser initial={[]} tz="Asia/Kolkata" filters={{ outcome: "booked" }} />);
+    expect(screen.getByText("No calls match these filters.")).toBeTruthy();
   });
 });
