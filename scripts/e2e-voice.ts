@@ -391,6 +391,15 @@ async function main(): Promise<void> {
     if (row.status !== "skipped" || row.error !== "no_contact")
       fail(`confirmation not skipped as no_contact (status=${row.status})`);
   }
+  // (k) usage: the settled call is in this month's ledger. Counts only.
+  const usage = await api("/v1/usage", token, {}, clinicId);
+  log(
+    `usage month=${usage.month} calls=${usage.calls} callSeconds=${usage.callSeconds} llmInputTokens=${usage.llmInputTokens} llmOutputTokens=${usage.llmOutputTokens}`,
+  );
+  if (!(usage.calls >= 1)) fail(`expected usage.calls >= 1, got ${usage.calls}`);
+  if (!(usage.callSeconds >= 1)) fail(`expected usage.callSeconds >= 1, got ${usage.callSeconds}`);
+  if (process.env["PROVIDER"] !== "mock" && !(usage.llmInputTokens > 0))
+    fail("expected usage.llmInputTokens > 0 with the real Bedrock provider");
   log(`assistant turns: ${assistantTurns.length}; tools: ${toolSeen.join(", ") || "none"}`);
   if (latencies.length) log(`latencies ms: ${latencies.join(", ")}`);
   const ok = Boolean(match);

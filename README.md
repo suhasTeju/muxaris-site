@@ -49,6 +49,13 @@ Notification keys (all optional locally; see "Notifications"):
 - `SMS_ENABLED`: `1` turns on SMS through SNS
 - `WHATSAPP_ENABLED`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`: WhatsApp Cloud API
 
+Billing keys (optional; billing is off unless `BILLING_ENABLED=1`, then all four Razorpay values are required; see "Plans and billing"):
+
+- `BILLING_ENABLED`: `1` turns on Razorpay subscriptions and the Upgrade button
+- `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`: Razorpay API credentials
+- `RAZORPAY_WEBHOOK_SECRET`: secret for the webhook signature
+- `RAZORPAY_PLAN_ID_STANDARD`: Razorpay plan id for the Standard plan
+
 `scripts/dev.sh` starts Postgres, builds the shared packages, runs migrations and the demo seed,
 then runs the API, voice gateway, web app and the notifier worker together (the notifier delivers
 every 10 s and queues reminders every 60 s). It fails early if `AUTH_MODE=cognito` and
@@ -92,6 +99,29 @@ To send real email with SES (secondary AWS account only):
 SMS and WhatsApp are not live. SMS to Indian numbers needs TRAI DLT registration and SNS sandbox
 exit; WhatsApp needs a Meta Business account and approved message templates. Both stay off until
 their flags are set.
+
+### Analytics and plans
+
+The dashboard has an **Analytics** page (call volume, outcomes and busiest hours over a date range of
+at most 92 days, bucketed by the clinic's local day) and a **Plan** section in Settings. The Plan
+section shows the current plan, this month's usage against the included call minutes, overage, the
+pilot end date (30 days after the clinic was created; shown only, never enforced) and, when billing
+is on, an Upgrade button for owners.
+
+### Plans and billing
+
+Billing is behind `BILLING_ENABLED=1`. Test the webhook locally (the command reads the secret from
+your environment; never paste real secrets into docs or commits):
+
+```bash
+BODY='{"event":"subscription.activated","payload":{"subscription":{"entity":{"id":"sub_x","status":"active","plan_id":"plan_x","current_end":null}}}}'
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$RAZORPAY_WEBHOOK_SECRET" | sed 's/^.* //')
+curl -s -X POST localhost:4000/webhooks/razorpay -H "Content-Type: application/json" -H "X-Razorpay-Signature: $SIG" --data "$BODY"
+```
+
+A subscription id that no clinic owns is answered `{"result":"ignored"}` without
+changing anything; create one through the Upgrade button first (or the API) to see a plan change.
+See [Architecture](docs/ARCHITECTURE.md#plans-usage-and-billing).
 
 ### Try the assistant
 

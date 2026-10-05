@@ -67,6 +67,36 @@ dashboard seeks with `turn - call.startedAt - recorderT0Ms`.
   callback number with `POST /v1/patients/:id/reveal-phone` and
   `POST /v1/callbacks/:id/reveal-phone`; each reveal is written to the audit log.
 
+## Plans, usage and billing
+
+- **Plans.** The `plans` table is seeded by migration 0005 from a single source, `PLAN_SEED`
+  (`packages/db/src/seed-data.ts`). Each clinic has a `plan` (`pilot` or `standard`).
+- **Usage ledger.** `usage_ledger` has one row per clinic and month (`clinic_id`, `month`,
+  `call_seconds`, `calls`, `llm_input_tokens`, `llm_output_tokens`). It is written when a call
+  settles and by the stale-call sweep, and keyed by the month the call started. `GET /v1/usage`
+  returns it as `UsageSummary` together with the plan, included minutes and overage.
+- **Gateway rule.** A session is rejected at zero remaining plan seconds (close code 4029,
+  `quota`). A call that has started is never cut off by the plan: it runs to `MAX_CALL_SECONDS`
+  and the overage is recorded in the ledger. Concurrency is limited per plan, per process.
+- **Pilot end.** Derived from `clinics.createdAt` plus 30 days (`pilotEndsAt`); displayed in
+  Settings and not enforced.
+- **Analytics.** `GET /v1/analytics/calls` and `GET /v1/analytics/usage` (members). Ranges are
+  bucketed by the clinic's local day (`localDayWindow`) and capped at 92 days.
+- **Billing.** Off unless `BILLING_ENABLED=1`. `GET /v1/billing` (members) returns whether billing
+  is enabled, the public key id and the latest subscription. `POST /v1/billing/subscriptions`
+  (owner only) starts a Standard subscription; a subscription still in `created` (checkout opened,
+  never completed) is resumable and returns the same subscription without calling Razorpay, while
+  `authenticated`, `active`, `pending` or `halted` raise 409. The Settings Plan section renders the
+  Upgrade button, which loads `checkout.razorpay.com/v1/checkout.js` on demand.
+- **Webhook.** `POST /webhooks/razorpay` is public, limited to 64 KB, and answers 404 when billing
+  is disabled. The HMAC signature is verified over the raw body. Idempotency is keyed by the SHA-256
+  of the signed raw body (Razorpay retries resend the identical body), stored as the
+  `billing_events` id; the event-id header is not trusted because it is outside the HMAC. Authentic
+  events with no subscription entity (`payment.*`, `order.*`) are answered 200
+  `{"result":"ignored"}` and not stored. The plan is decided by the subscription entity status, not
+  the event name, and updates `subscriptions` and the clinic plan in one transaction.
+- **Audit actions.** `clinic.settings.edit`, `clinic.subscription.start`, `clinic.plan.change`.
+
 ## Phase 5 IAM
 
 - **Gateway:** `s3:PutObject` on the calls bucket and `sqs:SendMessage` on the post-call queue.
@@ -79,6 +109,10 @@ dashboard seeks with `turn - call.startedAt - recorderT0Ms`.
   and `sns:Publish` only when `SMS_ENABLED` is set. EventBridge schedules: `deliverHandler`
   `rate(1 minute)`, `remindersHandler` `rate(15 minutes)`, and the post-call `sweepHandler`
   `rate(15 minutes)`.
+- **API (billing):** the task needs the Razorpay secrets from Secrets Manager (`muxaris/razorpay`).
+  The `/webhooks/razorpay` path must be reachable publicly on the ALB.
+- **Concurrency counters:** the per-process concurrency counters need a shared store once more
+  than one API or gateway task runs.
 - The event-source mapping must set `ReportBatchItemFailures` (the handler returns
   `batchItemFailures`). Add a CloudWatch alarm on the dead-letter queue depth.
 
