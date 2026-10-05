@@ -148,7 +148,7 @@ export async function supersedeQueuedForAppointment(
 
 /**
  * Reminder stamps to set when a confirmation or reschedule message was actually queued: a 24 h
- * reminder is redundant when the visit is at most 24 h away, a 2 h reminder when it is at most
+ * reminder is redundant when the visit is at most 24.5 h away, a 2 h reminder when it is at most
  * 2.5 h away. Without this the patient gets the confirmation and a reminder back to back.
  */
 export function reminderStampsForFreshConfirmation(
@@ -156,8 +156,10 @@ export function reminderStampsForFreshConfirmation(
   now: Date,
 ): { reminder24hSentAt?: Date; reminder2hSentAt?: Date } {
   const until = startsAt.getTime() - now.getTime();
+  // Half-hour margins: a visit just outside a window enters it before the next sweep,
+  // and the confirmation already carries the time.
   return {
-    ...(until <= 24 * H ? { reminder24hSentAt: now } : {}),
+    ...(until <= 24.5 * H ? { reminder24hSentAt: now } : {}),
     ...(until <= 2.5 * H ? { reminder2hSentAt: now } : {}),
   };
 }
