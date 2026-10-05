@@ -20,11 +20,12 @@ if [[ -z "$SUBNETS" || "$SUBNETS" == "None" || -z "$SG" || "$SG" == "None" ]]; t
 fi
 
 echo "→ run $FAMILY on cluster $CLUSTER"
-TASK_ARN="$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$FAMILY" --launch-type FARGATE \
+RES="$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$FAMILY" --launch-type FARGATE \
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=ENABLED}" \
-  --query 'tasks[0].taskArn' --output text)"
-if [[ -z "$TASK_ARN" || "$TASK_ARN" == "None" ]]; then
-  echo "ERROR: run-task returned no task ARN" >&2
+  --output json)"
+TASK_ARN="$(jq -r '.tasks[0].taskArn // empty' <<<"$RES")"
+if [[ -z "$TASK_ARN" ]]; then
+  echo "ERROR: run-task returned no task: $(jq -c '.failures' <<<"$RES")" >&2
   exit 1
 fi
 echo "task: $TASK_ARN"
@@ -34,7 +35,7 @@ CODE="$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
   --query 'tasks[0].containers[0].exitCode' --output text)"
 
 echo "→ last 50 log lines (/muxaris/migrate)"
-aws logs tail /muxaris/migrate --since 15m --format short 2>&1 | tail -n 50 || true
+aws logs tail /muxaris/migrate --since 10m --format short 2>&1 | tail -n 50 || true
 
 if [[ "$CODE" != "0" ]]; then
   echo "ERROR: migration task exited with code '$CODE'" >&2

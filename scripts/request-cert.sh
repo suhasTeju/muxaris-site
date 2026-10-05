@@ -5,7 +5,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ -f "$ROOT/.env" ]]; then set -a; source "$ROOT/.env"; set +a; fi
 source "$ROOT/scripts/lib/aws-guard.sh"
 
-ARN="$(aws acm request-certificate --domain-name api.muxaris.com \
+# ACM idempotency tokens expire after about an hour, so reuse an existing certificate first.
+ARN="$(aws acm list-certificates --region ap-south-1 \
+  --query "CertificateSummaryList[?DomainName=='api.muxaris.com'] | [0].CertificateArn" --output text)"
+[[ -n "$ARN" && "$ARN" != "None" ]] || ARN="$(aws acm request-certificate --domain-name api.muxaris.com \
   --subject-alternative-names voice.muxaris.com --validation-method DNS \
   --idempotency-token muxaris-services --region ap-south-1 \
   --query CertificateArn --output text)"

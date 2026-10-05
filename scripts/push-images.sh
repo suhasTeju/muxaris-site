@@ -12,12 +12,14 @@ aws ecr get-login-password | docker login --username AWS --password-stdin "$REGI
 
 bash "$ROOT/scripts/build-images.sh" "$TAG"
 
+# Tags are immutable: refuse before pushing anything when either tag already exists.
 for repo in muxaris-api muxaris-voice-gateway; do
-  # Tags are immutable: refuse early with a clear message when the tag already exists.
   if aws ecr describe-images --repository-name "$repo" --image-ids "imageTag=$TAG" >/dev/null 2>&1; then
     echo "ERROR: $repo:$TAG already exists in ECR (tags are immutable). Use a new tag or commit." >&2
     exit 1
   fi
+done
+for repo in muxaris-api muxaris-voice-gateway; do
   echo "→ push $repo:$TAG"
   docker tag "$repo:$TAG" "$REGISTRY/$repo:$TAG"
   if ! docker push "$REGISTRY/$repo:$TAG"; then
