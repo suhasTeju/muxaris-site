@@ -8,3 +8,4 @@ export * from "./services/calls.js";
 export * from "./services/demo.js";
 export * from "./auth/verifier.js";
 export * from "./services/usage.js";
+export * from "./notifications/templates.js";
