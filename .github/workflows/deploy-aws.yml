@@ -1,27 +1,70 @@
-# Deploys Muxaris to AWS (account 005533348545, ap-south-1) on every push to main.
+# Deploys Muxaris to AWS (account 005533348545, ap-south-1) after CI passes on main.
 #
 # NOT YET EXECUTED: this branch has never been pushed and main only holds the Astro site, so this
 # workflow has not run anywhere and is unverified. Expect to debug it on its first real run.
+#
+# Triggered by the `ci` workflow completing on main (a red CI never deploys), or by hand. A push
+# that only changed web, docs or Markdown is detected in the `changes` job and skips the deploy, so
+# it does not replace the gateway. (`paths-ignore` cannot apply to `workflow_run`.)
+#
+# Order: Data, Workers, Migrate, scripts/migrate.sh, then Services and Observability, so new code
+# never meets the old schema.
 #
 # Repository variables (Settings > Secrets and variables > Actions > Variables):
 #   AWS_DEPLOY_ROLE_ARN   output DeployRoleArn of the MuxarisCicd stack
 #   COGNITO_USER_POOL_ID  Cognito user pool id
 #   COGNITO_CLIENT_ID     Cognito app client id
-#   CERT_ARN              ACM certificate ARN for the ALB HTTPS listener
+#   CERT_ARN              ACM certificate ARN for the ALB HTTPS listener; when empty the deploy
+#                         runs with ALLOW_HTTP_ONLY=1 and the smoke test uses the ALB http URL
 #   NOTIFY_FROM_EMAIL     SES sender address
 #   ALARM_EMAIL           alarm notification recipient
 #   BILLING_ENABLED       "1" to enable billing, anything else for off
+#   TELEPHONY_PROVIDER    "twilio" to turn phone calls on, empty for off
 # No repository secrets are needed: AWS access is through GitHub OIDC (id-token: write).
 name: deploy-aws
+# workflow_run runs with this repo's OIDC identity, so the first job only accepts a green push CI run
+# from this repository's own main branch (a fork branch named main must not reach the deploy).
 on:
-  push:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
     branches: [main]
+  workflow_dispatch:
 permissions: {}
 concurrency:
   group: deploy-aws
   cancel-in-progress: false
 jobs:
+  changes:
+    # Decides whether the tested commit changed anything that needs a deploy.
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deploy: ${{ steps.diff.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+      - id: diff
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [[ -z "$HEAD_SHA" ]]; then echo "deploy=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          files="$(git diff --name-only "$HEAD_SHA^" "$HEAD_SHA")"
+          echo "$files"
+          # Anything outside web, docs, Markdown and netlify.toml needs a deploy.
+          if grep -qvE '^(apps/web/|docs/|netlify\.toml$)|\.md$' <<<"$files"; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "only web or docs changed: nothing to deploy"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
   deploy:
+    needs: changes
+    if: needs.changes.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -30,8 +73,19 @@ jobs:
       AWS_REGION: ap-south-1
       CDK_DEFAULT_ACCOUNT: "005533348545"
       CDK_DEFAULT_REGION: ap-south-1
+      COGNITO_USER_POOL_ID: ${{ vars.COGNITO_USER_POOL_ID }}
+      COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+      CERT_ARN: ${{ vars.CERT_ARN }}
+      # Only the deliberate HTTP-only state (no certificate yet) may deploy without CERT_ARN.
+      ALLOW_HTTP_ONLY: ${{ vars.CERT_ARN == '' && '1' || '' }}
+      NOTIFY_FROM_EMAIL: ${{ vars.NOTIFY_FROM_EMAIL }}
+      ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
+      BILLING_ENABLED: ${{ vars.BILLING_ENABLED }}
+      TELEPHONY_PROVIDER: ${{ vars.TELEPHONY_PROVIDER }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .nvmrc, cache: npm }
       - run: npm ci
@@ -43,10 +97,26 @@ jobs:
       - id: ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
       - id: tag
-        run: echo "value=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "value=${sha::7}" >> "$GITHUB_OUTPUT"
+      # Tags are immutable and builds are not reproducible: an image that already exists (from a
+      # run that failed later) is reused, so "Re-run jobs" works.
+      - id: exists
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          for repo in muxaris-api muxaris-voice-gateway; do
+            if aws ecr describe-images --repository-name "$repo" --image-ids "imageTag=$TAG" >/dev/null 2>&1; then
+              echo "$repo=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$repo=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build and push API image
+        if: steps.exists.outputs.muxaris-api != 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -56,6 +126,7 @@ jobs:
           build-args: GIT_SHA=${{ steps.tag.outputs.value }}
           tags: ${{ steps.ecr.outputs.registry }}/muxaris-api:${{ steps.tag.outputs.value }}
       - name: Build and push voice gateway image
+        if: steps.exists.outputs.muxaris-voice-gateway != 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -64,23 +135,30 @@ jobs:
           push: true
           build-args: GIT_SHA=${{ steps.tag.outputs.value }}
           tags: ${{ steps.ecr.outputs.registry }}/muxaris-voice-gateway:${{ steps.tag.outputs.value }}
-      - name: CDK deploy
+      - name: CDK deploy Data, Workers, Migrate
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.value }}
-          CERT_ARN: ${{ vars.CERT_ARN }}
-          COGNITO_USER_POOL_ID: ${{ vars.COGNITO_USER_POOL_ID }}
-          COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
-          NOTIFY_FROM_EMAIL: ${{ vars.NOTIFY_FROM_EMAIL }}
-          ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
-          BILLING_ENABLED: ${{ vars.BILLING_ENABLED }}
         run: >-
           npm run cdk -w @muxaris/infra -- deploy
-          MuxarisData MuxarisWorkers MuxarisServices MuxarisObservability
+          MuxarisData MuxarisWorkers MuxarisMigrate
           --require-approval never
       - name: Run migrations
         run: bash scripts/migrate.sh
+      - name: CDK deploy Services, Observability
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.value }}
+        run: >-
+          npm run cdk -w @muxaris/infra -- deploy
+          MuxarisServices MuxarisObservability
+          --require-approval never
       - name: Smoke test
         run: |
-          ALB_URL="http://$(aws cloudformation describe-stacks --stack-name MuxarisServices \
-            --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" --output text)"
-          bash scripts/smoke.sh "$ALB_URL"
+          # With a certificate port 80 is a bare redirect and the cert is for the real hostname,
+          # so smoke the public HTTPS URL; before the certificate exists use the ALB over http.
+          if [[ -n "${CERT_ARN}" ]]; then
+            BASE="https://api.muxaris.com"
+          else
+            BASE="http://$(aws cloudformation describe-stacks --stack-name MuxarisServices \
+              --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" --output text)"
+          fi
+          bash scripts/smoke.sh "$BASE"
