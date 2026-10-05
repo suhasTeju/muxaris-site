@@ -5,3 +5,4 @@ node_modules
 package-lock.json
 *.md
 packages/db/drizzle
+packages/db/src/rds-ca.ts
