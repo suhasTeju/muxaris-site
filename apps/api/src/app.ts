@@ -17,6 +17,7 @@ import { statsRoutes } from "./routes/stats.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { demoRequestRoutes } from "./routes/demo-requests.js";
+import { telephonyRoutes } from "./routes/telephony.js";
 import { billingRoutes, razorpayWebhook } from "./routes/billing.js";
 
 export type { AppDeps } from "./deps.js";
@@ -68,6 +69,10 @@ export function createApp(deps: AppDeps) {
   // Public webhook: HMAC-verified inside the route, small body cap.
   app.use("/webhooks/razorpay", bodyLimit({ maxSize: V1_BODY_MAX, onError: tooLarge }));
   app.route("/", razorpayWebhook(deps.db, billing));
+
+  // Public webhook: Twilio signature verified inside the route before any DB access.
+  app.use("/webhooks/telephony/twilio", bodyLimit({ maxSize: PUBLIC_BODY_MAX, onError: tooLarge }));
+  app.route("/", telephonyRoutes(deps.db, deps.telephony));
 
   const v1 = new Hono<AppEnv>();
   v1.use("*", bodyLimit({ maxSize: V1_BODY_MAX, onError: tooLarge }));

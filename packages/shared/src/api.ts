@@ -523,3 +523,11 @@ export interface BillingStatus {
     currentPeriodEnd: Iso | null;
   } | null;
 }
+
+export interface PhoneNumber {
+  id: string;
+  clinicId: string;
+  e164: string;
+  provider: "twilio" | "exotel";
+  createdAt: Iso;
+}

@@ -20,5 +20,6 @@ export type IdPrefix =
   | "to"
   | "hol"
   | "dem"
-  | "sub";
+  | "sub"
+  | "pn";
 export const newId = (prefix: IdPrefix) => `${prefix}_${nano()}`;

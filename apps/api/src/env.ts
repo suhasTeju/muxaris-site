@@ -15,6 +15,15 @@ export interface ApiEnv {
   storageDisabled: boolean;
   channels: ChannelFlags;
   billing: BillingEnv;
+  telephony: TelephonyEnv;
+}
+
+export interface TelephonyEnv {
+  provider: "none" | "twilio" | "exotel";
+  twilioAuthToken: string | null;
+  streamSecret: string | null;
+  publicApiUrl: string;
+  voiceWssUrl: string;
 }
 
 export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
@@ -36,6 +45,15 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
     throw new Error(
       "COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID are required when AUTH_MODE=cognito",
     );
+  const telProvider = src.TELEPHONY_PROVIDER?.trim() || "none";
+  if (telProvider !== "none" && telProvider !== "twilio" && telProvider !== "exotel")
+    throw new Error(`TELEPHONY_PROVIDER must be "twilio", "exotel" or empty, got "${telProvider}"`);
+  const twilioAuthToken = src.TWILIO_AUTH_TOKEN?.trim() || null;
+  const streamSecret = src.TELEPHONY_STREAM_SECRET?.trim() || null;
+  if (telProvider === "twilio" && (!twilioAuthToken || !streamSecret))
+    throw new Error(
+      "TWILIO_AUTH_TOKEN and TELEPHONY_STREAM_SECRET are required when TELEPHONY_PROVIDER=twilio",
+    );
   const sarvamKey = src.SARVAM_TTS_API_KEY?.trim() || null;
   const callsBucket = src.CALLS_BUCKET?.trim() ?? "";
   return {
@@ -44,6 +62,13 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
     storageDisabled: src.STORAGE_DISABLED === "1" || !callsBucket,
     channels: channelFlagsFromEnv(src),
     billing: billingFromEnv(src),
+    telephony: {
+      provider: telProvider,
+      twilioAuthToken,
+      streamSecret,
+      publicApiUrl: (src.PUBLIC_API_URL?.trim() || "http://localhost:4000").replace(/\/+$/, ""),
+      voiceWssUrl: (src.VOICE_WSS_URL?.trim() || "ws://localhost:4100").replace(/\/+$/, ""),
+    },
     port: Number(src.API_PORT ?? 4000),
     databaseUrl,
     sarvamKey,

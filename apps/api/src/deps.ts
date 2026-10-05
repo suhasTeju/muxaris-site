@@ -2,6 +2,7 @@ import type { Db } from "@muxaris/db";
 import type { BillingEnv, RazorpayClient, TokenVerifier } from "@muxaris/core";
 import type { BlobStore } from "@muxaris/storage";
 import type { ChannelFlags } from "@muxaris/shared";
+import type { TelephonyEnv } from "./env.js";
 
 export interface AppDeps {
   version: string;
@@ -13,6 +14,8 @@ export interface AppDeps {
   /** Outbound notification channels enabled in this deployment (default: none). */
   channels?: ChannelFlags;
   /** Razorpay billing; absent = disabled. */
+  /** Telephony webhook; absent = disabled (404). */
+  telephony?: TelephonyEnv;
   billing?: { env: BillingEnv; client: RazorpayClient | null };
 }
 

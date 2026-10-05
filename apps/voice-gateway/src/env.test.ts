@@ -81,4 +81,18 @@ describe("voice-gateway loadEnv", () => {
       true,
     );
   });
+  describe("telephony", () => {
+    it("defaults to none", () => {
+      expect(loadEnv(dev).telephony).toEqual({ provider: "none", streamSecret: null });
+    });
+    it("requires the stream secret when a provider is set", () => {
+      expect(() => loadEnv({ ...dev, TELEPHONY_PROVIDER: "twilio" })).toThrow(
+        /TELEPHONY_STREAM_SECRET/,
+      );
+      expect(
+        loadEnv({ ...dev, TELEPHONY_PROVIDER: "twilio", TELEPHONY_STREAM_SECRET: "s" }).telephony,
+      ).toEqual({ provider: "twilio", streamSecret: "s" });
+      expect(() => loadEnv({ ...dev, TELEPHONY_PROVIDER: "nope" })).toThrow(/TELEPHONY_PROVIDER/);
+    });
+  });
 });

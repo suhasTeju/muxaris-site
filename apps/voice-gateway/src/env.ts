@@ -20,6 +20,12 @@ export interface VoiceEnv {
   storageDisabled: boolean;
   /** Platform SMS / WhatsApp switches for outbox rows written by booking tools. */
   channels: ChannelFlags;
+  /** Phone transport; off unless TELEPHONY_PROVIDER=twilio. */
+  telephony: {
+    provider: "none" | "twilio" | "exotel";
+    /** Verifies the stream tokens minted by the API's inbound-call webhook. */
+    streamSecret: string | null;
+  };
 }
 
 /** Positive integer from an env var; throws at boot on empty, NaN, fractional or <= 0. */
@@ -63,6 +69,12 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): VoiceEnv {
   }
   const provider: "sarvam" | "mock" =
     forcedProvider === "mock" ? "mock" : sarvamKey ? "sarvam" : "mock";
+  const telProvider = src.TELEPHONY_PROVIDER?.trim() || "none";
+  if (telProvider !== "none" && telProvider !== "twilio" && telProvider !== "exotel")
+    throw new Error(`TELEPHONY_PROVIDER must be "twilio", "exotel" or empty, got "${telProvider}"`);
+  const streamSecret = src.TELEPHONY_STREAM_SECRET?.trim() || null;
+  if (telProvider !== "none" && !streamSecret)
+    throw new Error("TELEPHONY_STREAM_SECRET is required when TELEPHONY_PROVIDER is set");
   const callsBucket = src.CALLS_BUCKET?.trim() ?? "";
   return {
     port: positiveInt(src, "VOICE_PORT", 4100, 65535),
@@ -85,5 +97,6 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): VoiceEnv {
     postCallQueueUrl: src.POST_CALL_QUEUE_URL?.trim() ?? "",
     storageDisabled: src.STORAGE_DISABLED?.trim() === "1" || !callsBucket,
     channels: channelFlagsFromEnv(src),
+    telephony: { provider: telProvider, streamSecret },
   };
 }

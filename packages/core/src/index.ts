@@ -11,3 +11,5 @@ export * from "./services/usage.js";
 export * from "./notifications/index.js";
 export * from "./services/analytics.js";
 export * from "./billing/index.js";
+export * from "./services/phone-numbers.js";
+export * from "./services/stream-token.js";

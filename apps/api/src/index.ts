@@ -26,6 +26,7 @@ const app = createApp({
   db,
   verifier,
   channels: env.channels,
+  telephony: env.telephony,
   billing: {
     env: env.billing,
     client: env.billing.enabled

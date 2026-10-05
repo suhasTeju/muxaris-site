@@ -1,6 +1,7 @@
 import http from "node:http";
 import {
   AuthUnavailableError,
+  verifyStreamToken,
   createCall,
   finishCall,
   getClinicContext,
@@ -35,6 +36,7 @@ import type { LlmProvider, SttProvider, TtsProvider } from "./providers/types.js
 import { completeCall } from "./post-call.js";
 import { openingUtterances } from "./session/prompt.js";
 import { VoiceSession, type SessionLogger } from "./session/voice-session.js";
+import { TwilioMediaStreamTransport } from "./telephony/twilio-transport.js";
 import { WsTransport } from "./ws-transport.js";
 
 export interface Providers {
@@ -62,7 +64,12 @@ export type ServerEnv = Pick<
   | "cognitoUserPoolId"
   | "cognitoClientId"
 > &
-  Partial<Pick<VoiceEnv, "callsBucket" | "postCallQueueUrl" | "storageDisabled" | "channels">>;
+  Partial<
+    Pick<
+      VoiceEnv,
+      "callsBucket" | "postCallQueueUrl" | "storageDisabled" | "channels" | "telephony"
+    >
+  >;
 
 export interface ServerDeps {
   version: string;
@@ -87,6 +94,7 @@ export interface ServerDeps {
   heartbeatMs?: number;
 }
 
+const PHONE_PATH = "/v1/telephony/twilio";
 const START_TIMEOUT_MS = 5000;
 const SETUP_TIMEOUT_MS = 10_000;
 const SHUTDOWN_GRACE_MS = 10_000;
@@ -239,13 +247,15 @@ export function createServer(deps: ServerDeps): GatewayServer {
 
   server.on("upgrade", (req, socket, head) => {
     const path = (req.url ?? "").split("?")[0];
-    if (path !== "/v1/session") {
+    const phone = path === PHONE_PATH && env.telephony?.provider === "twilio";
+    if (path !== "/v1/session" && !phone) {
       socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;
     }
+    // Twilio sends no Origin header; phone sessions are authenticated by the stream token.
     const origin = req.headers.origin;
-    if (origin && !env.corsOrigins.includes(origin)) {
+    if (!phone && origin && !env.corsOrigins.includes(origin)) {
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;
@@ -259,7 +269,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   });
 
-  wss.on("connection", (ws) => {
+  wss.on("connection", (ws, req) => {
     ws.on("error", () => ws.terminate());
     if (shuttingDown || preAuth >= maxPreAuth) {
       log.warn("connection refused", { reason: shuttingDown ? "shutdown" : "preauth_cap" });
@@ -326,6 +336,72 @@ export function createServer(deps: ServerDeps): GatewayServer {
       clearTimers();
       dropPreAuth();
     });
+
+    if ((req.url ?? "").split("?")[0] === PHONE_PATH) {
+      const ctl: SetupCtl = {
+        gone: () => closed || expired || shuttingDown,
+        bound: <T>(p: Promise<T>): Promise<T> =>
+          Promise.race([
+            p,
+            expiredP.then((): never => {
+              throw new SetupExpired();
+            }),
+          ]),
+        done: () => {
+          clearTimers();
+          dropPreAuth();
+        },
+      };
+      const transport = new TwilioMediaStreamTransport(ws, { startTimeoutMs });
+      const refuse = (code: number, reason: string) => {
+        clearTimers();
+        if (ws.readyState === ws.OPEN) ws.close(code, reason);
+        else ws.terminate();
+      };
+      void (async () => {
+        let started;
+        try {
+          started = await ctl.bound(transport.onceStarted());
+        } catch (e) {
+          if (e instanceof SetupExpired || ctl.gone()) return;
+          refuse(4001, "auth_failed");
+          return;
+        }
+        clearTimeout(startTimer);
+        gotStart = true;
+        const secret = env.telephony?.streamSecret;
+        const claims = secret
+          ? verifyStreamToken(secret, started.token, Math.floor(now().getTime() / 1000))
+          : null;
+        // The token is bound to this call: a token minted for another CallSid is not accepted.
+        if (!claims || claims.callSid !== started.callSid) {
+          log.info("phone auth failed");
+          refuse(4001, "auth_failed");
+          return;
+        }
+        if (ctl.gone()) return;
+        const clinic = await ctl.bound(getClinicContext(db, claims.clinicId));
+        if (ctl.gone()) return;
+        const enabled = clinic.clinic.languages as string[];
+        const language = (enabled[0] ?? "en-IN") as LanguageCode;
+        await acceptSession(ws, ctl, {
+          clinic,
+          language,
+          channel: "phone",
+          // From the signed token, not the stream's own (unsigned) `from` parameter.
+          callerPhone: claims.from || undefined,
+          logFields: { callSid: started.callSid },
+          makeTransport: () => transport,
+        });
+      })()
+        .catch((e) => {
+          if (e instanceof SetupExpired) return;
+          log.error("phone session setup failed", safeErr(e));
+          if (!closed && !expired) refuse(1011, "internal");
+        })
+        .finally(ctl.done);
+      return;
+    }
 
     ws.once("message", (data, isBinary) => {
       clearTimeout(startTimer);
@@ -438,14 +514,53 @@ export function createServer(deps: ServerDeps): GatewayServer {
     }
     const clinic = await ctl.bound(getClinicContext(db, start.clinicId));
     if (ctl.gone()) return;
-    const clinicId = clinic.clinic.id;
     const enabled = clinic.clinic.languages as string[];
     const language = (start.language ?? enabled[0] ?? "en-IN") as LanguageCode;
     if (!(LANGUAGE_CODES as readonly string[]).includes(language) || !enabled.includes(language)) {
       rejectWith(ws, 4003, "forbidden", "language not enabled for this clinic");
       return;
     }
+    return acceptSession(ws, ctl, {
+      clinic,
+      language,
+      channel: "browser",
+      startedByUserId: user.id,
+      logFields: { sub: identity.sub },
+      makeTransport: () => {
+        const transport = new WsTransport(ws);
+        ws.off("message", ctl.hold);
+        for (const f of ctl.early) transport.feed(f.data, f.isBinary);
+        return transport;
+      },
+    });
+  }
 
+  type SetupCtl = {
+    gone: () => boolean;
+    bound: <T>(p: Promise<T>) => Promise<T>;
+    done: () => void;
+  };
+
+  /**
+   * Shared by browser and phone sessions: plan quota, concurrency, call row, VoiceSession.
+   * Callers have already authenticated the caller and loaded the clinic context.
+   */
+  async function acceptSession(
+    ws: WebSocket,
+    ctl: SetupCtl,
+    a: {
+      clinic: Awaited<ReturnType<typeof getClinicContext>>;
+      language: LanguageCode;
+      channel: "browser" | "phone";
+      callerPhone?: string | undefined;
+      startedByUserId?: string | undefined;
+      /** Extra fields for every log line of this call (e.g. the user sub; never a phone number). */
+      logFields: Record<string, unknown>;
+      makeTransport: () => WsTransport | TwilioMediaStreamTransport;
+    },
+  ): Promise<void> {
+    const { clinic, language } = a;
+    const clinicId = clinic.clinic.id;
     // --- usage cap
     // Phase 1 limits (parked): the ledger is written only when a call ends, so up to
     // maxConcurrentCalls simultaneous calls can each use the full remaining minutes (overshoot),
@@ -456,7 +571,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
     if (ctl.gone()) return;
     const planSecondsRemaining = plan.includedCallMinutes * 60 - used;
     if (planSecondsRemaining <= 0) {
-      log.info("quota exhausted", { sub: identity.sub, clinicId });
+      log.info("quota exhausted", { ...a.logFields, clinicId });
       rejectWith(ws, 4029, "quota", "monthly call minutes exhausted");
       return;
     }
@@ -467,7 +582,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
 
     // --- concurrency (check + reserve with no await in between)
     if (active >= env.maxSessions || (perClinic.get(clinicId) ?? 0) >= plan.maxConcurrentCalls) {
-      log.info("busy", { sub: identity.sub, clinicId });
+      log.info("busy", { ...a.logFields, clinicId });
       rejectWith(ws, 4029, "busy", "too many concurrent calls");
       return;
     }
@@ -482,7 +597,12 @@ export function createServer(deps: ServerDeps): GatewayServer {
 
     let call;
     const startedAt = now();
-    const callP = createCall(db, { clinicId, channel: "browser", startedByUserId: user.id });
+    const callP = createCall(db, {
+      clinicId,
+      channel: a.channel,
+      ...(a.startedByUserId ? { startedByUserId: a.startedByUserId } : {}),
+      ...(a.callerPhone ? { callerPhone: a.callerPhone } : {}),
+    });
     try {
       call = await ctl.bound(callP);
     } catch (e) {
@@ -503,9 +623,9 @@ export function createServer(deps: ServerDeps): GatewayServer {
     }
     const callId = call.id;
     const sessLog: SessionLogger = {
-      info: (m, f) => log.info(m, { callId, clinicId, sub: identity.sub, ...f }),
-      warn: (m, f) => log.warn(m, { callId, clinicId, sub: identity.sub, ...f }),
-      error: (m, f) => log.error(m, { callId, clinicId, sub: identity.sub, ...f }),
+      info: (m, f) => log.info(m, { callId, clinicId, ...a.logFields, ...f }),
+      warn: (m, f) => log.warn(m, { callId, clinicId, ...a.logFields, ...f }),
+      error: (m, f) => log.error(m, { callId, clinicId, ...a.logFields, ...f }),
     };
 
     if (ctl.gone()) {
@@ -531,9 +651,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
     // the call row in progress.
     let settleRef: ((finishRow: boolean) => void) | undefined;
     try {
-      const transport = new WsTransport(ws);
-      ws.off("message", ctl.hold);
-      for (const f of ctl.early) transport.feed(f.data, f.isBinary);
+      const transport = a.makeTransport();
 
       const wantRecording = clinicRecordCalls(clinic.clinic.settings) && storage.blobs !== null;
       const session = new VoiceSession({
@@ -552,8 +670,8 @@ export function createServer(deps: ServerDeps): GatewayServer {
           maxDurationS: callSecondsAllowed,
           secondsRemaining: callSecondsAllowed,
           recordCalls: wantRecording,
-          channel: "browser",
-          callerPhone: undefined,
+          channel: a.channel,
+          callerPhone: a.callerPhone,
           verifiedPhone: undefined,
           channels: env.channels ?? { sms: false, whatsapp: false },
         },

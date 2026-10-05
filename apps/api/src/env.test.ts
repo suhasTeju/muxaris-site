@@ -34,3 +34,27 @@ describe("loadEnv", () => {
     expect(() => loadEnv({ AUTH_MODE: "nope" })).toThrow(/AUTH_MODE/);
   });
 });
+
+describe("telephony env", () => {
+  const base = { DATABASE_URL: "postgres://x", AUTH_MODE: "dev" } as NodeJS.ProcessEnv;
+  it("defaults to none with local URLs", () => {
+    const t = loadEnv(base).telephony;
+    expect(t).toMatchObject({
+      provider: "none",
+      publicApiUrl: "http://localhost:4000",
+      voiceWssUrl: "ws://localhost:4100",
+    });
+  });
+  it("requires the auth token and stream secret for twilio", () => {
+    expect(() => loadEnv({ ...base, TELEPHONY_PROVIDER: "twilio" })).toThrow(/TWILIO_AUTH_TOKEN/);
+    expect(
+      loadEnv({
+        ...base,
+        TELEPHONY_PROVIDER: "twilio",
+        TWILIO_AUTH_TOKEN: "a",
+        TELEPHONY_STREAM_SECRET: "b",
+      }).telephony.provider,
+    ).toBe("twilio");
+    expect(() => loadEnv({ ...base, TELEPHONY_PROVIDER: "nope" })).toThrow();
+  });
+});
