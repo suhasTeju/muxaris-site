@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Appointment, Doctor, Service } from "@muxaris/shared";
 import { useApi } from "@/lib/api-client";
 import { addDays, dayRange, localDateKey } from "@/lib/dashboard";
@@ -40,6 +40,7 @@ function AppointmentsInner() {
     services: Service[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const outcomeBusy = useRef(new Set<string>());
   const [outcomeError, setOutcomeError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const rangeKey = `${date}|${mode}|${tz}`;
@@ -90,6 +91,8 @@ function AppointmentsInner() {
     onReschedule: setRescheduling,
   };
   async function outcome(a: Appointment, status: "completed" | "no_show") {
+    if (outcomeBusy.current.has(a.id)) return;
+    outcomeBusy.current.add(a.id);
     setOutcomeError(null);
     try {
       const r = await api<{ appointment: Appointment }>(
@@ -106,6 +109,8 @@ function AppointmentsInner() {
       );
     } catch (e) {
       setOutcomeError(e instanceof Error ? e.message : "Could not update the appointment");
+    } finally {
+      outcomeBusy.current.delete(a.id);
     }
   }
   const refresh = () => {

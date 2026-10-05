@@ -36,12 +36,12 @@ export function NotificationsView({
   const [buckets, setBuckets] = useState<Partial<Record<Tab, Bucket>>>({
     all: { items: initial, total: initialTotal },
   });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<Partial<Record<Tab, boolean>>>({});
+  const [errors, setErrors] = useState<Partial<Record<Tab, string>>>({});
 
   async function load(which: Tab, offset: number) {
-    setBusy(true);
-    setError(null);
+    setLoading((p) => ({ ...p, [which]: true }));
+    setErrors((p) => ({ ...p, [which]: undefined }));
     try {
       const qs = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
       if (which !== "all") qs.set("status", which);
@@ -49,7 +49,7 @@ export function NotificationsView({
         `/v1/notifications?${qs}`,
       );
       setBuckets((prev) => {
-        const old = prev[which]?.items ?? [];
+        const old = offset === 0 ? [] : (prev[which]?.items ?? []);
         const seen = new Set(old.map((n) => n.id));
         return {
           ...prev,
@@ -60,36 +60,45 @@ export function NotificationsView({
         };
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load messages");
+      const msg = e instanceof Error ? e.message : "Could not load messages";
+      setErrors((p) => ({ ...p, [which]: msg }));
     } finally {
-      setBusy(false);
+      setLoading((p) => ({ ...p, [which]: false }));
     }
   }
 
   function choose(next: Tab) {
     setTab(next);
-    if (!buckets[next] && !busy) void load(next, 0);
+    if (!buckets[next] && !loading[next]) void load(next, 0);
   }
 
+  // Keyed off the row's new status, never the visible tab, so a late retry cannot hit the wrong bucket.
   function changed(updated: Notification) {
-    // The row may belong in a different status bucket now; drop the other loaded buckets so they refetch.
     setBuckets((prev) => {
       const next: Partial<Record<Tab, Bucket>> = {};
-      if (prev.all) {
-        next.all = {
-          ...prev.all,
-          items: prev.all.items.map((n) => (n.id === updated.id ? updated : n)),
-        };
-      }
-      const cur = prev[tab];
-      if (tab !== "all" && cur) {
-        const items = cur.items.filter((n) => n.id !== updated.id);
-        next[tab] = { items, total: Math.max(0, cur.total - (cur.items.length - items.length)) };
+      for (const [key, b] of Object.entries(prev) as Array<[Tab, Bucket]>) {
+        const has = b.items.some((n) => n.id === updated.id);
+        if (key === "all") {
+          next[key] = { ...b, items: b.items.map((n) => (n.id === updated.id ? updated : n)) };
+        } else if (key === updated.status) {
+          next[key] = has
+            ? { ...b, items: b.items.map((n) => (n.id === updated.id ? updated : n)) }
+            : { items: [updated, ...b.items], total: b.total + 1 };
+        } else if (has) {
+          next[key] = {
+            items: b.items.filter((n) => n.id !== updated.id),
+            total: Math.max(0, b.total - 1),
+          };
+        } else {
+          next[key] = b;
+        }
       }
       return next;
     });
   }
 
+  const busy = loading[tab] === true;
+  const error = errors[tab] ?? null;
   const bucket = buckets[tab];
   return (
     <div>

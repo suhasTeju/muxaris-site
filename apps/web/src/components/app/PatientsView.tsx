@@ -3,34 +3,32 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { LANGUAGES, type Patient } from "@muxaris/shared";
+import type { Patient } from "@muxaris/shared";
 import { useApi } from "@/lib/api-client";
-import { formatDay } from "@/lib/dashboard";
+import { formatDay, languageLabel } from "@/lib/dashboard";
 import { EmptyState } from "./EmptyState";
 import { fieldClass, ghostBtn, Modal, primaryBtn } from "./Modal";
 import { PatientForm } from "./PatientForm";
 
 const PAGE = 50;
 
-export function languageLabel(code: string): string {
-  return LANGUAGES.find((l) => l.code === code)?.label ?? code;
-}
-
 /** Searchable patient list. The server renders the first page for the URL's `q`. */
 export function PatientsView({
   initial,
   initialTotal,
+  initialQuery = "",
   tz,
 }: {
   initial: Patient[];
   initialTotal: number;
+  initialQuery?: string;
   tz: string;
 }) {
   const api = useApi();
   const router = useRouter();
   const [items, setItems] = useState(initial);
   const [total, setTotal] = useState(initialTotal);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQuery);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);

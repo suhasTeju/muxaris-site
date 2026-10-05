@@ -4,11 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Doctor, Notification, PatientDetail, Service } from "@muxaris/shared";
-import { formatDateTime } from "@/lib/dashboard";
+import { formatDateTime, languageLabel } from "@/lib/dashboard";
 import { AppointmentStatusBadge, Badge, OutcomeBadge } from "./Badge";
 import { ghostBtn } from "./Modal";
 import { NotificationsTable } from "./NotificationsTable";
-import { languageLabel } from "./PatientsView";
 import { PatientForm } from "./PatientForm";
 import { RevealPhone } from "./RevealPhone";
 

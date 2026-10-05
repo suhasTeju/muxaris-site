@@ -4,6 +4,7 @@ import {
   type Call,
   type Doctor,
   type Notification,
+  LANGUAGES,
   SKIP_REASONS,
   type SkipReason,
 } from "@muxaris/shared";
@@ -188,6 +189,10 @@ export const CHANNEL_LABEL: Record<Notification["channel"], string> = {
 /** Human text for a notification's error column. */
 export function notificationErrorText(n: Pick<Notification, "status" | "error">): string {
   if (!n.error) return "";
-  if (n.error in SKIP_REASONS) return SKIP_REASONS[n.error as SkipReason];
+  if (Object.hasOwn(SKIP_REASONS, n.error)) return SKIP_REASONS[n.error as SkipReason];
   return n.status === "failed" ? `Failed: ${n.error}` : `Retrying after: ${n.error}`;
+}
+
+export function languageLabel(code: string): string {
+  return LANGUAGES.find((l) => l.code === code)?.label ?? code;
 }
