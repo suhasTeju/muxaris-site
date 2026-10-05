@@ -6,6 +6,7 @@ import {
   createDoctor,
   createPatient,
   createService,
+  queueAppointmentNotification,
   setWorkingHours,
 } from "@muxaris/core";
 import { deliverOnce } from "./deliver.js";
@@ -115,6 +116,34 @@ describe.skipIf(!reachable)("deliverOnce", () => {
     expect(after?.status).toBe("failed");
     expect(after?.attempts).toBe(5);
     expect(after?.error).toBe("MessageRejected");
+  });
+
+  it("skips a queued reminder whose appointment was cancelled behind the service's back", async () => {
+    const conf = await queuedRow("+919876700004", "four@example.test");
+    const appointmentId = conf.appointmentId!;
+    const reminder = await queueAppointmentNotification(db, {
+      clinicId: c.clinic.id,
+      appointmentId,
+      kind: "reminder_24h",
+      channels: { sms: false, whatsapp: false },
+    });
+    expect(reminder?.status).toBe("queued");
+    await db
+      .update(schema.appointments)
+      .set({ status: "cancelled" })
+      .where(eq(schema.appointments.id, appointmentId));
+    const email = new FakeProvider();
+    const r = await deliverOnce({ ...base(), providers: { email, sms: null, whatsapp: null } }, 50);
+    expect(r.skipped).toBeGreaterThanOrEqual(2);
+    expect(email.sent.some((s) => s.to === "four@example.test")).toBe(false);
+    const after = await db
+      .select()
+      .from(schema.notifications)
+      .where(eq(schema.notifications.appointmentId, appointmentId));
+    expect(after.map((n) => [n.template, n.status, n.error]).sort()).toEqual([
+      ["appointment_confirmed", "skipped", "superseded"],
+      ["reminder_24h", "skipped", "superseded"],
+    ]);
   });
 
   it("marks rows skipped when the channel has no provider", async () => {

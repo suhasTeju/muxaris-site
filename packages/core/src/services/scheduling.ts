@@ -2,7 +2,11 @@ import { addMinutes } from "date-fns";
 import { and, asc, eq, gt, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { schema, newId, type Db } from "@muxaris/db";
 import type { ChannelFlags } from "@muxaris/shared";
-import { queueAppointmentNotification } from "../notifications/outbox.js";
+import {
+  queueAppointmentNotification,
+  reminderStampsForFreshConfirmation,
+  supersedeQueuedForAppointment,
+} from "../notifications/outbox.js";
 import {
   findSlots,
   localDateString,
@@ -10,6 +14,7 @@ import {
   type Slot,
 } from "../scheduling/slot-engine.js";
 import { assertDateString, assertTimeString, atLocal } from "../scheduling/time.js";
+import { ACTIVE_APPOINTMENT_STATUSES } from "./appointment-status.js";
 import type { DbLike } from "./db-types.js";
 import { CoreError, slotUnavailable, type SlotUnavailableReason } from "./errors.js";
 import { upsertPatientByPhone } from "./patients.js";
@@ -28,7 +33,7 @@ const {
 
 export type Appointment = typeof appointments.$inferSelect;
 type AppointmentStatus = Appointment["status"];
-const ACTIVE: AppointmentStatus[] = ["scheduled", "confirmed", "rescheduled"];
+const ACTIVE = ACTIVE_APPOINTMENT_STATUSES;
 
 const hhmm = (t: string) => t.slice(0, 5);
 
@@ -619,6 +624,7 @@ export async function bookAppointment(
   },
 ): Promise<Appointment> {
   assertValidDate(input.startsAt, "startsAt");
+  const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     await lockDoctor(tx, input.clinicId, input.doctorId, { requireActive: true });
     const svc = await getClinicService(tx, input.clinicId, input.serviceId, {
@@ -629,7 +635,7 @@ export async function bookAppointment(
       doctorId: input.doctorId,
       service: svc,
       startsAt: input.startsAt,
-      now: input.now ?? new Date(),
+      now,
       allowOutsideRules: input.allowOutsideRules ?? false,
     });
     const endsAt = addMinutes(input.startsAt, svc.durationMin);
@@ -656,15 +662,37 @@ export async function bookAppointment(
         notes: input.notes ?? null,
       })
       .returning();
-    if (input.notify)
-      await queueAppointmentNotification(tx, {
-        clinicId: input.clinicId,
-        appointmentId: row!.id,
-        kind: "appointment_confirmed",
-        channels: input.notify,
-      });
-    return row!;
+    if (!input.notify) return row!;
+    return notifyAndStampReminders(tx, row!, "appointment_confirmed", input.notify, now);
   });
+}
+
+/**
+ * Queues the confirming message for a booking or reschedule; when it was actually queued (not
+ * skipped for lack of contact, not switched off), stamps the reminders it makes redundant.
+ */
+async function notifyAndStampReminders(
+  tx: DbLike,
+  apt: Appointment,
+  kind: "appointment_confirmed" | "appointment_rescheduled",
+  channels: ChannelFlags,
+  now: Date,
+): Promise<Appointment> {
+  const queued = await queueAppointmentNotification(tx, {
+    clinicId: apt.clinicId,
+    appointmentId: apt.id,
+    kind,
+    channels,
+  });
+  if (queued?.status !== "queued") return apt;
+  const stamps = reminderStampsForFreshConfirmation(apt.startsAt, now);
+  if (!stamps.reminder24hSentAt && !stamps.reminder2hSentAt) return apt;
+  const [stamped] = await tx
+    .update(appointments)
+    .set(stamps)
+    .where(and(eq(appointments.id, apt.id), eq(appointments.clinicId, apt.clinicId)))
+    .returning();
+  return stamped ?? apt;
 }
 
 export async function rescheduleAppointment(
@@ -683,6 +711,7 @@ export async function rescheduleAppointment(
   },
 ): Promise<Appointment> {
   assertValidDate(input.newStartsAt, "newStartsAt");
+  const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     const find = () =>
       tx
@@ -708,7 +737,7 @@ export async function rescheduleAppointment(
       doctorId: apt.doctorId,
       service: svc,
       startsAt: input.newStartsAt,
-      now: input.now ?? new Date(),
+      now,
       allowOutsideRules: input.allowOutsideRules ?? false,
     });
     const endsAt = addMinutes(input.newStartsAt, svc.durationMin);
@@ -738,14 +767,10 @@ export async function rescheduleAppointment(
       )
       .returning();
     if (!row) throw new CoreError("conflict", "appointment already finalised");
-    if (input.notify)
-      await queueAppointmentNotification(tx, {
-        clinicId: input.clinicId,
-        appointmentId: row.id,
-        kind: "appointment_rescheduled",
-        channels: input.notify,
-      });
-    return row;
+    // queued messages for the old time are wrong whether or not a new one is written
+    await supersedeQueuedForAppointment(tx, input.clinicId, row.id);
+    if (!input.notify) return row;
+    return notifyAndStampReminders(tx, row, "appointment_rescheduled", input.notify, now);
   });
 }
 
@@ -792,6 +817,8 @@ export async function cancelAppointment(
       )
       .returning();
     if (!row) throw new CoreError("conflict", "appointment already finalised");
+    // queued confirmations and reminders must not go out for a cancelled visit
+    await supersedeQueuedForAppointment(tx, input.clinicId, row.id);
     if (input.notify)
       await queueAppointmentNotification(tx, {
         clinicId: input.clinicId,

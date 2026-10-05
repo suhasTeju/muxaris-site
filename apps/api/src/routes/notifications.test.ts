@@ -149,4 +149,55 @@ d("notification routes", () => {
     const p3 = (await (await patch({ notifications: { confirmations: false } })).json()) as J;
     expect(p3.clinic.settings.notifications).toEqual({ reminders: false, confirmations: false });
   });
+
+  it("refuses to retry a confirmation for a cancelled appointment", async () => {
+    const doc = (await (
+      await call("POST", "/doctors", { sub: subs[1]!, clinic: cb, body: { name: "Dr Iyer" } })
+    ).json()) as J;
+    const svc = (await (
+      await call("POST", "/services", {
+        sub: subs[1]!,
+        clinic: cb,
+        body: { name: "Filling", durationMin: 30 },
+      })
+    ).json()) as J;
+    const t = new Date(Date.now() + 4 * 86_400_000);
+    t.setUTCHours(6, 0, 0, 0);
+    const booked = (await (
+      await call("POST", "/appointments", {
+        sub: subs[1]!,
+        clinic: cb,
+        body: {
+          patient: { phone: "9876543301", name: "Kiran" },
+          doctorId: doc.doctor.id,
+          serviceId: svc.service.id,
+          startsAt: t.toISOString(),
+          allowOutsideRules: true,
+        },
+      })
+    ).json()) as J;
+    const aptId = booked.appointment.id as string;
+    const cancelled = await call("POST", `/appointments/${aptId}/cancel`, {
+      sub: subs[1]!,
+      clinic: cb,
+      body: {},
+    });
+    expect(cancelled.status).toBe(200);
+    await call("PATCH", `/patients/${booked.appointment.patientId}`, {
+      sub: subs[1]!,
+      clinic: cb,
+      body: { email: "kiran@example.test" },
+    });
+    const l = (await (
+      await call("GET", `/notifications?appointmentId=${aptId}`, { sub: subs[1]!, clinic: cb })
+    ).json()) as J;
+    const conf = (l.notifications as J[]).find((n) => n.template === "appointment_confirmed");
+    expect(conf.status).toBe("skipped");
+    const retry = await call("POST", `/notifications/${conf.id}/retry`, {
+      sub: subs[1]!,
+      clinic: cb,
+    });
+    expect(retry.status).toBe(409);
+    expect(((await retry.json()) as J).error.code).toBe("conflict");
+  });
 });

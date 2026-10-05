@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { schema, newId, type Db } from "@muxaris/db";
 import {
+  NOTIFICATION_KINDS,
   clinicNotificationSettings,
   maskEmail,
   maskPhone,
@@ -8,6 +9,7 @@ import {
   type NotificationKind,
   type SkipReason,
 } from "@muxaris/shared";
+import { isActiveAppointmentStatus } from "../services/appointment-status.js";
 import type { DbLike } from "../services/db-types.js";
 import { CoreError } from "../services/errors.js";
 import { formatWhen, renderNotification, templateLanguage } from "./templates.js";
@@ -25,6 +27,11 @@ export function toNotificationView(row: NotificationRow): NotificationView {
 export const MAX_ATTEMPTS = 5;
 const DEFAULT_RETRY_MS = 5 * 60_000;
 const REMINDER_KINDS: NotificationKind[] = ["reminder_24h", "reminder_2h"];
+const H = 3600_000;
+
+function isNotificationKind(v: string): v is NotificationKind {
+  return (NOTIFICATION_KINDS as readonly string[]).includes(v);
+}
 
 /** Email when on file; else WhatsApp, then SMS when the platform flags allow; else nothing. */
 export function chooseChannel(
@@ -58,6 +65,22 @@ async function loadContext(tx: DbLike, clinicId: string, appointmentId: string) 
   return { apt, patient, doctorName: doctor?.name ?? "", serviceName: service?.name ?? "", clinic };
 }
 
+type AppointmentContext = Awaited<ReturnType<typeof loadContext>>;
+
+/** Renders a message from the appointment as it is now, in the patient's language. */
+function renderFromContext(ctx: AppointmentContext, kind: NotificationKind) {
+  const lang = templateLanguage(ctx.patient.preferredLanguage);
+  const payload = renderNotification(kind, lang, {
+    patientName: ctx.patient.name,
+    clinicName: ctx.clinic.name,
+    doctorName: ctx.doctorName,
+    serviceName: ctx.serviceName,
+    when: formatWhen(ctx.apt.startsAt, ctx.clinic.timezone, lang),
+    clinicPhone: ctx.clinic.phone,
+  });
+  return { lang, payload };
+}
+
 /**
  * Writes one fully rendered outbox row for an appointment event, inside the caller's transaction.
  * Returns null when the clinic has switched that kind of message off.
@@ -72,23 +95,12 @@ export async function queueAppointmentNotification(
     now?: Date;
   },
 ): Promise<NotificationRow | null> {
-  const { apt, patient, doctorName, serviceName, clinic } = await loadContext(
-    tx,
-    input.clinicId,
-    input.appointmentId,
-  );
+  const ctx = await loadContext(tx, input.clinicId, input.appointmentId);
+  const { apt, patient, clinic } = ctx;
   const settings = clinicNotificationSettings(clinic.settings);
   const isReminder = REMINDER_KINDS.includes(input.kind);
   if (isReminder ? !settings.reminders : !settings.confirmations) return null;
-  const lang = templateLanguage(patient.preferredLanguage);
-  const rendered = renderNotification(input.kind, lang, {
-    patientName: patient.name,
-    clinicName: clinic.name,
-    doctorName,
-    serviceName,
-    when: formatWhen(apt.startsAt, clinic.timezone, lang),
-    clinicPhone: clinic.phone,
-  });
+  const { lang, payload: rendered } = renderFromContext(ctx, input.kind);
   const target = chooseChannel(patient, input.channels);
   const [row] = await tx
     .insert(notifications)
@@ -108,6 +120,66 @@ export async function queueAppointmentNotification(
     })
     .returning();
   return row!;
+}
+
+/**
+ * Marks every still-queued message for an appointment `skipped/superseded`. Called inside the
+ * reschedule and cancel transactions before the new message is written, so a queued or retrying
+ * confirmation or reminder for the old time never goes out. Sent, failed and skipped rows are kept.
+ */
+export async function supersedeQueuedForAppointment(
+  tx: DbLike,
+  clinicId: string,
+  appointmentId: string,
+): Promise<number> {
+  const rows = await tx
+    .update(notifications)
+    .set({ status: "skipped", error: "superseded" satisfies SkipReason })
+    .where(
+      and(
+        eq(notifications.clinicId, clinicId),
+        eq(notifications.appointmentId, appointmentId),
+        eq(notifications.status, "queued"),
+      ),
+    )
+    .returning({ id: notifications.id });
+  return rows.length;
+}
+
+/**
+ * Reminder stamps to set when a confirmation or reschedule message was actually queued: a 24 h
+ * reminder is redundant when the visit is at most 24 h away, a 2 h reminder when it is at most
+ * 2.5 h away. Without this the patient gets the confirmation and a reminder back to back.
+ */
+export function reminderStampsForFreshConfirmation(
+  startsAt: Date,
+  now: Date,
+): { reminder24hSentAt?: Date; reminder2hSentAt?: Date } {
+  const until = startsAt.getTime() - now.getTime();
+  return {
+    ...(until <= 24 * H ? { reminder24hSentAt: now } : {}),
+    ...(until <= 2.5 * H ? { reminder2hSentAt: now } : {}),
+  };
+}
+
+/**
+ * Delivery-time backstop: false when the appointment is gone, no longer active or already
+ * started, so a stale message is not sent. A cancellation notice is always deliverable.
+ */
+export async function appointmentStillDeliverable(
+  db: DbLike,
+  clinicId: string,
+  appointmentId: string,
+  kind: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (kind === "appointment_cancelled") return true;
+  const [apt] = await db
+    .select({ status: appointments.status, startsAt: appointments.startsAt })
+    .from(appointments)
+    .where(and(eq(appointments.id, appointmentId), eq(appointments.clinicId, clinicId)));
+  if (!apt) return false;
+  return isActiveAppointmentStatus(apt.status) && apt.startsAt > now;
 }
 
 /** Claims up to `limit` due rows for one delivery attempt; a crashed worker's rows return after retryAfterMs. */
@@ -217,11 +289,17 @@ export async function listNotifications(
   return { notifications: rows.map(toNotificationView), total: Number(tot?.n ?? 0) };
 }
 
-/** Staff retry: re-picks the channel from the patient's current contact details. */
+/**
+ * Staff retry. For an appointment message, the subject, body, language and recipient are rendered
+ * again from the appointment and patient as they are now, so a retry never carries a stale time.
+ * Conflict when the message was superseded, the appointment is no longer active (except for a
+ * cancellation notice) or its time has passed.
+ */
 export async function retryNotification(
   db: Db,
-  input: { clinicId: string; notificationId: string; channels: ChannelFlags },
+  input: { clinicId: string; notificationId: string; channels: ChannelFlags; now?: Date },
 ): Promise<NotificationView> {
+  const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     const [row] = await tx
       .select()
@@ -233,24 +311,41 @@ export async function retryNotification(
     if (!row) throw new CoreError("not_found", "notification not found");
     if (row.status !== "failed" && row.status !== "skipped")
       throw new CoreError("conflict", `cannot retry a ${row.status} notification`);
-    const [patient] = row.patientId
-      ? await tx.select().from(patients).where(eq(patients.id, row.patientId))
-      : [];
+    if (row.error === ("superseded" satisfies SkipReason))
+      throw new CoreError("conflict", "this message was replaced by a later one");
+
+    let patient: { email: string | null; phone: string } | undefined;
+    let rendered: { language: string; payload: Record<string, unknown> } | null = null;
+    if (row.appointmentId) {
+      if (!isNotificationKind(row.template))
+        throw new CoreError("conflict", "this message can no longer be retried");
+      const ctx = await loadContext(tx, input.clinicId, row.appointmentId);
+      if (row.template !== "appointment_cancelled" && !isActiveAppointmentStatus(ctx.apt.status))
+        throw new CoreError("conflict", `the appointment is ${ctx.apt.status}`);
+      if (ctx.apt.startsAt <= now)
+        throw new CoreError("conflict", "the appointment time has passed");
+      const { lang, payload } = renderFromContext(ctx, row.template);
+      patient = ctx.patient;
+      rendered = { language: lang, payload };
+    } else if (row.patientId) {
+      [patient] = await tx.select().from(patients).where(eq(patients.id, row.patientId));
+    }
     const target = patient ? chooseChannel(patient, input.channels) : null;
     const [updated] = await tx
       .update(notifications)
-      .set(
-        target
+      .set({
+        ...(rendered ?? {}),
+        ...(target
           ? {
-              status: "queued",
+              status: "queued" as const,
               channel: target.channel,
               to: target.to,
               attempts: 0,
               nextAttemptAt: null,
               error: null,
             }
-          : { status: "skipped", error: "no_contact" satisfies SkipReason },
-      )
+          : { status: "skipped" as const, error: "no_contact" satisfies SkipReason }),
+      })
       .where(eq(notifications.id, row.id))
       .returning();
     return toNotificationView(updated!);

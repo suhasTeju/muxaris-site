@@ -1,11 +1,11 @@
 import { and, asc, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
 import type { ChannelFlags } from "@muxaris/shared";
+import { ACTIVE_APPOINTMENT_STATUSES } from "../services/appointment-status.js";
 import { queueAppointmentNotification } from "./outbox.js";
 
 const { appointments } = schema;
 const H = 3600_000;
-const ACTIVE = ["scheduled", "confirmed", "rescheduled"] as const;
 
 /**
  * 24 h reminder: starts in (20 h, 24 h], not yet stamped.
@@ -26,7 +26,7 @@ export async function enqueueDueReminders(
       .where(
         and(
           opts.clinicId ? eq(appointments.clinicId, opts.clinicId) : undefined,
-          inArray(appointments.status, [...ACTIVE]),
+          inArray(appointments.status, ACTIVE_APPOINTMENT_STATUSES),
           or(
             and(
               isNull(appointments.reminder24hSentAt),

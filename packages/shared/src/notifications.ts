@@ -35,6 +35,7 @@ export const SKIP_REASONS = {
   no_contact: "No email on file",
   channel_disabled: "Channel not enabled",
   clinic_disabled: "Turned off in Settings",
+  superseded: "Replaced by a later message",
 } as const;
 export type SkipReason = keyof typeof SKIP_REASONS;
 

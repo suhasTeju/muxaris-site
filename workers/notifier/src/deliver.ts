@@ -1,6 +1,7 @@
 import type { Db } from "@muxaris/db";
 import {
   MAX_ATTEMPTS,
+  appointmentStillDeliverable,
   claimQueuedNotifications,
   markNotificationFailed,
   markNotificationSent,
@@ -27,6 +28,20 @@ export async function deliverOnce(deps: DeliverDeps, limit = 20) {
   });
   const r = { sent: 0, retried: 0, failed: 0, skipped: 0 };
   for (const n of rows) {
+    // backstop: the appointment may have been cancelled, finished or moved past since queueing
+    if (
+      n.appointmentId &&
+      !(await appointmentStillDeliverable(deps.db, n.clinicId, n.appointmentId, n.template, now))
+    ) {
+      await markNotificationSkipped(deps.db, n.id, { reason: "superseded" });
+      r.skipped++;
+      deps.log("info", "notification skipped", {
+        id: n.id,
+        channel: n.channel,
+        reason: "superseded",
+      });
+      continue;
+    }
     const provider = deps.providers[n.channel];
     const payload = (n.payload ?? {}) as { subject?: string; body?: string };
     if (!provider || !n.to || !payload.body) {
