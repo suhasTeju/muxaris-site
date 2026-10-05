@@ -1,5 +1,5 @@
 import { createDb } from "@muxaris/db";
-import { purgeExpiredCalls, sweepStaleCalls } from "@muxaris/core";
+import { purgeExpiredCallbacks, purgeExpiredCalls, sweepStaleCalls } from "@muxaris/core";
 import { createSqsQueue } from "@muxaris/storage";
 import { postCallMessageSchema, type PostCallMessage } from "@muxaris/shared";
 import { createNovaAnalyser } from "./analyse.js";
@@ -43,6 +43,12 @@ async function sweep(): Promise<void> {
     if (p.purged > 0) log("info", "retention purge", { purged: p.purged });
   } catch (e) {
     log("error", "purge failed", { err: e instanceof Error ? e.name : "unknown" });
+  }
+  try {
+    const { purged: callbacksPurged } = await purgeExpiredCallbacks(db);
+    if (callbacksPurged > 0) log("info", "callback purge", { callbacksPurged });
+  } catch (e) {
+    log("error", "callback purge failed", { err: e instanceof Error ? e.name : "unknown" });
   }
 }
 

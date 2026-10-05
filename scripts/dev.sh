@@ -25,4 +25,5 @@ if [[ -n "${POST_CALL_QUEUE_URL:-}" ]]; then
 else
   echo "POST_CALL_QUEUE_URL is empty: post-call worker skipped"
 fi
+npm run dev -w @muxaris/worker-notifier &
 wait

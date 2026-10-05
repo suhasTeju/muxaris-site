@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "build:packages": "npm run build -w @muxaris/shared && npm run build -w @muxaris/db && npm run build -w @muxaris/core && npm run build -w @muxaris/voice-sdk && npm run build -w @muxaris/storage",
-    "build": "npm run build:packages && npm run build --if-present -w @muxaris/api -w @muxaris/voice-gateway -w @muxaris/worker-post-call -w @muxaris/web -w @muxaris/infra",
+    "build": "npm run build:packages && npm run build --if-present -w @muxaris/api -w @muxaris/voice-gateway -w @muxaris/worker-post-call -w @muxaris/worker-notifier -w @muxaris/web -w @muxaris/infra",
     "pretypecheck": "npm run build:packages",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
@@ -30,7 +30,7 @@
     "db:migrate": "npm run migrate -w @muxaris/db",
     "db:seed": "npm run seed -w @muxaris/db",
     "dev": "bash scripts/dev.sh",
-    "workers:dev": "npm run dev -w @muxaris/worker-post-call"
+    "workers:dev": "npm run dev -w @muxaris/worker-post-call & npm run dev -w @muxaris/worker-notifier & wait"
   },
   "devDependencies": {
     "@eslint/js": "^9",

@@ -1,5 +1,5 @@
 import { createDb } from "@muxaris/db";
-import { purgeExpiredCalls, sweepStaleCalls } from "@muxaris/core";
+import { purgeExpiredCallbacks, purgeExpiredCalls, sweepStaleCalls } from "@muxaris/core";
 import { postCallMessageSchema } from "@muxaris/shared";
 import { createNovaAnalyser } from "./analyse.js";
 import { loadEnv } from "./env.js";
@@ -46,5 +46,6 @@ export const sweepHandler = async () => {
   const { db } = getDeps();
   const swept = await sweepStaleCalls(db);
   const { purged } = await purgeExpiredCalls(db);
-  return { ...swept, purged };
+  const { purged: callbacksPurged } = await purgeExpiredCallbacks(db);
+  return { ...swept, purged, callbacksPurged };
 };
