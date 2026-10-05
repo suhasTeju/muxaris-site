@@ -46,9 +46,19 @@ if [[ "${1:-}" == "--secrets" ]]; then
   TMP="$(mktemp)"
   trap 'rm -f "$TMP"' EXIT
   chmod 600 "$TMP"
-  CURRENT="$(aws secretsmanager get-secret-value --secret-id muxaris/app --query SecretString \
-    --output text 2>/dev/null || true)"
-  if jq -e 'type == "object"' >/dev/null 2>&1 <<<"$CURRENT"; then BASE="$CURRENT"; else BASE="{}"; fi
+  # Merge into the current value. Only a missing secret (or a non-JSON placeholder) starts from {};
+  # any other read failure (throttling, AccessDenied) aborts rather than silently replacing the secret.
+  ERR="$(mktemp)"
+  if CURRENT="$(aws secretsmanager get-secret-value --secret-id muxaris/app --query SecretString \
+    --output text 2>"$ERR")"; then
+    if jq -e 'type == "object"' >/dev/null 2>&1 <<<"$CURRENT"; then BASE="$CURRENT"; else BASE="{}"; fi
+  elif grep -q ResourceNotFoundException "$ERR"; then
+    BASE="{}"
+  else
+    echo "ERROR: could not read muxaris/app (refusing to overwrite it): $(head -c 300 "$ERR")" >&2
+    rm -f "$ERR"; exit 1
+  fi
+  rm -f "$ERR"
   jq -cs '.[0] + .[1]' <(printf '%s' "$BASE") <(printf '%s' "$APP_JSON") >"$TMP"
   # The Data stack creates muxaris/app; fall back to create-secret if it does not exist yet.
   if ! aws secretsmanager put-secret-value --secret-id muxaris/app --secret-string "file://$TMP" >/dev/null 2>&1; then
