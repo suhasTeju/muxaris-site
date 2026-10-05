@@ -1,5 +1,7 @@
 import { App } from "aws-cdk-lib";
 import { AuthStack } from "../lib/auth-stack.js";
+import { DataStack } from "../lib/data-stack.js";
+import { NetworkStack } from "../lib/network-stack.js";
 import { NotifyStack } from "../lib/notify-stack.js";
 import { StorageStack } from "../lib/storage-stack.js";
 import { ACCOUNT, ENV } from "../lib/config.js";
@@ -24,4 +26,13 @@ new StorageStack(app, "MuxarisStorage", {
 new NotifyStack(app, "MuxarisNotify", {
   env: ENV,
   description: "Muxaris: SES domain identity for appointment email",
+});
+const network = new NetworkStack(app, "MuxarisNetwork", {
+  env: ENV,
+  description: "Muxaris VPC, subnets and security groups",
+});
+new DataStack(app, "MuxarisData", {
+  env: ENV,
+  network,
+  description: "Muxaris Postgres, secrets and container registries",
 });
