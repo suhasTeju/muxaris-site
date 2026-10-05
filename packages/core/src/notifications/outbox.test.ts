@@ -64,11 +64,26 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
     return d;
   };
 
+  // These tests exercise the outbox, not scheduling rules: bookings relative to "now" (+1.5 h,
+  // +22 h, +23 h, +5 d) use the dashboard override so they never fail on the test doctors' hours
+  // when the suite runs near midnight (conflicts are still checked).
+  /**
+   * `now + h` hours, pulled back by one hour when that start would fall in the 23:00 IST hour: a
+   * booking that ends after midnight is outside any working hours, even 00:00-24:00. Every offset
+   * used below keeps its reminder-window meaning after the pull-back.
+   */
+  const ahead = (now: Date, h: number) => {
+    const t = new Date(now.getTime() + h * H);
+    if ((t.getUTCHours() + 5.5) % 24 >= 23) t.setTime(t.getTime() - H);
+    return t;
+  };
+
   const book = (phone: string, startsAt: Date, name = "Ravi", forDoctor = doctorId) =>
     bookAppointment(db, {
       clinicId: a.clinic.id,
       patient: { phone, name },
       doctorId: forDoctor,
+      allowOutsideRules: true,
       serviceId,
       startsAt,
       source: "dashboard",
@@ -381,9 +396,9 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
     const now = new Date(minuteNow());
     // These patients have no email: their confirmations are skipped, so the reminders are not
     // pre-empted (see the next test for patients with an email on file).
-    const in23h = await book("+919876600005", new Date(now.getTime() + 23 * H));
-    const in90m = await book("+919876600006", new Date(now.getTime() + 1.5 * H));
-    const in10h = await book("+919876600007", new Date(now.getTime() + 10 * H));
+    const in23h = await book("+919876600005", ahead(now, 23));
+    const in90m = await book("+919876600006", ahead(now, 1.5));
+    const in10h = await book("+919876600007", ahead(now, 10));
     // the 90-minute booking was "created" 40 minutes ago so it is eligible
     await db
       .update(schema.appointments)
@@ -414,7 +429,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
       doc2.id,
       [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, startTime: "00:00", endTime: "23:59" })),
     );
-    const fresh = await book("+919876600008", new Date(now.getTime() + 1.5 * H), "Ravi", doc2.id);
+    const fresh = await book("+919876600008", ahead(now, 1.5), "Ravi", doc2.id);
     await enqueueDueReminders(db, { now, channels: OFF, clinicId: a.clinic.id });
     expect(await kinds(fresh.id)).toEqual(["appointment_confirmed"]);
   });
@@ -431,12 +446,12 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
     const templates = async (id: string) => (await rowsFor(id)).map((r) => r.template).sort();
     // email on file, booked 22 h ahead: confirmation queued, the 24 h reminder is pre-empted
     await withEmail("+919876600019", "near@example.test");
-    const near = await book("+919876600019", new Date(now.getTime() + 22 * H), "Ravi", doc3.id);
+    const near = await book("+919876600019", ahead(now, 22), "Ravi", doc3.id);
     expect((await rowOf(near.id, "appointment_confirmed"))?.status).toBe("queued");
     expect(near.reminder24hSentAt).not.toBeNull();
     expect(near.reminder2hSentAt).toBeNull();
     // no email, 23 h ahead: confirmation skipped, nothing stamped; the email is added afterwards
-    const late = await book("+919876600020", new Date(now.getTime() + 23 * H), "Ravi", doc3.id);
+    const late = await book("+919876600020", ahead(now, 23), "Ravi", doc3.id);
     expect(await rowOf(late.id, "appointment_confirmed")).toMatchObject({
       status: "skipped",
       error: "no_contact",
@@ -446,12 +461,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
     await updatePatient(db, a.clinic.id, late.patientId, { email: "late@example.test" });
     // email on file, booked days ago, rescheduled to 90 minutes ahead: both reminders pre-empted
     await withEmail("+919876600021", "moved@example.test");
-    const old = await book(
-      "+919876600021",
-      new Date(now.getTime() + 5 * 86_400_000),
-      "Ravi",
-      doc3.id,
-    );
+    const old = await book("+919876600021", dayAt(5), "Ravi", doc3.id);
     await db
       .update(schema.appointments)
       .set({ createdAt: new Date(now.getTime() - 2 * 86_400_000) })
@@ -459,7 +469,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
     const moved = await rescheduleAppointment(db, {
       clinicId: a.clinic.id,
       appointmentId: old.id,
-      newStartsAt: new Date(now.getTime() + 1.5 * H),
+      newStartsAt: ahead(now, 1.5),
       allowOutsideRules: true,
       notify: OFF,
     });
@@ -491,7 +501,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
       .set({ settings: { notifications: { reminders: false } } })
       .where(eq(schema.clinics.id, a.clinic.id));
     try {
-      const apt = await book("+919876600011", new Date(now.getTime() + 22 * H), "Ravi");
+      const apt = await book("+919876600011", ahead(now, 22), "Ravi");
       const r = await enqueueDueReminders(db, { now, channels: OFF, clinicId: a.clinic.id });
       expect(r).toEqual({ queued24h: 0, queued2h: 0, failed: 0 });
       const [row] = await db
