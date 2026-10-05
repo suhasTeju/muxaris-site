@@ -633,13 +633,13 @@ async function until<T>(
     expect(ready.planSecondsRemaining).toBeUndefined();
   });
 
-  it("ready.secondsRemaining is the plan quota left when it is below the cap", async () => {
+  it("a plan with 90 seconds left still allows a call capped only by MAX_CALL_SECONDS", async () => {
     await setUsed(plan.includedCallMinutes * 60 - 90);
     const { port } = await start({ env: { ...baseEnv, maxCallSeconds: 600 } });
     const c = await open(port);
     c.ws.send(startFrame(member));
     const ready = await c.waitFor((e) => e.type === "ready");
-    expect(ready.secondsRemaining).toBe(90);
+    expect(ready.secondsRemaining).toBe(600);
     expect(ready.planSecondsRemaining).toBe(90);
   });
 
@@ -722,6 +722,31 @@ async function until<T>(
       expect(blobs.objects.size).toBe(2);
       expect(queue.sent).toHaveLength(1);
       expect(queue.sent[0]).toMatchObject({ type: "call.completed", clinicId, callId });
+    });
+
+    it("settle records the call's LLM tokens in the usage ledger", async () => {
+      const stt = new FakeStt();
+      const llm = new FakeLlm({}, "Okay.", 0, [
+        [
+          { type: "text", text: "Hi there." },
+          { type: "done", stopReason: "end_turn", usage: { inputTokens: 120, outputTokens: 30 } },
+        ],
+      ]);
+      const { port } = await start({ providers: { stt, tts: new FakeTts(), llm } });
+      const { c, callId } = await talk(port, stt);
+      // Let the reply finish (its turn is persisted after the LLM stream's done).
+      await until(async () => {
+        const turns = await db
+          .select()
+          .from(schema.callTurns)
+          .where(eq(schema.callTurns.callId, callId));
+        // The greeting is the first assistant turn; the LLM reply is the second.
+        return turns.filter((t) => t.role === "assistant").length >= 2;
+      });
+      end(c);
+      await c.closed;
+      await until(async () => (await ledger())[0]?.calls === 1);
+      expect((await ledger())[0]).toMatchObject({ llmInputTokens: 120, llmOutputTokens: 30 });
     });
 
     it("recordCalls=false in clinic settings: transcript only, plain disclosure", async () => {

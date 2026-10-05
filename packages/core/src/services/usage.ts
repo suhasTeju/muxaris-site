@@ -35,20 +35,43 @@ export async function getUsedCallSeconds(db: Db, clinicId: string, month: string
   return row?.callSeconds ?? 0;
 }
 
+export const PILOT_DAYS = 30;
+/** When a pilot clinic's 30 days end. Shown, not enforced, until the clinic can pay. */
+export function pilotEndsAt(createdAt: Date): Date {
+  return new Date(createdAt.getTime() + PILOT_DAYS * 86_400_000);
+}
+
 /** Atomically adds one finished call to the month's ledger. */
 export async function recordCallUsage(
   db: Db,
-  input: { clinicId: string; month: string; callSeconds: number },
+  input: {
+    clinicId: string;
+    month: string;
+    callSeconds: number;
+    llmInputTokens?: number;
+    llmOutputTokens?: number;
+  },
 ) {
   const seconds = Math.max(0, Math.round(input.callSeconds));
+  const inTok = Math.max(0, Math.round(input.llmInputTokens ?? 0));
+  const outTok = Math.max(0, Math.round(input.llmOutputTokens ?? 0));
   await db
     .insert(usageLedger)
-    .values({ clinicId: input.clinicId, month: input.month, callSeconds: seconds, calls: 1 })
+    .values({
+      clinicId: input.clinicId,
+      month: input.month,
+      callSeconds: seconds,
+      calls: 1,
+      llmInputTokens: inTok,
+      llmOutputTokens: outTok,
+    })
     .onConflictDoUpdate({
       target: [usageLedger.clinicId, usageLedger.month],
       set: {
         callSeconds: sql`${usageLedger.callSeconds} + excluded.call_seconds`,
         calls: sql`${usageLedger.calls} + excluded.calls`,
+        llmInputTokens: sql`${usageLedger.llmInputTokens} + excluded.llm_input_tokens`,
+        llmOutputTokens: sql`${usageLedger.llmOutputTokens} + excluded.llm_output_tokens`,
       },
     });
 }

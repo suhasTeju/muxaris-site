@@ -256,6 +256,8 @@ export class VoiceSession {
   userTurns = 0;
   private assistantTurns = 0;
   private toolCalls = 0;
+  private llmInputTokens = 0;
+  private llmOutputTokens = 0;
   private latencies: number[] = [];
   private used = new Set<UsedOutcome>();
   private sttRecovering = false;
@@ -554,11 +556,18 @@ export class VoiceSession {
     return "info";
   }
 
+  /** LLM tokens used so far across all turns (for the usage ledger). */
+  get llmUsage(): { inputTokens: number; outputTokens: number } {
+    return { inputTokens: this.llmInputTokens, outputTokens: this.llmOutputTokens };
+  }
+
   private metrics(): Record<string, number> {
     const m: Record<string, number> = {
       userTurns: this.userTurns,
       assistantTurns: this.assistantTurns,
       toolCalls: this.toolCalls,
+      llmInputTokens: this.llmInputTokens,
+      llmOutputTokens: this.llmOutputTokens,
     };
     if (this.latencies.length) {
       m["avgLatencyMs"] = Math.round(
@@ -909,6 +918,10 @@ export class VoiceSession {
               calls.push({ id: d.id, name: d.name, input: d.input });
             } else if (d.type === "done") {
               stopReason = d.stopReason;
+              if (d.usage) {
+                this.llmInputTokens += d.usage.inputTokens;
+                this.llmOutputTokens += d.usage.outputTokens;
+              }
             }
           }
         } catch (e) {

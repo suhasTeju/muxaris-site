@@ -461,8 +461,9 @@ export function createServer(deps: ServerDeps): GatewayServer {
       return;
     }
 
-    // What this call may use: the per-call cap, or what is left of the monthly plan if lower.
-    const callSecondsAllowed = Math.min(env.maxCallSeconds, planSecondsRemaining);
+    // Pricing promise: a call that starts is never cut off by the plan; overage lands in the
+    // ledger and is billed per minute. Only the per-call cap limits an in-flight call.
+    const callSecondsAllowed = env.maxCallSeconds;
 
     // --- concurrency (check + reserve with no await in between)
     if (active >= env.maxSessions || (perClinic.get(clinicId) ?? 0) >= plan.maxConcurrentCalls) {
@@ -480,6 +481,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
     };
 
     let call;
+    const startedAt = now();
     const callP = createCall(db, { clinicId, channel: "browser", startedByUserId: user.id });
     try {
       call = await ctl.bound(callP);
@@ -598,8 +600,10 @@ export function createServer(deps: ServerDeps): GatewayServer {
             }
             await recordCallUsage(db, {
               clinicId,
-              month: usageMonth(clinic.clinic.timezone, now()),
+              month: usageMonth(clinic.clinic.timezone, startedAt),
               callSeconds: durationS,
+              llmInputTokens: session.llmUsage.inputTokens,
+              llmOutputTokens: session.llmUsage.outputTokens,
             });
           } catch (e) {
             sessLog.error("call settle failed", safeErr(e));
@@ -642,7 +646,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
         greeting: `${disclosure} ${greeting}`,
         language,
         secondsRemaining: callSecondsAllowed,
-        // Only when the plan, not the per-call cap, is the binding limit.
+        // Informational: the plan is nearly used up (calls are not cut off by it).
         ...(planSecondsRemaining < env.maxCallSeconds ? { planSecondsRemaining } : {}),
       });
       sessLog.info("session accepted", { language });

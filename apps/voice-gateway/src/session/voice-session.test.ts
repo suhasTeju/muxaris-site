@@ -210,6 +210,34 @@ afterAll(async () => {
     await db.delete(schema.appointments).where(eq(schema.appointments.clinicId, demo.clinicId));
   });
 
+  it("sums LLM token usage across turns into the call metrics", async () => {
+    const done = (inputTokens: number, outputTokens: number) =>
+      ({ type: "done", stopReason: "end_turn", usage: { inputTokens, outputTokens } }) as const;
+    const llm = new FakeLlm({}, "Okay.", 0, [
+      [{ type: "text", text: "One." }, done(120, 30)],
+      [{ type: "text", text: "Two." }, done(80, 20)],
+    ]);
+    const { transport, say, session, callId } = await setup({ llm });
+    say("first");
+    await waitFor(() => llm.requests.length === 1, 4000, "llm 1");
+    await waitFor(
+      () => transport.ofType("state").filter((s) => s.state === "listening").length >= 2,
+      4000,
+      "listening again",
+    );
+    say("second");
+    await waitFor(() => llm.requests.length === 2, 4000, "llm 2");
+    await waitFor(
+      () => transport.ofType("state").filter((s) => s.state === "listening").length >= 3,
+      4000,
+      "listening again 2",
+    );
+    await session.end("caller");
+    expect(session.llmUsage).toEqual({ inputTokens: 200, outputTokens: 50 });
+    const [row] = await db.select().from(schema.calls).where(eq(schema.calls.id, callId));
+    expect(row!.metrics).toMatchObject({ llmInputTokens: 200, llmOutputTokens: 50 });
+  });
+
   it("(e) max duration ends with reason timeout", async () => {
     const { transport, callId } = await setup({ llm: new FakeLlm(), maxDurationS: 0.05 });
     await waitFor(() => transport.ofType("ended").length === 1, 3000, "ended");

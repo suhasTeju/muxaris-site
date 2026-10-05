@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, sql, type SQL } from "dri
 import { schema, newId, type Db } from "@muxaris/db";
 import { maskPhone } from "@muxaris/shared";
 import { CoreError } from "./errors.js";
+import { recordCallUsage, usageMonth } from "./usage.js";
 
 const { calls, callTurns, callbacks, patients, auditLog } = schema;
 
@@ -504,7 +505,7 @@ export async function sweepStaleCalls(
     inProgressOlderThanMin?: number;
     recordingPendingOlderThanMin?: number;
   } = {},
-): Promise<{ abandoned: number; recordingsFailed: number }> {
+): Promise<{ abandoned: number; recordingsFailed: number; usageRecorded: number }> {
   const now = opts.now ?? new Date();
   const cutoff = (min: number) => new Date(now.getTime() - min * 60_000);
   const abandoned = await db
@@ -523,7 +524,27 @@ export async function sweepStaleCalls(
         lt(calls.startedAt, cutoff(opts.inProgressOlderThanMin ?? 30)),
       ),
     )
-    .returning({ id: calls.id });
+    .returning({
+      id: calls.id,
+      clinicId: calls.clinicId,
+      startedAt: calls.startedAt,
+      durationS: calls.durationS,
+    });
+  // Swept calls never reached the gateway's settle path, so record their usage here.
+  let usageRecorded = 0;
+  for (const row of abandoned) {
+    const [clinic] = await db
+      .select({ timezone: schema.clinics.timezone })
+      .from(schema.clinics)
+      .where(eq(schema.clinics.id, row.clinicId));
+    if (!clinic) continue;
+    await recordCallUsage(db, {
+      clinicId: row.clinicId,
+      month: usageMonth(clinic.timezone, row.startedAt),
+      callSeconds: row.durationS ?? 0,
+    });
+    usageRecorded++;
+  }
   const failed = await db
     .update(calls)
     .set({ recordingStatus: "failed" })
@@ -535,7 +556,7 @@ export async function sweepStaleCalls(
       ),
     )
     .returning({ id: calls.id });
-  return { abandoned: abandoned.length, recordingsFailed: failed.length };
+  return { abandoned: abandoned.length, recordingsFailed: failed.length, usageRecorded };
 }
 
 /**

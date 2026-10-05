@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { schema } from "@muxaris/db";
 import {
   appendTurn,
@@ -22,6 +22,7 @@ import {
   updateCallback,
 } from "./calls.js";
 import { createPatient } from "./patients.js";
+import { usageMonth } from "./usage.js";
 import { dbReachable, makeTestClinic, openDb, warnIfUnreachable } from "./test-support.js";
 
 const { db, pool } = openDb();
@@ -498,6 +499,31 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
         .where(eq(schema.calls.id, c.id));
       await sweepStaleCalls(db, { now });
       expect((await getCall(db, t.clinic.id, c.id)).call.durationS).toBe(1200);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("sweep records the swept call's usage in the ledger", async () => {
+    const t = await makeTestClinic(db, "cc-sweep-usage");
+    try {
+      const now = new Date();
+      const startedAt = new Date(now.getTime() - 40 * 60_000);
+      const c = await createCall(db, { clinicId: t.clinic.id, channel: "phone" });
+      await db.update(schema.calls).set({ startedAt }).where(eq(schema.calls.id, c.id));
+      const r = await sweepStaleCalls(db, { now, inProgressOlderThanMin: 30 });
+      expect(r.usageRecorded).toBeGreaterThanOrEqual(1);
+      const [row] = await db
+        .select()
+        .from(schema.usageLedger)
+        .where(
+          and(
+            eq(schema.usageLedger.clinicId, t.clinic.id),
+            eq(schema.usageLedger.month, usageMonth(t.clinic.timezone, startedAt)),
+          ),
+        );
+      expect(row!.calls).toBeGreaterThanOrEqual(1);
+      expect(row!.callSeconds).toBeGreaterThanOrEqual(1);
     } finally {
       await t.cleanup();
     }
