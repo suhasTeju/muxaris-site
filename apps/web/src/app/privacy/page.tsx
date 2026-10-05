@@ -40,6 +40,10 @@ export default function PrivacyPage() {
             details the caller gives to book it.
           </li>
           <li>
+            <strong>Contact details for messages.</strong> An email address, if the clinic records
+            one, used for appointment confirmations and reminders.
+          </li>
+          <li>
             <strong>Account details.</strong> For clinic staff: name, email and sign-in information,
             handled through Amazon Cognito.
           </li>
@@ -59,8 +63,10 @@ export default function PrivacyPage() {
         <h2>How we use it</h2>
         <p>
           Only to provide Muxaris: understanding the caller, booking and changing appointments,
-          showing the clinic its calls and bookings, keeping the service secure, and fixing faults.
-          We do not sell personal data. We do not use patient conversations for advertising.
+          showing the clinic its calls and bookings, keeping the service secure, and fixing faults,
+          and sending appointment confirmations and reminders by email to patients whose email the
+          clinic has recorded. We do not sell personal data. We do not use patient conversations for
+          advertising.
         </p>
 
         <h2>Where it is stored</h2>
@@ -76,8 +82,9 @@ export default function PrivacyPage() {
             <strong>Sarvam AI</strong> for speech recognition and speech synthesis.
           </li>
           <li>
-            <strong>Amazon Web Services</strong> for hosting, storage, authentication and the Amazon
-            Bedrock language models that power the assistant.
+            <strong>Amazon Web Services</strong> for hosting, storage, authentication, Amazon Simple
+            Email Service for appointment emails, and the Amazon Bedrock language models that power
+            the assistant.
           </li>
         </ul>
         <p>
@@ -91,7 +98,9 @@ export default function PrivacyPage() {
           and call summaries are deleted 90 days after the call by default. Clinics can turn
           recording off in Settings; calls are then transcribed but no audio is kept. Bookings and
           patient records are kept while the clinic’s account is active, and deleted or returned
-          after it ends, unless the law requires us to keep something longer.
+          after it ends, unless the law requires us to keep something longer. Appointment messages
+          are kept with the booking record. Callback requests lose their contact number 90 days
+          after they are closed.
         </p>
 
         <h2>Your rights and the DPDP Act, 2023</h2>

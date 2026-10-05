@@ -372,6 +372,25 @@ async function main(): Promise<void> {
   log(`appointments in window: ${appts.appointments.length}, ai_call: ${ai.length}`);
   if (match)
     log(`appointment FOUND id=${match.id} status=${match.status} startsAt=${match.startsAt}`);
+  // (j) notification: the assistant books without an email, so the confirmation is skipped.
+  // Only status and kind are printed, never recipient or body.
+  if (match) {
+    const notes = (
+      await api(
+        `/v1/notifications?appointmentId=${encodeURIComponent(match.id)}`,
+        token,
+        {},
+        clinicId,
+      )
+    ).notifications as any[];
+    const confirmed = notes.filter((n) => n.template === "appointment_confirmed");
+    const row = confirmed[0];
+    log(`notifications for booking: ${notes.length}; confirmation rows: ${confirmed.length}`);
+    if (confirmed.length !== 1) fail("expected exactly one appointment_confirmed notification");
+    log(`notification kind=${row.template} status=${row.status}`);
+    if (row.status !== "skipped" || row.error !== "no_contact")
+      fail(`confirmation not skipped as no_contact (status=${row.status})`);
+  }
   log(`assistant turns: ${assistantTurns.length}; tools: ${toolSeen.join(", ") || "none"}`);
   if (latencies.length) log(`latencies ms: ${latencies.join(", ")}`);
   const ok = Boolean(match);

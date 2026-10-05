@@ -41,8 +41,16 @@ Keys needed for a local run:
   AWS account.
 - `AUTH_MODE`: `cognito` (the default when unset). See "Auth modes".
 
+Notification keys (all optional locally; see "Notifications"):
+
+- `NOTIFY_PROVIDER`: `ses` or `console` (default `console` in dev)
+- `NOTIFY_FROM_EMAIL`: verified SES sender address
+- `SMS_ENABLED`: `1` turns on SMS through SNS
+- `WHATSAPP_ENABLED`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`: WhatsApp Cloud API
+
 `scripts/dev.sh` starts Postgres, builds the shared packages, runs migrations and the demo seed,
-then runs the API, voice gateway and web app together. It fails early if `AUTH_MODE=cognito` and
+then runs the API, voice gateway, web app and the notifier worker together (the notifier delivers
+every 10 s and queues reminders every 60 s). It fails early if `AUTH_MODE=cognito` and
 `COGNITO_USER_POOL_ID` or `COGNITO_CLIENT_ID` is empty.
 
 | Service       | Port |
@@ -58,6 +66,24 @@ Checks: `npm test`, `npm run typecheck` and `npm run lint`. Other root scripts: 
 `npm test` needs Postgres up and migrated (`npm run db:up && npm run db:migrate`). If the database
 is unreachable, the db suite is skipped with a warning instead of failing. `build`, `test` and
 `typecheck` first build the workspace packages (`npm run build:packages`).
+
+### Notifications
+
+Bookings write confirmation rows to an outbox, and the notifier worker delivers them and queues
+reminders 20 to 24 hours and 1 to 2 hours before an appointment. Email goes to patients with an
+email on file; without one the row is `skipped` ("No email on file"). Locally, open the
+Notifications page in the web app to see every message and its status. The console provider
+(`NOTIFY_PROVIDER` unset or `console`) logs counts only, never recipients.
+
+To send real email with SES (secondary AWS account only):
+
+1. Deploy the `MuxarisNotify` stack, which creates the `muxaris.com` identity.
+2. Add the three DKIM CNAME records it outputs at GoDaddy and wait for the identity to verify.
+3. Request SES production access, then set `NOTIFY_PROVIDER=ses` and `NOTIFY_FROM_EMAIL`.
+
+SMS and WhatsApp are not live. SMS to Indian numbers needs TRAI DLT registration and SNS sandbox
+exit; WhatsApp needs a Meta Business account and approved message templates. Both stay off until
+their flags are set.
 
 ### Try the assistant
 

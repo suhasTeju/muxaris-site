@@ -15,7 +15,7 @@ export const HERO = {
   eyebrow: "AI voice receptionist for Indian clinics",
   title: "Your front desk misses calls. Muxaris doesn’t.",
   sub: "Muxaris answers every call in the caller’s own language and books the appointment into your clinic’s real calendar, so it shows on your dashboard the moment it is made.",
-  note: "Browser calls today; clinic phone numbers, email and WhatsApp confirmations coming soon.",
+  note: "Browser calls today; clinic phone numbers and WhatsApp confirmations coming soon.",
 } as const;
 
 /** Real greeting clips, generated with the clinic greeting per language. */
@@ -74,7 +74,7 @@ export const STEPS = [
   {
     n: "03",
     title: "You see the booking",
-    text: "Bookings appear on your dashboard the moment they are made, with the call and transcript beside them. Email and WhatsApp confirmations are coming soon.",
+    text: "Bookings appear on your dashboard the moment they are made, with the call and transcript beside them. Patients with an email on file get a confirmation and reminders.",
     img: "/img/step-confirm.webp",
     alt: "A hand holding a phone showing a message confirmation",
   },
@@ -215,7 +215,7 @@ export const PLANS: readonly Plan[] = [
       "Up to 500 calls",
       "All 5 languages",
       "Booking against your calendar",
-      "Email confirmations (coming soon)",
+      "Email confirmations and reminders",
       "Dashboard and callbacks queue",
       "Hands-on set-up with us",
     ],
@@ -232,7 +232,7 @@ export const PLANS: readonly Plan[] = [
       "Up to 3,000 call-minutes",
       "Unlimited bookings",
       "5 languages",
-      "Email confirmations (coming soon)",
+      "Email confirmations and reminders",
       "Dashboard",
       "Callbacks queue",
     ],
