@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, sql, type SQL } from "drizzle-orm";
 import { schema, newId, type Db } from "@muxaris/db";
 import { maskPhone } from "@muxaris/shared";
 import { CoreError } from "./errors.js";
@@ -96,8 +96,16 @@ export async function finishCall(
      * from the call's start, so consumers can align turn times with the recording.
      */
     recorderStartedAt?: Date;
+    patientId?: string;
   },
 ) {
+  if (input.patientId) {
+    const [p] = await db
+      .select({ id: patients.id })
+      .from(patients)
+      .where(and(eq(patients.id, input.patientId), eq(patients.clinicId, input.clinicId)));
+    if (!p) throw new CoreError("not_found", "patient not found");
+  }
   const metrics =
     input.metrics || input.recorderStartedAt
       ? sql`${JSON.stringify(input.metrics ?? {})}::jsonb${
@@ -116,6 +124,7 @@ export async function finishCall(
       endedAt: new Date(),
       ...(input.languageDetected ? { languageDetected: input.languageDetected } : {}),
       ...(metrics ? { metrics } : {}),
+      ...(input.patientId ? { patientId: input.patientId } : {}),
     })
     .where(
       and(
@@ -573,4 +582,52 @@ export async function purgeExpiredCalls(
       .where(inArray(calls.id, ids));
     return { purged: ids.length };
   });
+}
+
+/** The only path that returns a raw callback phone. Audited; refused once the row is purged. */
+export async function revealCallbackPhone(
+  db: Db,
+  input: { clinicId: string; callbackId: string; actorUserId: string },
+): Promise<{ phone: string }> {
+  const [row] = await db
+    .select()
+    .from(callbacks)
+    .where(and(eq(callbacks.id, input.callbackId), eq(callbacks.clinicId, input.clinicId)));
+  if (!row) throw new CoreError("not_found", "callback not found");
+  if (row.purgedAt) throw new CoreError("conflict", "callback contact details were purged");
+  await db.insert(auditLog).values({
+    id: newId("aud"),
+    clinicId: input.clinicId,
+    actorId: input.actorUserId,
+    action: "callback.phone.reveal",
+    entity: "callback",
+    entityId: input.callbackId,
+    data: {},
+  });
+  return { phone: row.phone };
+}
+
+/** Done callbacks older than the retention window lose their contact details (phone masked in place). */
+export async function purgeExpiredCallbacks(
+  db: Db,
+  opts: { now?: Date; retentionDays?: number } = {},
+): Promise<{ purged: number }> {
+  const now = opts.now ?? new Date();
+  const cutoff = new Date(now.getTime() - (opts.retentionDays ?? 90) * 86_400_000);
+  const due = await db
+    .select({ id: callbacks.id, phone: callbacks.phone })
+    .from(callbacks)
+    .where(
+      and(eq(callbacks.status, "done"), lt(callbacks.doneAt, cutoff), isNull(callbacks.purgedAt)),
+    )
+    .limit(500);
+  let purged = 0;
+  for (const row of due) {
+    await db
+      .update(callbacks)
+      .set({ phone: maskPhone(row.phone), reason: "purged", note: null, purgedAt: now })
+      .where(and(eq(callbacks.id, row.id), isNull(callbacks.purgedAt)));
+    purged++;
+  }
+  return { purged };
 }

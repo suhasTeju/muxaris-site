@@ -13,12 +13,15 @@ import {
   listCalls,
   markCallAnalysed,
   purgeExpiredCalls,
+  purgeExpiredCallbacks,
+  revealCallbackPhone,
   setCallOutcomeByStaff,
   setCallRecording,
   sweepStaleCalls,
   updateCallAnalysis,
   updateCallback,
 } from "./calls.js";
+import { createPatient } from "./patients.js";
 import { dbReachable, makeTestClinic, openDb, warnIfUnreachable } from "./test-support.js";
 
 const { db, pool } = openDb();
@@ -570,5 +573,68 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
     } finally {
       await t.cleanup();
     }
+  });
+
+  it("revealCallbackPhone audits and refuses after the 90-day purge", async () => {
+    const cb = await createCallback(db, {
+      clinicId: a.clinic.id,
+      phone: "+919876500001",
+      reason: "call back",
+    });
+    const r = await revealCallbackPhone(db, {
+      clinicId: a.clinic.id,
+      callbackId: cb.id,
+      actorUserId: a.user.id,
+    });
+    expect(r.phone).toBe("+919876500001");
+    await updateCallback(db, { clinicId: a.clinic.id, callbackId: cb.id, status: "done" });
+    const later = new Date(Date.now() + 91 * 86_400_000);
+    expect((await purgeExpiredCallbacks(db, { now: later })).purged).toBeGreaterThanOrEqual(1);
+    const [row] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, cb.id));
+    expect(row?.phone).toBe("+91 •••• ••0001");
+    expect(row?.purgedAt).not.toBeNull();
+    expect(row?.reason).toBe("purged");
+    await expect(
+      revealCallbackPhone(db, { clinicId: a.clinic.id, callbackId: cb.id, actorUserId: a.user.id }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    // open callbacks are never purged
+    const open = await createCallback(db, {
+      clinicId: a.clinic.id,
+      phone: "+919876500002",
+      reason: "x",
+    });
+    await purgeExpiredCallbacks(db, { now: later });
+    const [o] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, open.id));
+    expect(o?.purgedAt).toBeNull();
+  });
+
+  it("finishCall links the patient when given", async () => {
+    const p = await createPatient(db, a.clinic.id, { phone: "+919876500003" });
+    const call = await createCall(db, { clinicId: a.clinic.id, channel: "browser" });
+    await finishCall(db, {
+      callId: call.id,
+      clinicId: a.clinic.id,
+      status: "completed",
+      durationS: 10,
+      patientId: p.id,
+    });
+    const { call: got } = await getCall(db, a.clinic.id, call.id);
+    expect(got.patientId).toBe(p.id);
+  });
+
+  it("finishCall refuses a patient from another clinic", async () => {
+    const other = await createPatient(db, b.clinic.id, { phone: "+919876500004" });
+    const call = await createCall(db, { clinicId: a.clinic.id, channel: "browser" });
+    await expect(
+      finishCall(db, {
+        callId: call.id,
+        clinicId: a.clinic.id,
+        status: "completed",
+        durationS: 10,
+        patientId: other.id,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    const { call: got } = await getCall(db, a.clinic.id, call.id);
+    expect(got.patientId).toBeNull();
   });
 });

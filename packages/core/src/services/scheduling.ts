@@ -21,6 +21,7 @@ const {
   services,
   slotRules,
   appointments,
+  auditLog,
 } = schema;
 
 export type Appointment = typeof appointments.$inferSelect;
@@ -708,7 +709,13 @@ export async function rescheduleAppointment(
     });
     const [row] = await tx
       .update(appointments)
-      .set({ startsAt: input.newStartsAt, endsAt, status: "rescheduled" })
+      .set({
+        startsAt: input.newStartsAt,
+        endsAt,
+        status: "rescheduled",
+        reminder24hSentAt: null,
+        reminder2hSentAt: null,
+      })
       .where(
         and(
           eq(appointments.id, apt.id),
@@ -790,4 +797,47 @@ export async function listAppointments(
     .orderBy(asc(appointments.startsAt), asc(appointments.id))
     .limit(input.limit ?? 5000)
     .offset(input.offset ?? 0);
+}
+
+/** Staff marks a past appointment completed or no-show. Audited; never for future or finalised rows. */
+export async function setAppointmentOutcome(
+  db: Db,
+  input: {
+    clinicId: string;
+    appointmentId: string;
+    status: "completed" | "no_show";
+    actorUserId: string;
+    now?: Date;
+  },
+): Promise<Appointment> {
+  const now = input.now ?? new Date();
+  return db.transaction(async (tx) => {
+    const [apt] = await tx
+      .select()
+      .from(appointments)
+      .where(
+        and(eq(appointments.id, input.appointmentId), eq(appointments.clinicId, input.clinicId)),
+      )
+      .for("update");
+    if (!apt) throw new CoreError("not_found", "appointment not found");
+    if (!ACTIVE.includes(apt.status))
+      throw new CoreError("conflict", `cannot change a ${apt.status} appointment`);
+    if (apt.startsAt.getTime() > now.getTime())
+      throw new CoreError("conflict", "appointment has not started yet");
+    const [row] = await tx
+      .update(appointments)
+      .set({ status: input.status })
+      .where(eq(appointments.id, apt.id))
+      .returning();
+    await tx.insert(auditLog).values({
+      id: newId("aud"),
+      clinicId: input.clinicId,
+      actorId: input.actorUserId,
+      action: "appointment.status.edit",
+      entity: "appointment",
+      entityId: apt.id,
+      data: { from: apt.status, to: input.status },
+    });
+    return row!;
+  });
 }
