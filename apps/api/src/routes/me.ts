@@ -5,11 +5,13 @@ import {
   getMembership,
   listMemberships,
   usageMonth,
+  getPlanForClinic,
+  pilotEndsAt,
   CoreError,
 } from "@muxaris/core";
 import { schema } from "@muxaris/db";
 import { and, eq } from "drizzle-orm";
-import { clinicSettingsPatchBody, createClinicBody } from "@muxaris/shared";
+import { clinicSettingsPatchBody, createClinicBody, type UsageSummary } from "@muxaris/shared";
 import type { AppEnv } from "../deps.js";
 import { v } from "../validate.js";
 import { requireClinic } from "../auth/middleware.js";
@@ -97,20 +99,29 @@ export function meRoutes(db: Db) {
     const [clinic] = await db.select().from(schema.clinics).where(eq(schema.clinics.id, clinicId));
     if (!clinic) throw new CoreError("not_found", "clinic not found");
     const month = usageMonth(clinic.timezone);
-    const [[ledger], [plan]] = await Promise.all([
+    const [[ledger], plan] = await Promise.all([
       db
         .select()
         .from(schema.usageLedger)
         .where(and(eq(schema.usageLedger.clinicId, clinicId), eq(schema.usageLedger.month, month))),
-      db.select().from(schema.plans).where(eq(schema.plans.id, clinic.plan)),
+      getPlanForClinic(db, clinicId),
     ]);
-    return c.json({
+    const callSeconds = ledger?.callSeconds ?? 0;
+    const body: UsageSummary = {
       month,
-      callSeconds: ledger?.callSeconds ?? 0,
+      callSeconds,
       calls: ledger?.calls ?? 0,
-      includedCallMinutes: plan?.includedCallMinutes ?? 0,
+      llmInputTokens: ledger?.llmInputTokens ?? 0,
+      llmOutputTokens: ledger?.llmOutputTokens ?? 0,
+      includedCallMinutes: plan.includedCallMinutes,
+      overageSeconds: Math.max(0, callSeconds - plan.includedCallMinutes * 60),
       plan: clinic.plan,
-    });
+      planName: plan.name,
+      priceInrMonthly: plan.priceInrMonthly,
+      maxConcurrentCalls: plan.maxConcurrentCalls,
+      pilotEndsAt: clinic.plan === "pilot" ? pilotEndsAt(clinic.createdAt).toISOString() : null,
+    };
+    return c.json(body);
   });
   return r;
 }

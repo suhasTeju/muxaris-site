@@ -7,6 +7,7 @@ import {
   LANGUAGES,
   SKIP_REASONS,
   type SkipReason,
+  type UsageSummary,
 } from "@muxaris/shared";
 
 export const DEFAULT_TZ = "Asia/Kolkata";
@@ -117,13 +118,7 @@ export function toSection<T>(r: PromiseSettledResult<T>): Section<T> {
   return r.status === "fulfilled" ? { ok: true, data: r.value } : { ok: false };
 }
 
-export interface Usage {
-  month: string;
-  callSeconds: number;
-  calls: number;
-  includedCallMinutes: number;
-  plan: string;
-}
+export type Usage = UsageSummary;
 
 /** GET /v1/stats/overview. */
 export interface OverviewStats {

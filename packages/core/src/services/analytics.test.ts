@@ -93,6 +93,10 @@ describe("localDayWindow", () => {
     }
   });
 
+  it("returns no months when asked for fewer than one", async () => {
+    expect(await getMonthlyUsage(db, c.clinic.id, 0)).toEqual([]);
+  });
+
   it("zero-fills monthly usage, oldest first", async () => {
     await recordCallUsage(db, { clinicId: c.clinic.id, month: "2026-07", callSeconds: 600 });
     const m = await getMonthlyUsage(

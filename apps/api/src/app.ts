@@ -14,6 +14,7 @@ import { callbackRoutes } from "./routes/callbacks.js";
 import { patientRoutes } from "./routes/patients.js";
 import { notificationRoutes } from "./routes/notifications.js";
 import { statsRoutes } from "./routes/stats.js";
+import { analyticsRoutes } from "./routes/analytics.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { demoRequestRoutes } from "./routes/demo-requests.js";
 
@@ -64,6 +65,7 @@ export function createApp(deps: AppDeps) {
   v1.route("/", callRoutes(deps.db, { blobs: deps.blobs ?? null }));
   v1.route("/", callbackRoutes(deps.db));
   v1.route("/", statsRoutes(deps.db));
+  v1.route("/", analyticsRoutes(deps.db));
   app.route("/v1", v1);
 
   app.notFound((c) => c.json({ error: { code: "not_found", message: "route not found" } }, 404));

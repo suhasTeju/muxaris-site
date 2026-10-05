@@ -147,6 +147,7 @@ export async function getMonthlyUsage(
   at: Date = new Date(),
   timezone = "Asia/Kolkata",
 ): Promise<MonthlyUsage[]> {
+  if (months < 1) return [];
   const keys: string[] = [];
   for (let i = months - 1; i >= 0; i--) {
     const d = new Date(at);

@@ -465,3 +465,50 @@ export const callsQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 export type CallsQuery = z.infer<typeof callsQuery>;
+
+const analyticsDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+export const analyticsCallsQuery = z.object({ from: analyticsDate, to: analyticsDate });
+export type AnalyticsCallsQuery = z.infer<typeof analyticsCallsQuery>;
+export const analyticsUsageQuery = z.object({
+  months: z.coerce.number().int().min(1).max(12).default(6),
+});
+export type AnalyticsUsageQuery = z.infer<typeof analyticsUsageQuery>;
+
+/** GET /v1/analytics/calls. */
+export interface CallAnalytics {
+  from: string;
+  to: string;
+  totalCalls: number;
+  bookedCalls: number;
+  bookingConversion: number;
+  avgDurationS: number | null;
+  byOutcome: Record<string, number>;
+  byLanguage: Record<string, number>;
+  byHour: number[];
+  byDay: Array<{ date: string; calls: number; booked: number }>;
+}
+
+/** One row of GET /v1/analytics/usage. */
+export interface MonthlyUsage {
+  month: string;
+  callSeconds: number;
+  calls: number;
+  llmInputTokens: number;
+  llmOutputTokens: number;
+}
+
+/** GET /v1/usage. */
+export interface UsageSummary {
+  month: string;
+  callSeconds: number;
+  calls: number;
+  llmInputTokens: number;
+  llmOutputTokens: number;
+  includedCallMinutes: number;
+  overageSeconds: number;
+  plan: "pilot" | "standard";
+  planName: string;
+  priceInrMonthly: number;
+  maxConcurrentCalls: number;
+  pilotEndsAt: Iso | null;
+}

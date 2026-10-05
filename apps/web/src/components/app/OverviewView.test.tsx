@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Call } from "@muxaris/shared";
+import type { Call, UsageSummary as Usage } from "@muxaris/shared";
 import { OverviewView } from "./OverviewView";
 
 afterEach(cleanup);
@@ -26,12 +26,19 @@ const stats = {
   byOutcome: { booked: 3 },
 };
 
-const usage = {
+const usage: Usage = {
   month: "2026-10",
   callSeconds: 600,
   calls: 2,
+  llmInputTokens: 0,
+  llmOutputTokens: 0,
   includedCallMinutes: 100,
+  overageSeconds: 0,
   plan: "pilot",
+  planName: "Pilot",
+  priceInrMonthly: 0,
+  maxConcurrentCalls: 2,
+  pilotEndsAt: "2026-11-01T00:00:00.000Z",
 };
 
 describe("OverviewView", () => {
