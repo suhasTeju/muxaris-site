@@ -7,7 +7,7 @@ import { NetworkStack } from "../lib/network-stack.js";
 import { ServicesStack } from "../lib/services-stack.js";
 import { StorageStack } from "../lib/storage-stack.js";
 
-function build(opts: { certArn?: string; billingEnabled?: boolean } = {}) {
+function build(opts: { certArn?: string; billingEnabled?: boolean; telephony?: string } = {}) {
   const app = new App();
   const net = new NetworkStack(app, "N", { env: ENV });
   const storage = new StorageStack(app, "S", { env: ENV });
@@ -26,6 +26,7 @@ function build(opts: { certArn?: string; billingEnabled?: boolean } = {}) {
     notifyFromEmail: "appointments@muxaris.com",
     billingEnabled: opts.billingEnabled ?? false,
     publicApiUrl: "https://api.muxaris.com",
+    ...(opts.telephony ? { telephonyProvider: opts.telephony } : {}),
     ...(opts.certArn ? { certArn: opts.certArn } : {}),
   });
   return { stack, t: Template.fromStack(stack) };
@@ -158,12 +159,11 @@ describe("ServicesStack", () => {
     });
   });
 
-  it("three arm64 task definitions with sizes, stop timeouts and logs", () => {
-    t.resourceCountIs("AWS::ECS::TaskDefinition", 3);
+  it("two arm64 task definitions with sizes, stop timeouts and logs", () => {
+    t.resourceCountIs("AWS::ECS::TaskDefinition", 2);
     const sizes: Record<string, [string, string]> = {
       api: ["512", "1024"],
       gateway: ["512", "1024"],
-      migrate: ["256", "512"],
     };
     for (const [family, [cpu, mem]] of Object.entries(sizes)) {
       const td = taskDef(t, family);
@@ -176,24 +176,18 @@ describe("ServicesStack", () => {
     }
     expect(taskDef(t, "gateway").Properties.ContainerDefinitions[0].StopTimeout).toBe(90);
     expect(taskDef(t, "api").Properties.ContainerDefinitions[0].StopTimeout).toBe(30);
-    for (const g of ["api", "voice-gateway", "migrate"]) {
+    for (const g of ["api", "voice-gateway"]) {
       t.hasResourceProperties("AWS::Logs::LogGroup", {
         LogGroupName: `/muxaris/${g}`,
         RetentionInDays: 30,
       });
     }
     expect(JSON.stringify(taskDef(t, "api"))).toContain(":abc123");
-    expect(taskDef(t, "migrate").Properties.ContainerDefinitions[0].Command).toEqual([
-      "node",
-      "packages/db/dist/migrate.js",
-    ]);
   });
 
-  it("stable names for the migrate task, its roles and the cluster", () => {
-    expect(taskDef(t, "migrate").Properties.Family).toBe("muxaris-migrate");
+  it("owns no migrate resources (MuxarisMigrate does)", () => {
     t.hasResourceProperties("AWS::ECS::Cluster", { ClusterName: "muxaris" });
-    t.hasResourceProperties("AWS::IAM::Role", { RoleName: "muxaris-migrate-task" });
-    t.hasResourceProperties("AWS::IAM::Role", { RoleName: "muxaris-migrate-exec" });
+    expect(JSON.stringify(t.toJSON())).not.toContain("muxaris-migrate");
   });
 
   it("environment, without secrets", () => {
@@ -230,9 +224,12 @@ describe("ServicesStack", () => {
       DATABASE_SSL: "verify",
     });
     expect(gw.POST_CALL_QUEUE_URL).toBeDefined();
-    const mig = env(taskDef(t, "migrate"));
-    expect(mig.DATABASE_SSL).toBe("verify");
-    expect(mig.DB_SECRET_ARN).toBeDefined();
+    // telephony is off unless a provider is passed; the secrets never appear here
+    expect(api.TELEPHONY_PROVIDER).toBeUndefined();
+    expect(gw.TELEPHONY_PROVIDER).toBeUndefined();
+    const tel = build({ telephony: "twilio" }).t;
+    expect(env(taskDef(tel, "api")).TELEPHONY_PROVIDER).toBe("twilio");
+    expect(env(taskDef(tel, "gateway")).TELEPHONY_PROVIDER).toBe("twilio");
     expect(env(taskDef(build({ billingEnabled: true }).t, "api")).BILLING_ENABLED).toBe("1");
   });
 
@@ -264,23 +261,14 @@ describe("ServicesStack", () => {
       "AWS::IAM::Policy",
       pol(Match.arrayWith(["secretsmanager:GetSecretValue"])),
     );
-    // migrate role is secrets-only: no S3/SQS/Bedrock grants on it
-    const roles = t.findResources("AWS::IAM::Role");
-    expect(Object.keys(roles).length).toBeGreaterThanOrEqual(6);
   });
 
   it("outputs", () => {
-    for (const o of [
-      "AlbDnsName",
-      "ClusterName",
-      "MigrateTaskDefinitionArn",
-      "ApiServiceName",
-      "GatewayServiceName",
-      "PublicSubnetIds",
-      "ServiceSecurityGroupId",
-    ]) {
+    for (const o of ["AlbDnsName", "ClusterName", "ApiServiceName", "GatewayServiceName"]) {
       expect(t.toJSON().Outputs).toHaveProperty(o);
     }
+    expect(t.toJSON().Outputs).not.toHaveProperty("MigrateTaskDefinitionArn");
+    expect(t.toJSON().Outputs).not.toHaveProperty("PublicSubnetIds");
   });
 
   it("no secret material in the template", () => {

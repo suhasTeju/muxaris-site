@@ -5,7 +5,7 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import type { Construct } from "constructs";
-import { ACCOUNT, REGION, VOICE_HOST } from "./config.js";
+import { ACCOUNT, PUBLIC_API_URL, REGION, VOICE_HOST } from "./config.js";
 import type { DataStack } from "./data-stack.js";
 import type { NetworkStack } from "./network-stack.js";
 import type { StorageStack } from "./storage-stack.js";
@@ -26,6 +26,8 @@ export interface ServicesStackProps extends StackProps {
   billingEnabled: boolean;
   /** Public API URL, used later for Twilio signature verification. */
   publicApiUrl?: string;
+  /** "twilio" or "exotel" turns phone calls on; empty omits TELEPHONY_PROVIDER (off). */
+  telephonyProvider?: string;
 }
 
 const MODEL_ID = "global.amazon.nova-2-lite-v1:0";
@@ -34,15 +36,13 @@ const BEDROCK_ARNS = [
   `arn:aws:bedrock:${REGION}:${ACCOUNT}:inference-profile/${MODEL_ID}`,
 ];
 
-/** ALB with host and path routing, an ECS cluster, two ARM Fargate services and a migrate task. */
+/** ALB with host and path routing, an ECS cluster, two ARM Fargate services. */
 export class ServicesStack extends Stack {
   readonly alb: elbv2.ApplicationLoadBalancer;
   readonly cluster: ecs.Cluster;
   readonly apiService: ecs.FargateService;
   readonly gatewayService: ecs.FargateService;
-  readonly migrateTaskDef: ecs.FargateTaskDefinition;
   readonly gatewayLogGroup: logs.ILogGroup;
-  readonly migrateLogGroup: logs.ILogGroup;
   readonly gatewayTargetGroup: elbv2.ApplicationTargetGroup;
   readonly apiTargetGroup: elbv2.ApplicationTargetGroup;
 
@@ -52,7 +52,11 @@ export class ServicesStack extends Stack {
     const { dbSecret, appSecret, apiRepo, gatewayRepo } = props.data;
     const { callsBucket, postCallQueue } = props.storage;
     const publicSubnets = { subnetType: ec2.SubnetType.PUBLIC };
-    const publicApiUrl = props.publicApiUrl ?? "https://api.muxaris.com";
+    const publicApiUrl = props.publicApiUrl ?? PUBLIC_API_URL;
+    // The secrets (TWILIO_AUTH_TOKEN, TELEPHONY_STREAM_SECRET) arrive via muxaris/app.
+    const telephonyEnv: Record<string, string> = props.telephonyProvider
+      ? { TELEPHONY_PROVIDER: props.telephonyProvider }
+      : {};
 
     this.cluster = new ecs.Cluster(this, "Cluster", {
       vpc,
@@ -67,7 +71,6 @@ export class ServicesStack extends Stack {
         removalPolicy: RemovalPolicy.DESTROY,
       });
     this.gatewayLogGroup = logGroup("voice-gateway");
-    this.migrateLogGroup = logGroup("migrate");
     const taskDef = (tid: string, cpu: number, mem: number) =>
       new ecs.FargateTaskDefinition(this, tid, {
         cpu,
@@ -105,6 +108,7 @@ export class ServicesStack extends Stack {
         PUBLIC_API_URL: publicApiUrl,
         VOICE_WSS_URL: `wss://${VOICE_HOST}`,
         ...(props.billingEnabled ? { BILLING_ENABLED: "1" } : {}),
+        ...telephonyEnv,
       },
     });
     apiTd.taskRole.addToPrincipalPolicy(
@@ -120,7 +124,8 @@ export class ServicesStack extends Stack {
     const gwTd = taskDef("GatewayTask", 512, 1024);
     gwTd.addContainer("gateway", {
       image: ecs.ContainerImage.fromEcrRepository(gatewayRepo, props.imageTag),
-      // Long enough for in-flight calls to finish after SIGTERM during a deploy.
+      // SIGTERM ends live calls at once; this headroom lets their recording uploads finish. The
+      // gateway's drain deadline (SHUTDOWN_GRACE_MS, 80 s) must stay under it.
       stopTimeout: Duration.seconds(90),
       portMappings: [{ containerPort: 4100 }],
       logging: ecs.LogDrivers.awsLogs({
@@ -141,6 +146,7 @@ export class ServicesStack extends Stack {
         CORS_ORIGINS: props.corsOrigins,
         TRUST_PROXY: "1",
         GIT_SHA: props.imageTag,
+        ...telephonyEnv,
       },
     });
     gwTd.taskRole.addToPrincipalPolicy(
@@ -158,36 +164,6 @@ export class ServicesStack extends Stack {
     );
     dbSecret.grantRead(gwTd.taskRole);
     appSecret.grantRead(gwTd.taskRole);
-
-    // Migrate (run on demand with ecs run-task, never a service)
-    // Fixed names: the deploy role (CicdStack) is scoped to them, so no task-definition revision
-    // or role ARN has to cross stacks.
-    const ecsTasks = new iam.ServicePrincipal("ecs-tasks.amazonaws.com");
-    this.migrateTaskDef = new ecs.FargateTaskDefinition(this, "MigrateTask", {
-      family: "muxaris-migrate",
-      cpu: 256,
-      memoryLimitMiB: 512,
-      runtimePlatform: {
-        cpuArchitecture: ecs.CpuArchitecture.ARM64,
-        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
-      },
-      taskRole: new iam.Role(this, "MigrateTaskRole", {
-        roleName: "muxaris-migrate-task",
-        assumedBy: ecsTasks,
-      }),
-      executionRole: new iam.Role(this, "MigrateExecRole", {
-        roleName: "muxaris-migrate-exec",
-        assumedBy: ecsTasks,
-      }),
-    });
-    this.migrateTaskDef.addContainer("migrate", {
-      image: ecs.ContainerImage.fromEcrRepository(apiRepo, props.imageTag),
-      command: ["node", "packages/db/dist/migrate.js"],
-      logging: ecs.LogDrivers.awsLogs({ logGroup: this.migrateLogGroup, streamPrefix: "migrate" }),
-      environment: { ...dbEnv },
-    });
-    dbSecret.grantRead(this.migrateTaskDef.taskRole);
-    appSecret.grantRead(this.migrateTaskDef.taskRole);
 
     // Services
     const common = {
@@ -287,14 +263,7 @@ export class ServicesStack extends Stack {
 
     new CfnOutput(this, "AlbDnsName", { value: this.alb.loadBalancerDnsName });
     new CfnOutput(this, "ClusterName", { value: this.cluster.clusterName });
-    new CfnOutput(this, "MigrateTaskDefinitionArn", {
-      value: this.migrateTaskDef.taskDefinitionArn,
-    });
     new CfnOutput(this, "ApiServiceName", { value: this.apiService.serviceName });
     new CfnOutput(this, "GatewayServiceName", { value: this.gatewayService.serviceName });
-    new CfnOutput(this, "PublicSubnetIds", {
-      value: vpc.selectSubnets(publicSubnets).subnetIds.join(","),
-    });
-    new CfnOutput(this, "ServiceSecurityGroupId", { value: serviceSg.securityGroupId });
   }
 }

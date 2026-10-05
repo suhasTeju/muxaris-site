@@ -86,6 +86,29 @@ describe("ObservabilityStack", () => {
       });
     alarm({ MetricName: "HTTPCode_Target_5XX_Count", Threshold: 5, Period: 300 });
     alarm({
+      MetricName: "HTTPCode_ELB_5XX_Count",
+      Namespace: "AWS/ApplicationELB",
+      Statistic: "Sum",
+      Threshold: 5,
+      Period: 300,
+      ComparisonOperator: "GreaterThanOrEqualToThreshold",
+    });
+    const unhealthy = Object.values(t.findResources("AWS::CloudWatch::Alarm")).filter(
+      (a) =>
+        (a as { Properties: { MetricName?: string } }).Properties.MetricName ===
+        "UnHealthyHostCount",
+    );
+    expect(unhealthy).toHaveLength(2);
+    for (const a of unhealthy) {
+      const props = (a as { Properties: Record<string, unknown> }).Properties;
+      expect(props).toMatchObject({
+        Threshold: 1,
+        EvaluationPeriods: 2,
+        ComparisonOperator: "GreaterThanOrEqualToThreshold",
+      });
+      expect(JSON.stringify(props.AlarmActions)).toContain("Alarms");
+    }
+    alarm({
       MetricName: "CPUUtilization",
       Namespace: "AWS/ECS",
       Threshold: 85,
@@ -117,7 +140,14 @@ describe("ObservabilityStack", () => {
     const d = Object.values(t.findResources("AWS::CloudWatch::Dashboard"));
     expect(d).toHaveLength(1);
     const body = JSON.stringify(d[0]);
-    for (const m of ["CallsStarted", "SttMs", "HTTPCode_Target_5XX_Count", "p95"]) {
+    for (const m of [
+      "CallsStarted",
+      "SttMs",
+      "HTTPCode_Target_5XX_Count",
+      "HTTPCode_ELB_5XX_Count",
+      "UnHealthyHostCount",
+      "p95",
+    ]) {
       expect(body).toContain(m);
     }
     t.hasResourceProperties("AWS::CloudWatch::Dashboard", { DashboardName: "muxaris" });

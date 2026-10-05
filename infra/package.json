@@ -13,10 +13,11 @@
     "deploy:network": "bash scripts/cdk.sh deploy MuxarisNetwork --require-approval never",
     "deploy:data": "bash scripts/cdk.sh deploy MuxarisData --require-approval never",
     "deploy:workers": "bash scripts/cdk.sh deploy MuxarisWorkers --require-approval never",
+    "deploy:migrate": "bash scripts/cdk.sh deploy MuxarisMigrate --require-approval never",
     "deploy:services": "bash scripts/cdk.sh deploy MuxarisServices --require-approval never",
     "deploy:observability": "bash scripts/cdk.sh deploy MuxarisObservability --require-approval never",
     "deploy:cicd": "bash scripts/cdk.sh deploy MuxarisCicd --require-approval never",
-    "deploy:all": "bash scripts/cdk.sh deploy MuxarisNetwork MuxarisData MuxarisWorkers MuxarisServices MuxarisObservability MuxarisCicd --require-approval never",
+    "deploy:all": "bash scripts/cdk.sh deploy MuxarisNetwork MuxarisData MuxarisWorkers MuxarisMigrate MuxarisServices MuxarisObservability MuxarisCicd --require-approval never",
     "cdk": "bash scripts/cdk.sh"
   },
   "dependencies": {

@@ -98,6 +98,29 @@ export class ObservabilityStack extends Stack {
       statistic: "Sum",
     });
     alarm("Alb5xxAlarm", alb5xx, { threshold: 5, description: "ALB targets returning 5xx" });
+    // With no healthy target the ALB answers 503 itself: that is an ELB 5xx, not a target 5xx.
+    const albElb5xx = services.alb.metrics.httpCodeElb(elbv2.HttpCodeElb.ELB_5XX_COUNT, {
+      period: five,
+      statistic: "Sum",
+    });
+    alarm("AlbElb5xxAlarm", albElb5xx, {
+      threshold: 5,
+      description: "ALB itself returned 5xx (a service has no healthy targets)",
+    });
+    const unhealthy = (tg: elbv2.ApplicationTargetGroup) =>
+      tg.metrics.unhealthyHostCount({ period: Duration.minutes(1), statistic: "Maximum" });
+    const apiUnhealthy = unhealthy(services.apiTargetGroup);
+    const gatewayUnhealthy = unhealthy(services.gatewayTargetGroup);
+    alarm("ApiUnhealthyHostsAlarm", apiUnhealthy, {
+      threshold: 1,
+      evaluationPeriods: 2,
+      description: "API target group has an unhealthy host",
+    });
+    alarm("GatewayUnhealthyHostsAlarm", gatewayUnhealthy, {
+      threshold: 1,
+      evaluationPeriods: 2,
+      description: "Voice gateway target group has an unhealthy host",
+    });
     alarm("GatewayCpuAlarm", services.gatewayService.metricCpuUtilization({ period: five }), {
       threshold: 85,
       evaluationPeriods: 2,
@@ -158,7 +181,14 @@ export class ObservabilityStack extends Stack {
         title: "ALB 5xx and requests",
         width: 12,
         left: [alb5xx],
-        right: [services.alb.metrics.requestCount({ period: five })],
+        right: [albElb5xx, services.alb.metrics.requestCount({ period: five })],
+      }),
+    );
+    this.dashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: "Unhealthy hosts",
+        width: 12,
+        left: [apiUnhealthy, gatewayUnhealthy],
       }),
     );
     this.dashboard.addWidgets(

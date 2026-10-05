@@ -1,14 +1,15 @@
-import { App } from "aws-cdk-lib";
+import { Annotations, App, type Stack } from "aws-cdk-lib";
 import { AuthStack } from "../lib/auth-stack.js";
 import { DataStack } from "../lib/data-stack.js";
 import { CicdStack } from "../lib/cicd-stack.js";
+import { MigrateStack } from "../lib/migrate-stack.js";
 import { NetworkStack } from "../lib/network-stack.js";
 import { NotifyStack } from "../lib/notify-stack.js";
 import { ObservabilityStack } from "../lib/observability-stack.js";
 import { StorageStack } from "../lib/storage-stack.js";
 import { ServicesStack } from "../lib/services-stack.js";
 import { WorkersStack } from "../lib/workers-stack.js";
-import { ACCOUNT, ENV, WEB_ORIGINS } from "../lib/config.js";
+import { ACCOUNT, ENV, PUBLIC_API_URL, WEB_ORIGINS, validateConfig } from "../lib/config.js";
 
 if (process.env.CDK_DEFAULT_ACCOUNT !== ACCOUNT) {
   throw new Error(
@@ -50,30 +51,41 @@ const workers = new WorkersStack(app, "MuxarisWorkers", {
   description: "Muxaris post-call and notifier Lambdas, queue mapping and schedules",
 });
 
-const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID ?? "";
-const cognitoClientId = process.env.COGNITO_CLIENT_ID ?? "";
-if (!cognitoUserPoolId || !cognitoClientId) {
-  throw new Error(
-    "Refusing to synth MuxarisServices: COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID must be set (they live in .env).",
-  );
-}
+// Config problems are errors on the stacks that need the values, so `cdk deploy MuxarisAuth`
+// works on an empty account while Services, Migrate and Cicd refuse to deploy without them.
+const problems = validateConfig(process.env);
+const refuse = (stack: Stack, reasons: string[]) => {
+  for (const r of reasons)
+    Annotations.of(stack).addError(`Refusing to deploy ${stack.stackName}: ${r}`);
+};
+const imageTag = process.env.IMAGE_TAG || "unset";
+const migrate = new MigrateStack(app, "MuxarisMigrate", {
+  env: ENV,
+  network,
+  data,
+  imageTag,
+  description: "Muxaris migrate task definition, deployed before Services so migrations run first",
+});
+refuse(migrate, problems.migrate);
 const services = new ServicesStack(app, "MuxarisServices", {
   env: ENV,
   network,
   data,
   storage,
-  imageTag: process.env.IMAGE_TAG || "latest",
+  imageTag,
   certArn: process.env.CERT_ARN || undefined,
-  cognitoUserPoolId,
-  cognitoClientId,
+  cognitoUserPoolId: process.env.COGNITO_USER_POOL_ID || "unset",
+  cognitoClientId: process.env.COGNITO_CLIENT_ID || "unset",
   corsOrigins: WEB_ORIGINS.join(","),
   maxSessions: Number(process.env.MAX_SESSIONS || 15),
   maxCallSeconds: Number(process.env.MAX_CALL_SECONDS || 1200),
   notifyFromEmail: process.env.NOTIFY_FROM_EMAIL || "appointments@muxaris.com",
   billingEnabled: process.env.BILLING_ENABLED === "1",
-  publicApiUrl: process.env.PUBLIC_API_URL || "https://api.muxaris.com",
-  description: "Muxaris ALB, ECS cluster, API and voice gateway services, migrate task",
+  publicApiUrl: PUBLIC_API_URL,
+  telephonyProvider: process.env.TELEPHONY_PROVIDER || "",
+  description: "Muxaris ALB, ECS cluster, API and voice gateway services",
 });
+refuse(services, problems.services);
 new ObservabilityStack(app, "MuxarisObservability", {
   env: ENV,
   data,
@@ -82,9 +94,10 @@ new ObservabilityStack(app, "MuxarisObservability", {
   alarmEmail: process.env.ALARM_EMAIL || undefined,
   description: "Muxaris alarms (SNS), gateway metric filters and the dashboard",
 });
-new CicdStack(app, "MuxarisCicd", {
+const cicd = new CicdStack(app, "MuxarisCicd", {
   env: ENV,
   data,
   githubRepo: "suhasTeju/muxaris-site",
   description: "Muxaris GitHub OIDC provider and deploy role",
 });
+refuse(cicd, problems.cicd);
