@@ -176,6 +176,11 @@ gateway are not deployed by this config; infra for them arrives in Phase 5.
 ## Scripts
 
 - `scripts/bootstrap-aws.sh`: deploys the Auth stack and prints the Cognito ids
+- `scripts/push-images.sh [tag]`: builds both arm64 images and pushes `:tag` to ECR (immutable tags); prints `IMAGE_TAG=`
+- `scripts/migrate.sh`: runs the `muxaris-migrate` Fargate task, prints the last 50 log lines, fails on a non-zero exit code
+- `scripts/smoke.sh <base-url>`: post-deploy checks through the ALB (`SMOKE_TOKEN` is only used over https)
+- `scripts/request-cert.sh`: requests the ACM certificate and prints the DNS validation CNAMEs and `CERT_ARN=`
+- `scripts/bootstrap-aws.sh --secrets`: upserts the `muxaris/app` secret from `.env`; `--outputs` prints stack outputs as `KEY=value`
 - `scripts/gen-assets.sh`: generates landing-page imagery (Azure gpt-image)
 - `scripts/gen-audio.sh`: generates greeting and sample-call audio (Sarvam)
 - `scripts/e2e-voice.sh`: E2E voice smoke test (see below)

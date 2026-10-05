@@ -1,12 +1,52 @@
 #!/usr/bin/env bash
 # scripts/bootstrap-aws.sh — one-time (idempotent) setup of the secondary account.
 # Usage: scripts/bootstrap-aws.sh            # bootstrap CDK + deploy MuxarisAuth, print env lines
+#        scripts/bootstrap-aws.sh --secrets  # upsert muxaris/app from .env (prints key names only)
+#        scripts/bootstrap-aws.sh --outputs  # print stack outputs as KEY=value lines
 set -euo pipefail
 command -v jq >/dev/null || { echo "jq required"; exit 1; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ -f "$ROOT/.env" ]]; then set -a; source "$ROOT/.env"; set +a; fi
 # Guard runs after .env so its exports and account check have the final say.
 source "$ROOT/scripts/lib/aws-guard.sh"
+
+stack_output() { # stack key -> value, empty when the stack or output is missing
+  local v
+  v="$(aws cloudformation describe-stacks --stack-name "$1" \
+    --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" --output text 2>/dev/null || true)"
+  [[ "$v" == "None" ]] && v=""
+  echo "$v"
+}
+
+if [[ "${1:-}" == "--outputs" ]]; then
+  for entry in "MuxarisData:DbSecretArn:DB_SECRET_ARN" "MuxarisData:AppSecretArn:APP_SECRET_ARN" \
+    "MuxarisServices:AlbDnsName:ALB_DNS_NAME" "MuxarisCicd:DeployRoleArn:DEPLOY_ROLE_ARN" \
+    "MuxarisObservability:DashboardUrl:DASHBOARD_URL" "MuxarisData:ApiRepoUri:API_REPO_URI" \
+    "MuxarisData:GatewayRepoUri:GATEWAY_REPO_URI"; do
+    IFS=: read -r stack key name <<<"$entry"
+    val="$(stack_output "$stack" "$key")"
+    if [[ -n "$val" ]]; then echo "$name=$val"; else echo "# $name skipped: stack $stack or output $key not found yet"; fi
+  done
+  exit 0
+fi
+
+if [[ "${1:-}" == "--secrets" ]]; then
+  APP_JSON="$(jq -cn \
+    --arg SARVAM_TTS_API_KEY "${SARVAM_TTS_API_KEY:-}" --arg RAZORPAY_KEY_ID "${RAZORPAY_KEY_ID:-}" \
+    --arg RAZORPAY_KEY_SECRET "${RAZORPAY_KEY_SECRET:-}" \
+    --arg RAZORPAY_WEBHOOK_SECRET "${RAZORPAY_WEBHOOK_SECRET:-}" \
+    --arg RAZORPAY_PLAN_ID_STANDARD "${RAZORPAY_PLAN_ID_STANDARD:-}" \
+    --arg WHATSAPP_TOKEN "${WHATSAPP_TOKEN:-}" --arg WHATSAPP_PHONE_ID "${WHATSAPP_PHONE_ID:-}" \
+    '$ARGS.named | with_entries(select(.value != ""))')"
+  KEYS="$(jq -r 'keys | join(", ")' <<<"$APP_JSON")"
+  if [[ "$APP_JSON" == "{}" ]]; then echo "no app secret keys set in .env; nothing written"; exit 0; fi
+  # The Data stack creates muxaris/app; fall back to create-secret if it does not exist yet.
+  if ! aws secretsmanager put-secret-value --secret-id muxaris/app --secret-string "$APP_JSON" >/dev/null 2>&1; then
+    aws secretsmanager create-secret --name muxaris/app --secret-string "$APP_JSON" >/dev/null
+  fi
+  echo "muxaris/app updated with keys: $KEYS"
+  exit 0
+fi
 
 if [[ -n "${GOOGLE_OAUTH_CLIENT_SECRET:-}" ]]; then
   echo "→ upsert Google OAuth secret in Secrets Manager"
