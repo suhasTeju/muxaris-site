@@ -97,7 +97,14 @@ export interface ServerDeps {
 const PHONE_PATH = "/v1/telephony/twilio";
 const START_TIMEOUT_MS = 5000;
 const SETUP_TIMEOUT_MS = 10_000;
-const SHUTDOWN_GRACE_MS = 10_000;
+/**
+ * How long a SIGTERM waits for live calls to settle and their recording uploads to finish.
+ * The gateway container's ECS stopTimeout is 90 s (infra/lib/services-stack.ts), after which ECS
+ * sends SIGKILL, so this must stay under it: 80 s here, plus a 3 s abort wait, the pool close and
+ * the hard-exit margin in index.ts. The wait is a race against the drain, so an idle gateway
+ * still shuts down in seconds.
+ */
+export const SHUTDOWN_GRACE_MS = 80_000;
 const CLOSE_GRACE_MS = 5000;
 const HEARTBEAT_MS = 20_000;
 const MAX_MISSED_PONGS = 2;
@@ -383,7 +390,11 @@ export function createServer(deps: ServerDeps): GatewayServer {
         const clinic = await ctl.bound(getClinicContext(db, claims.clinicId));
         if (ctl.gone()) return;
         const enabled = clinic.clinic.languages as string[];
-        const language = (enabled[0] ?? "en-IN") as LanguageCode;
+        // Same rule as the browser path: only a known language code, else en-IN.
+        const first = enabled[0];
+        const language = (
+          first && (LANGUAGE_CODES as readonly string[]).includes(first) ? first : "en-IN"
+        ) as LanguageCode;
         await acceptSession(ws, ctl, {
           clinic,
           language,

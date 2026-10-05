@@ -1,9 +1,10 @@
 import { applySecretsToEnv, createDb } from "@muxaris/db";
 import { loadEnv } from "./env.js";
-import { createServer } from "./server.js";
+import { SHUTDOWN_GRACE_MS, createServer } from "./server.js";
 
 const POOL_END_TIMEOUT_MS = 5_000;
-const HARD_EXIT_MS = 20_000;
+// Drain deadline + 3 s abort wait + 5 s pool close: 88 s, under the 90 s ECS stopTimeout.
+const HARD_EXIT_MS = SHUTDOWN_GRACE_MS + 8_000;
 
 const { applied } = await applySecretsToEnv();
 if (applied.length) console.log("secrets applied", { keys: applied });
@@ -36,7 +37,7 @@ async function stop(signal: string, failed = false) {
   if (stopping) return;
   stopping = true;
   console.log(JSON.stringify({ level: "info", msg: "signal received", signal }));
-  // Last-resort exit if the drain or pool shutdown hangs (drain itself is bounded at 10 s).
+  // Last-resort exit if the drain or pool shutdown hangs (the drain is bounded by SHUTDOWN_GRACE_MS).
   const hardExit = setTimeout(() => {
     console.error(JSON.stringify({ level: "error", msg: "shutdown hard exit" }));
     process.exit(1);

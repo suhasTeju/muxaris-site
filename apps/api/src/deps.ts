@@ -13,9 +13,9 @@ export interface AppDeps {
   blobs?: BlobStore | null;
   /** Outbound notification channels enabled in this deployment (default: none). */
   channels?: ChannelFlags;
-  /** Razorpay billing; absent = disabled. */
   /** Telephony webhook; absent = disabled (404). */
   telephony?: TelephonyEnv;
+  /** Razorpay billing; absent = disabled. */
   billing?: { env: BillingEnv; client: RazorpayClient | null };
 }
 

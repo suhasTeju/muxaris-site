@@ -14,7 +14,7 @@ import { callKeys } from "@muxaris/storage";
 import { FakeBlobStore, FakeQueue } from "@muxaris/storage/fakes";
 import { DISCLOSURE, DISCLOSURE_RECORDED } from "./session/prompt.js";
 import { FakeLlm, FakeStt, FakeTts } from "./providers/fakes.js";
-import { createServer, type ServerEnv } from "./server.js";
+import { SHUTDOWN_GRACE_MS, createServer, type ServerEnv } from "./server.js";
 
 const DB_URL = process.env.DATABASE_URL ?? "postgres://muxaris:muxaris@localhost:5433/muxaris";
 const { db, pool } = createDb(DB_URL);
@@ -957,5 +957,13 @@ async function until<T>(
       await server.shutdown();
       expect((await callRow(callId)).recordingStatus).toBe("failed");
     });
+  });
+});
+
+describe("shutdown deadline", () => {
+  it("gives recording uploads most of the 90 s ECS stopTimeout, and stays under it", () => {
+    expect(SHUTDOWN_GRACE_MS).toBeGreaterThanOrEqual(60_000);
+    // + 3 s abort wait + 5 s pool close + margin must still fit in the 90 s stopTimeout
+    expect(SHUTDOWN_GRACE_MS + 8_000).toBeLessThan(90_000);
   });
 });
