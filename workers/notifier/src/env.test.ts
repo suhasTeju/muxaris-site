@@ -14,6 +14,24 @@ describe("notifier env", () => {
     expect(e.fromEmail).toBe("noreply@muxaris.com");
     expect(e.channels.sms).toBe(true);
   });
+  it("accepts ses as an alias of aws", () => {
+    const e = loadEnv({
+      ...base,
+      NOTIFY_PROVIDER: "ses",
+      NOTIFY_FROM_EMAIL: "noreply@muxaris.com",
+    });
+    expect(e.providerMode).toBe("aws");
+    expect(() => loadEnv({ ...base, NOTIFY_PROVIDER: "ses" })).toThrow(/NOTIFY_FROM_EMAIL/);
+  });
+  it("rejects an unknown provider", () => {
+    expect(() => loadEnv({ ...base, NOTIFY_PROVIDER: "sendgrid" })).toThrow(
+      /"console", "aws" or "ses"/,
+    );
+  });
+  it("an explicit console provider wins over a from-address", () => {
+    const e = loadEnv({ ...base, NOTIFY_PROVIDER: "console", NOTIFY_FROM_EMAIL: "a@b.c" });
+    expect(e.providerMode).toBe("console");
+  });
   it("refuses aws mode without a from-address and whatsapp without credentials", () => {
     expect(() => loadEnv({ ...base, NOTIFY_PROVIDER: "aws" })).toThrow(/NOTIFY_FROM_EMAIL/);
     expect(() =>

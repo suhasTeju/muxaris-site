@@ -43,7 +43,8 @@ Keys needed for a local run:
 
 Notification keys (all optional locally; see "Notifications"):
 
-- `NOTIFY_PROVIDER`: `ses` or `console` (default `console` in dev)
+- `NOTIFY_PROVIDER`: `console` (default when `NOTIFY_FROM_EMAIL` is unset) or `aws` (alias `ses`;
+  default when `NOTIFY_FROM_EMAIL` is set)
 - `NOTIFY_FROM_EMAIL`: verified SES sender address
 - `SMS_ENABLED`: `1` turns on SMS through SNS
 - `WHATSAPP_ENABLED`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`: WhatsApp Cloud API
@@ -71,17 +72,22 @@ is unreachable, the db suite is skipped with a warning instead of failing. `buil
 
 Bookings write confirmation rows to an outbox, and the notifier worker delivers them and queues
 reminders 20 to 24 hours and 1 to 2 hours before an appointment. Email goes to patients with an
-email on file; without one the row is `skipped` ("No email on file"). The 2-hour reminder is only
-sent for bookings made at least 30 minutes earlier, so a booking made for an hour from now does
-not get a confirmation and a reminder back to back. Locally, open the
-Notifications page in the web app to see every message and its status. The console provider
-(`NOTIFY_PROVIDER` unset or `console`) logs counts only, never recipients.
+email on file; without one the row is `skipped` ("No email on file"). A queued confirmation (or
+reschedule message) stands in for a reminder that is already close: a visit 24 hours away or less
+gets no day-before reminder, and one 2.5 hours away or less gets no 2-hour reminder either, so a
+fresh booking does not get a confirmation and a reminder back to back. The 2-hour reminder also
+needs the booking to be at least 30 minutes old. Rescheduling or cancelling drops any message still queued
+for the old time (`skipped`, "Replaced by a later message"). Delivery is at-least-once: a crash
+between send and the sent mark re-sends after 5 minutes. Locally, open the Notifications page in
+the web app to see every message and its status. The console provider (`NOTIFY_PROVIDER` unset
+with no `NOTIFY_FROM_EMAIL`, or `console`) logs counts only, never recipients.
 
 To send real email with SES (secondary AWS account only):
 
 1. Deploy the `MuxarisNotify` stack, which creates the `muxaris.com` identity.
 2. Add the three DKIM CNAME records it outputs at GoDaddy and wait for the identity to verify.
-3. Request SES production access, then set `NOTIFY_PROVIDER=ses` and `NOTIFY_FROM_EMAIL`.
+3. Request SES production access, then set `NOTIFY_FROM_EMAIL`. The provider then defaults to
+   `aws`; `NOTIFY_PROVIDER=aws` (or its alias `ses`) makes it explicit.
 
 SMS and WhatsApp are not live. SMS to Indian numbers needs TRAI DLT registration and SNS sandbox
 exit; WhatsApp needs a Meta Business account and approved message templates. Both stay off until

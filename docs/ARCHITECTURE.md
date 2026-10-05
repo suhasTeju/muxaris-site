@@ -34,19 +34,29 @@ dashboard seeks with `turn - call.startedAt - recorderT0Ms`.
 - **Outbox.** A booking, reschedule or cancellation writes `notifications` rows inside the same
   transaction, with the subject and body already rendered. The channel is chosen email, then
   WhatsApp, then SMS, according to the channel flags and what the patient has on file. When nothing
-  is usable the row is written as `skipped` with error `no_contact` (the only skip reason written
-  at outbox time). `channel_disabled` is a delivery-time skip, written by the notifier when a channel
-  flag was turned off after the row was queued.
+  is usable the row is written as `skipped` with error `no_contact`. A reschedule or cancellation
+  first marks the appointment's still-queued rows `skipped` with error `superseded`, whether or not
+  it writes a new message. Two skips happen at delivery time: `channel_disabled` when a channel flag
+  was turned off after the row was queued, and `superseded` when the appointment is no longer active
+  or has already started (cancellation notices are still sent).
 - **Claim loop.** The notifier (`workers/notifier`) claims due rows with
   `FOR UPDATE SKIP LOCKED`, increments `attempts` and sends. A failure sets `next_attempt_at` five
-  minutes ahead; after 5 attempts the row is `failed`. Staff can retry a failed row from the
-  Notifications page.
-- **Providers.** `NOTIFY_PROVIDER` is `ses` or `console` (default `console` in dev). The console
-  provider logs counts only, never recipients. Email uses `NOTIFY_FROM_EMAIL`. SMS (SNS) needs
+  minutes ahead; after 5 attempts the row is `failed`. Delivery is at-least-once: a crash between
+  send and the sent mark re-sends after 5 minutes. Staff can retry a failed or skipped row from the
+  Notifications page; the retry renders the subject, body, language and recipient again from the
+  appointment as it is now, and is refused (409) for a superseded row, an appointment that is no
+  longer active (except a cancellation notice) or one whose time has passed.
+- **Providers.** `NOTIFY_PROVIDER` is `console` (default when `NOTIFY_FROM_EMAIL` is unset) or `aws`
+  (alias `ses`; default when `NOTIFY_FROM_EMAIL` is set). The console provider logs counts only,
+  never recipients. Email uses `NOTIFY_FROM_EMAIL`. SMS (SNS) needs
   `SMS_ENABLED=1`; WhatsApp needs `WHATSAPP_ENABLED=1`, `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_ID`.
 - **Reminders.** The reminder sweep queues a reminder 20 to 24 hours before and another 1 to 2
   hours before the appointment. The stamps are written in the same transaction as the outbox row,
-  so a reminder is never queued twice; rescheduling clears the stamps and re-arms both.
+  so a reminder is never queued twice; rescheduling clears the stamps and re-arms both. When a
+  confirmation or reschedule message is actually queued, the same transaction sets the stamps it
+  makes redundant (24 h when the visit is 24 hours away or less, 2 h when it is 2.5 hours away or
+  less); a skipped or switched-off message sets none, so a patient whose email is added later still
+  gets reminders. The 2-hour reminder also requires the booking to be at least 30 minutes old.
 - **Clinic switches.** Owners can turn confirmations and reminders off per clinic in Settings;
   when a switch is off no row is written at all.
   Reminder stamps are still set, so the appointment is not re-examined when the switch is turned

@@ -20,11 +20,13 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): NotifierEnv {
     console.warn("DATABASE_URL not set: using local dev default (localhost:5433)");
   }
   const fromEmail = src.NOTIFY_FROM_EMAIL?.trim() || null;
-  const mode = (src.NOTIFY_PROVIDER?.trim() || (fromEmail ? "aws" : "console")) as string;
+  const requested = src.NOTIFY_PROVIDER?.trim().toLowerCase() || (fromEmail ? "aws" : "console");
+  // "ses" is accepted as an alias of "aws" (email goes through SES in aws mode)
+  const mode = requested === "ses" ? "aws" : requested;
   if (mode !== "console" && mode !== "aws")
-    throw new Error(`NOTIFY_PROVIDER must be "console" or "aws", got "${mode}"`);
+    throw new Error(`NOTIFY_PROVIDER must be "console", "aws" or "ses", got "${requested}"`);
   if (mode === "aws" && !fromEmail)
-    throw new Error("NOTIFY_FROM_EMAIL is required when NOTIFY_PROVIDER=aws");
+    throw new Error("NOTIFY_FROM_EMAIL is required when NOTIFY_PROVIDER is aws (or ses)");
   const channels = channelFlagsFromEnv(src);
   const whatsappToken = src.WHATSAPP_TOKEN?.trim() || null;
   const whatsappPhoneId = src.WHATSAPP_PHONE_ID?.trim() || null;
