@@ -104,6 +104,12 @@ afterAll(async () => {
     expect((await req(`/analytics/calls?from=2026-09-01`, clinicId)).status).toBe(400);
   });
 
+  it("rejects impossible calendar dates with a 400 validation error", async () => {
+    const res = await req(`/analytics/calls?from=2026-02-30&to=2026-03-01`, clinicId);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as J).error.code).toBe("validation");
+  });
+
   it("returns zero-filled monthly usage and the usage summary with plan facts", async () => {
     const m = await req(`/analytics/usage?months=3`, clinicId);
     expect(m.status).toBe(200);

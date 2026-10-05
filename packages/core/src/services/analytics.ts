@@ -46,9 +46,17 @@ function addDays(date: string, n: number): string {
 }
 export const MAX_RANGE_DAYS = 92;
 
+function checkDate(value: string): void {
+  try {
+    assertDateString(value);
+  } catch (e) {
+    throw new CoreError("validation", e instanceof Error ? e.message : "invalid date");
+  }
+}
+
 export function localDayWindow(from: string, to: string, timeZone: string) {
-  assertDateString(from);
-  assertDateString(to);
+  checkDate(from);
+  checkDate(to);
   if (to < from) throw new CoreError("validation", "`to` must not be before `from`");
   const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000 + 1;
   if (days > MAX_RANGE_DAYS)

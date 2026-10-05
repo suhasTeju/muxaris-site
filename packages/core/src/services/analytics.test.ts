@@ -21,6 +21,12 @@ describe("localDayWindow", () => {
     );
     expect(() => localDayWindow("2026-01-01", "2026-06-01", "Asia/Kolkata")).toThrow(/92 days/);
   });
+
+  it("rejects impossible calendar dates with a validation error", () => {
+    expect(() => localDayWindow("2026-02-30", "2026-03-01", "Asia/Kolkata")).toThrow(
+      expect.objectContaining({ code: "validation" }),
+    );
+  });
 });
 
 (reachable ? describe : describe.skip)("analytics", () => {
