@@ -1,11 +1,11 @@
 import Link from "next/link";
 import type { AssistantProfile, Clinic, Doctor, Service, SlotRules } from "@muxaris/shared";
-import type { UsageSummary } from "@muxaris/shared";
+import type { BillingStatus, UsageSummary } from "@muxaris/shared";
 import { LANGUAGES, clinicNotificationSettings, clinicRecordCalls } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
 import { requireActiveClinic, serverApi } from "@/lib/api-server";
 import { NotificationSettings } from "@/components/app/NotificationSettings";
-import { PlanSettings } from "@/components/app/PlanSettings";
+import { UpgradeButton } from "@/components/app/UpgradeButton";
 import { RecordCallsToggle } from "@/components/app/RecordCallsToggle";
 
 export const dynamic = "force-dynamic";
@@ -34,14 +34,20 @@ export default async function SettingsPage() {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
   });
-  const [{ clinic, role }, doctors, services, rules, assistant, usage] = await Promise.all([
-    serverApi<{ clinic: Clinic; role: string }>(`/v1/clinics/${active.clinicId}`),
-    serverApi<{ doctors: Doctor[] }>("/v1/doctors"),
-    serverApi<{ services: Service[] }>("/v1/services"),
-    serverApi<{ slotRules: SlotRules }>("/v1/slot-rules"),
-    assistantReq,
-    serverApi<UsageSummary>("/v1/usage").catch(() => null),
-  ]);
+  const [{ clinic, role }, doctors, services, rules, assistant, usage, billingStatus] =
+    await Promise.all([
+      serverApi<{ clinic: Clinic; role: string }>(`/v1/clinics/${active.clinicId}`),
+      serverApi<{ doctors: Doctor[] }>("/v1/doctors"),
+      serverApi<{ services: Service[] }>("/v1/services"),
+      serverApi<{ slotRules: SlotRules }>("/v1/slot-rules"),
+      assistantReq,
+      serverApi<UsageSummary>("/v1/usage").catch(() => null),
+      serverApi<BillingStatus>("/v1/billing").catch((): BillingStatus => ({
+        enabled: false,
+        keyId: null,
+        subscription: null,
+      })),
+    ]);
   const langs = clinic.languages
     .map((c) => LANGUAGES.find((l) => l.code === c)?.label ?? c)
     .join(", ");
@@ -70,10 +76,10 @@ export default async function SettingsPage() {
         </Section>
 
         <Section title="Plan">
-          <PlanSettings
+          <UpgradeButton
             usage={usage}
             isOwner={role === "owner"}
-            billing={{ enabled: false }}
+            billing={{ enabled: billingStatus.enabled }}
             tz={clinic.timezone}
           />
         </Section>

@@ -512,3 +512,14 @@ export interface UsageSummary {
   maxConcurrentCalls: number;
   pilotEndsAt: Iso | null;
 }
+
+/** GET /v1/billing. */
+export interface BillingStatus {
+  enabled: boolean;
+  keyId: string | null;
+  subscription: {
+    providerSubscriptionId: string;
+    status: string;
+    currentPeriodEnd: Iso | null;
+  } | null;
+}

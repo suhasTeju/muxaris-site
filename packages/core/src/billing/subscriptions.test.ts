@@ -55,6 +55,22 @@ describe("parseRazorpayEvent", () => {
       ),
     ).toThrow(/event id/i);
   });
+
+  it("rejects a non-integer, negative or absurd current_end", () => {
+    for (const current_end of [1.5, -1, 5_000_000_000]) {
+      expect(() =>
+        parseRazorpayEvent(
+          {
+            event: "subscription.activated",
+            payload: {
+              subscription: { entity: { id: "s", status: "active", plan_id: "p", current_end } },
+            },
+          },
+          "evt_x",
+        ),
+      ).toThrow();
+    }
+  });
 });
 
 (reachable ? describe : describe.skip)("subscription lifecycle", () => {

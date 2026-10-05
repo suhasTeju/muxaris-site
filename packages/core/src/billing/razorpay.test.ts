@@ -64,4 +64,17 @@ describe("razorpay", () => {
       }),
     ).toMatchObject({ enabled: true, standardPlanId: "p" });
   });
+
+  it("maps a network failure to a provider error", async () => {
+    const rz = createRazorpayClient({
+      keyId: "k",
+      keySecret: "s",
+      fetch: async () => {
+        throw new TypeError("fetch failed");
+      },
+    });
+    await expect(
+      rz.createSubscription({ planId: "p", totalCount: 1, notes: {} }),
+    ).rejects.toMatchObject({ code: "provider", message: "razorpay unreachable" });
+  });
 });

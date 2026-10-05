@@ -1,3 +1,4 @@
+import { billingFromEnv, type BillingEnv } from "@muxaris/core";
 import { channelFlagsFromEnv, type ChannelFlags } from "@muxaris/shared";
 
 export interface ApiEnv {
@@ -13,6 +14,7 @@ export interface ApiEnv {
   awsRegion: string;
   storageDisabled: boolean;
   channels: ChannelFlags;
+  billing: BillingEnv;
 }
 
 export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
@@ -41,6 +43,7 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
     awsRegion: src.AWS_REGION?.trim() || "ap-south-1",
     storageDisabled: src.STORAGE_DISABLED === "1" || !callsBucket,
     channels: channelFlagsFromEnv(src),
+    billing: billingFromEnv(src),
     port: Number(src.API_PORT ?? 4000),
     databaseUrl,
     sarvamKey,

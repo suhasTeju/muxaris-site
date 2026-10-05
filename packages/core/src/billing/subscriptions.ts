@@ -78,7 +78,7 @@ const eventSchema = z.object({
         id: z.string().min(1),
         status: z.string().min(1),
         plan_id: z.string().min(1),
-        current_end: z.number().nullable().optional(),
+        current_end: z.number().int().nonnegative().max(4_102_444_800).nullable().optional(),
       }),
     }),
   }),

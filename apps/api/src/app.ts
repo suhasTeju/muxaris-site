@@ -17,6 +17,7 @@ import { statsRoutes } from "./routes/stats.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { demoRequestRoutes } from "./routes/demo-requests.js";
+import { billingRoutes, razorpayWebhook } from "./routes/billing.js";
 
 export type { AppDeps } from "./deps.js";
 
@@ -38,6 +39,16 @@ const PUBLIC_BODY_MAX = 16 * 1024;
 
 export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>();
+  const billing = deps.billing ?? {
+    env: {
+      enabled: false,
+      keyId: null,
+      keySecret: null,
+      webhookSecret: null,
+      standardPlanId: null,
+    },
+    client: null,
+  };
   const channels = deps.channels ?? { sms: false, whatsapp: false };
   if (process.env.NODE_ENV !== "test") app.use(requestLog());
   app.use(
@@ -54,6 +65,10 @@ export function createApp(deps: AppDeps) {
   app.use("/v1/demo-requests", bodyLimit({ maxSize: PUBLIC_BODY_MAX, onError: tooLarge }));
   app.route("/v1", demoRequestRoutes(deps.db));
 
+  // Public webhook: HMAC-verified inside the route, small body cap.
+  app.use("/webhooks/razorpay", bodyLimit({ maxSize: V1_BODY_MAX, onError: tooLarge }));
+  app.route("/", razorpayWebhook(deps.db, billing));
+
   const v1 = new Hono<AppEnv>();
   v1.use("*", bodyLimit({ maxSize: V1_BODY_MAX, onError: tooLarge }));
   v1.use("*", requireUser(deps.db, deps.verifier));
@@ -67,6 +82,7 @@ export function createApp(deps: AppDeps) {
   v1.route("/", callbackRoutes(deps.db));
   v1.route("/", statsRoutes(deps.db));
   v1.route("/", analyticsRoutes(deps.db));
+  v1.route("/", billingRoutes(deps.db, billing));
   app.route("/v1", v1);
 
   app.notFound((c) => c.json({ error: { code: "not_found", message: "route not found" } }, 404));

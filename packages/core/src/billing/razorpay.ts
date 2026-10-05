@@ -33,18 +33,24 @@ export function createRazorpayClient(opts: {
   const auth = `Basic ${Buffer.from(`${opts.keyId}:${opts.keySecret}`).toString("base64")}`;
   return {
     async createSubscription(input) {
-      const res = await f(`${base}/subscriptions`, {
-        method: "POST",
-        headers: { Authorization: auth, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          plan_id: input.planId,
-          total_count: input.totalCount,
-          customer_notify: 1,
-          notes: input.notes,
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      const text = await res.text();
+      let res: Response;
+      let text: string;
+      try {
+        res = await f(`${base}/subscriptions`, {
+          method: "POST",
+          headers: { Authorization: auth, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            plan_id: input.planId,
+            total_count: input.totalCount,
+            customer_notify: 1,
+            notes: input.notes,
+          }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        text = await res.text();
+      } catch {
+        throw new CoreError("provider", "razorpay unreachable");
+      }
       if (!res.ok) {
         let description = `razorpay ${res.status}`;
         try {

@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createDb } from "@muxaris/db";
-import { createCognitoVerifier, createDevVerifier } from "@muxaris/core";
+import { createCognitoVerifier, createDevVerifier, createRazorpayClient } from "@muxaris/core";
 import { createS3BlobStore } from "@muxaris/storage";
 import { createApp } from "./app.js";
 import { loadEnv } from "./env.js";
@@ -23,6 +23,12 @@ const app = createApp({
   db,
   verifier,
   channels: env.channels,
+  billing: {
+    env: env.billing,
+    client: env.billing.enabled
+      ? createRazorpayClient({ keyId: env.billing.keyId!, keySecret: env.billing.keySecret! })
+      : null,
+  },
   blobs: env.storageDisabled
     ? null
     : createS3BlobStore({ bucket: env.callsBucket, region: env.awsRegion }),
