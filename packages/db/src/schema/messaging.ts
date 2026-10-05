@@ -33,5 +33,6 @@ export const notifications = pgTable(
     index("notifications_clinic_created_idx").on(t.clinicId, t.createdAt),
     index("notifications_status_next_idx").on(t.status, t.nextAttemptAt),
     index("notifications_appointment_idx").on(t.appointmentId),
+    index("notifications_clinic_patient_idx").on(t.clinicId, t.patientId),
   ],
 );

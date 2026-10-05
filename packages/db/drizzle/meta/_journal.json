@@ -36,6 +36,13 @@
       "when": 1791206432547,
       "tag": "0004_patients_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791213249935,
+      "tag": "0005_plans_billing",
+      "breakpoints": true
     }
   ]
 }

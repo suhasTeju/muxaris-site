@@ -114,34 +114,30 @@ export const DEMO_CLINIC_DEFINITION = {
   },
 };
 
+/** The two plans. The migration 0005 inserts the same rows; keep both in step. */
+export const PLAN_SEED = [
+  {
+    id: "pilot",
+    name: "Pilot",
+    priceInrMonthly: 0,
+    includedCallMinutes: 500,
+    maxConcurrentCalls: 2,
+    features: ["ai_receptionist", "dashboard", "email_confirmations", "reminders"],
+  },
+  {
+    id: "standard",
+    name: "Standard",
+    priceInrMonthly: 4999,
+    includedCallMinutes: 3000,
+    maxConcurrentCalls: 5,
+    features: ["ai_receptionist", "dashboard", "email_confirmations", "reminders"],
+  },
+] as const;
+
 export async function seedDemoClinic(db: Db): Promise<{ clinicId: string }> {
   await db
     .insert(s.plans)
-    .values([
-      {
-        id: "pilot",
-        name: "Pilot",
-        priceInrMonthly: 0,
-        includedCallMinutes: 500,
-        maxConcurrentCalls: 2,
-        features: ["ai_receptionist", "dashboard", "email_confirmations"],
-      },
-      {
-        id: "standard",
-        name: "Standard",
-        priceInrMonthly: 4999,
-        includedCallMinutes: 3000,
-        maxConcurrentCalls: 5,
-        features: [
-          "ai_receptionist",
-          "dashboard",
-          "email_confirmations",
-          "whatsapp",
-          "reminders",
-          "priority_support",
-        ],
-      },
-    ])
+    .values(PLAN_SEED.map((p) => ({ ...p, features: [...p.features] })))
     .onConflictDoUpdate({
       target: s.plans.id,
       set: {
