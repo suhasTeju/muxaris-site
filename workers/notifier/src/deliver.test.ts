@@ -60,9 +60,9 @@ describe.skipIf(!reachable)("deliverOnce", () => {
   let slot = 0;
   async function queuedRow(phone: string, email: string) {
     await createPatient(db, c.clinic.id, { phone, email });
-    const startsAt = new Date(
-      Math.floor((Date.now() + 2 * 86_400_000 + slot++ * 3_600_000) / 60_000) * 60_000,
-    );
+    // 10:30 IST two days out, one hour apart: never straddles the test hours' midnight edge.
+    const startsAt = new Date(Date.now() + 2 * 86_400_000);
+    startsAt.setUTCHours(5 + slot++, 0, 0, 0);
     const apt = await bookAppointment(db, {
       clinicId: c.clinic.id,
       patient: { phone },

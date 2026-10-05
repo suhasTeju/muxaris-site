@@ -57,6 +57,13 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
     await pool.end();
   });
 
+  /** 10:30 IST on day `n` from now: a booking that never straddles the test hours' midnight edge. */
+  const dayAt = (n: number) => {
+    const d = new Date(minuteNow() + n * 86_400_000);
+    d.setUTCHours(5, 0, 0, 0);
+    return d;
+  };
+
   const book = (phone: string, startsAt: Date, name = "Ravi", forDoctor = doctorId) =>
     bookAppointment(db, {
       clinicId: a.clinic.id,
@@ -79,7 +86,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
     createPatient(db, a.clinic.id, { phone, email });
 
   it("books with a skipped row when the patient has no email, and a queued email once they do", async () => {
-    const t = new Date(minuteNow() + 3 * 86_400_000);
+    const t = dayAt(3);
     const apt = await book("+919876600001", t);
     const l1 = await listNotifications(db, a.clinic.id, {
       appointmentId: apt.id,
@@ -107,7 +114,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
   });
 
   it("reschedule and cancel queue their own kinds and reschedule re-arms reminders", async () => {
-    const t = new Date(minuteNow() + 4 * 86_400_000);
+    const t = dayAt(4);
     const apt = await book("+919876600002", t);
     await db
       .update(schema.appointments)
@@ -141,7 +148,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
       .set({ settings: { notifications: { confirmations: false } } })
       .where(eq(schema.clinics.id, a.clinic.id));
     try {
-      const apt = await book("+919876600003", new Date(minuteNow() + 5 * 86_400_000));
+      const apt = await book("+919876600003", dayAt(5));
       const l = await listNotifications(db, a.clinic.id, {
         appointmentId: apt.id,
         limit: 10,
@@ -166,7 +173,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
       patient: { phone: "+919876600004" },
       doctorId,
       serviceId,
-      startsAt: new Date(minuteNow() + 6 * 86_400_000),
+      startsAt: dayAt(6),
       source: "dashboard",
       allowOutsideRules: true,
       notify: OFF,
@@ -207,7 +214,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
       .where(eq(schema.notifications.id, mine[0]!.id));
     expect(row?.status).toBe("failed");
     // a queued row can be marked sent
-    const apt2 = await book("+919876600009", new Date(minuteNow() + 7 * 86_400_000));
+    const apt2 = await book("+919876600009", dayAt(7));
     const [q] = await db
       .select()
       .from(schema.notifications)
@@ -224,7 +231,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
   });
 
   it("fails rows that exhausted their attempts instead of claiming them", async () => {
-    const apt = await book("+919876600010", new Date(minuteNow() + 8 * 86_400_000));
+    const apt = await book("+919876600010", dayAt(8));
     const [q] = await db
       .select()
       .from(schema.notifications)
@@ -244,7 +251,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
 
   it("cancel supersedes a queued confirmation that is waiting to retry", async () => {
     await withEmail("+919876600012", "s1@example.test");
-    const apt = await book("+919876600012", new Date(minuteNow() + 9 * 86_400_000));
+    const apt = await book("+919876600012", dayAt(9));
     const conf = await rowOf(apt.id, "appointment_confirmed");
     expect(conf?.status).toBe("queued");
     const now = new Date();
@@ -268,7 +275,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
 
   it("reschedule supersedes queued messages whether or not a new one is written", async () => {
     await withEmail("+919876600013", "s2@example.test");
-    const t = new Date(minuteNow() + 10 * 86_400_000);
+    const t = dayAt(10);
     const apt = await book("+919876600013", t);
     expect((await rowOf(apt.id, "appointment_confirmed"))?.status).toBe("queued");
     await rescheduleAppointment(db, {
@@ -296,7 +303,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
   });
 
   it("retry renders the message again from the appointment as it is now", async () => {
-    const t = new Date(minuteNow() + 11 * 86_400_000);
+    const t = dayAt(11);
     const apt = await book("+919876600014", t);
     const conf = await rowOf(apt.id, "appointment_confirmed");
     expect(conf).toMatchObject({ status: "skipped", error: "no_contact" });
@@ -334,13 +341,13 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
       });
     // superseded
     await withEmail("+919876600015", "s3@example.test");
-    const a1 = await book("+919876600015", new Date(minuteNow() + 12 * 86_400_000));
+    const a1 = await book("+919876600015", dayAt(12));
     await cancelAppointment(db, { clinicId: a.clinic.id, appointmentId: a1.id, notify: OFF });
     const superseded = await rowOf(a1.id, "appointment_confirmed");
     expect(superseded?.error).toBe("superseded");
     await expect(retry(superseded!.id)).rejects.toMatchObject(conflict);
     // cancelled appointment: the confirmation is refused, the cancellation notice is allowed
-    const a2 = await book("+919876600016", new Date(minuteNow() + 12 * 86_400_000 + H));
+    const a2 = await book("+919876600016", new Date(dayAt(12).getTime() + H));
     await cancelAppointment(db, { clinicId: a.clinic.id, appointmentId: a2.id, notify: OFF });
     await updatePatient(db, a.clinic.id, a2.patientId, { email: "s4@example.test" });
     const conf2 = await rowOf(a2.id, "appointment_confirmed");
@@ -349,7 +356,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
     const cancelNotice = await rowOf(a2.id, "appointment_cancelled");
     expect((await retry(cancelNotice!.id)).status).toBe("queued");
     // appointment time has passed
-    const a3 = await book("+919876600017", new Date(minuteNow() + 13 * 86_400_000));
+    const a3 = await book("+919876600017", dayAt(13));
     await updatePatient(db, a.clinic.id, a3.patientId, { email: "s5@example.test" });
     const conf3 = await rowOf(a3.id, "appointment_confirmed");
     await expect(retry(conf3!.id, new Date(a3.startsAt.getTime() + 60_000))).rejects.toMatchObject(
@@ -359,7 +366,7 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
   });
 
   it("knows when an appointment message is still worth delivering", async () => {
-    const apt = await book("+919876600018", new Date(minuteNow() + 14 * 86_400_000));
+    const apt = await book("+919876600018", dayAt(14));
     const at = (now: Date, kind = "reminder_24h") =>
       appointmentStillDeliverable(db, a.clinic.id, apt.id, kind, now);
     expect(await at(new Date())).toBe(true);
