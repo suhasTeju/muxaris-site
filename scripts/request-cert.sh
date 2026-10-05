@@ -10,7 +10,7 @@ ARN="$(aws acm list-certificates --region ap-south-1 \
   --query "CertificateSummaryList[?DomainName=='api.muxaris.com'] | [0].CertificateArn" --output text)"
 [[ -n "$ARN" && "$ARN" != "None" ]] || ARN="$(aws acm request-certificate --domain-name api.muxaris.com \
   --subject-alternative-names voice.muxaris.com --validation-method DNS \
-  --idempotency-token muxaris-services --region ap-south-1 \
+  --idempotency-token muxarisservices --region ap-south-1 \
   --query CertificateArn --output text)"
 
 RECORDS=""
