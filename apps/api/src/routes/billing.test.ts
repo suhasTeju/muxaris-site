@@ -1,10 +1,13 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import { Hono } from "hono";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import pg from "pg";
 import { createDb, schema, newId } from "@muxaris/db";
 import { createDevVerifier, FakeRazorpay } from "@muxaris/core";
 import { createApp } from "../app.js";
+import { requestLog } from "../request-log.js";
+import { razorpayWebhook } from "./billing.js";
 
 const url = process.env.DATABASE_URL ?? "postgres://muxaris:muxaris@localhost:5433/muxaris";
 const { db, pool } = createDb(url);
@@ -29,7 +32,12 @@ const subFd = `sub-billfd-${run}`;
 const tok = `dev:${sub}:bill-${run}@test.example`;
 const tokFd = `dev:${subFd}:billfd-${run}@test.example`;
 const providerSubscriptionId = `sub_RT${run}`;
-const eventIds = [`evt_a_${run}`, `evt_b_${run}`, `evt_log_${run}`];
+const eventIds: string[] = []; // billing_events ids are sha256(raw body)
+const hashOf = (body: string) => {
+  const h = createHash("sha256").update(body).digest("hex");
+  eventIds.push(h);
+  return h;
+};
 const envOn = {
   enabled: true,
   keyId: "rzp_test_k",
@@ -132,7 +140,9 @@ afterAll(async () => {
     expect(status.subscription).toMatchObject({ providerSubscriptionId, status: "created" });
     expect(JSON.stringify(status)).not.toContain('"s"');
     const again = await call(app, "POST", "/billing/subscriptions", tok, clinicId, {});
-    expect(again.status).toBe(409);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({ providerSubscriptionId });
+    expect(rz.created).toHaveLength(1);
   });
 
   const webhookBody = (id: string) =>
@@ -152,30 +162,57 @@ afterAll(async () => {
       body,
     });
 
-  it("webhook: valid signature applies, wrong signature 400, duplicate event 200 duplicate, missing event id 400", async () => {
+  it("webhook: valid signature applies, wrong signature 400, retry of the same body is a duplicate", async () => {
     const body = webhookBody(providerSubscriptionId);
+    hashOf(body);
     const sig = sign(body);
-    const first = await post(app, body, {
-      "X-Razorpay-Signature": sig,
-      "X-Razorpay-Event-Id": eventIds[0]!,
-    });
+    const first = await post(app, body, { "X-Razorpay-Signature": sig });
     expect(first.status).toBe(200);
     expect(await first.json()).toEqual({ result: "applied" });
-    const bad = await post(app, body, {
-      "X-Razorpay-Signature": "0" + sig.slice(1),
-      "X-Razorpay-Event-Id": eventIds[1]!,
-    });
+    const bad = await post(app, body, { "X-Razorpay-Signature": "0" + sig.slice(1) });
     expect(bad.status).toBe(400);
-    const dup = await post(app, body, {
-      "X-Razorpay-Signature": sig,
-      "X-Razorpay-Event-Id": eventIds[0]!,
-    });
+    const dup = await post(app, body, { "X-Razorpay-Signature": sig });
     expect(dup.status).toBe(200);
     expect(await dup.json()).toEqual({ result: "duplicate" });
-    expect((await post(app, body, { "X-Razorpay-Signature": sig })).status).toBe(400);
     const [clinic] = await db.select().from(schema.clinics).where(eq(schema.clinics.id, clinicId));
     expect(clinic?.plan).toBe("standard");
     expect((await post(appOff, body, { "X-Razorpay-Signature": sig })).status).toBe(404);
+  });
+
+  it("replaying a signed body under fresh event-id headers is a duplicate, one row", async () => {
+    const body = webhookBody(providerSubscriptionId);
+    const sig = sign(body);
+    const res = await post(app, body, {
+      "X-Razorpay-Signature": sig,
+      "X-Razorpay-Event-Id": `evt_fresh_1_${run}`,
+    });
+    expect(await res.json()).toEqual({ result: "duplicate" });
+    const res2 = await post(app, body, {
+      "X-Razorpay-Signature": sig,
+      "X-Razorpay-Event-Id": `evt_fresh_2_${run}`,
+    });
+    expect(await res2.json()).toEqual({ result: "duplicate" });
+    const rows = await db
+      .select()
+      .from(schema.billingEvents)
+      .where(eq(schema.billingEvents.id, hashOf(body)));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("authentic events without a subscription entity are 200 ignored and leave no row", async () => {
+    const body = JSON.stringify({
+      event: "payment.captured",
+      payload: { payment: { entity: {} } },
+    });
+    const id = hashOf(body);
+    const res = await post(app, body, { "X-Razorpay-Signature": sign(body) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ result: "ignored" });
+    const rows = await db
+      .select()
+      .from(schema.billingEvents)
+      .where(eq(schema.billingEvents.id, id));
+    expect(rows).toHaveLength(0);
   });
 
   it("webhook rejects an oversized body with 413", async () => {
@@ -185,14 +222,27 @@ afterAll(async () => {
   });
 
   it("webhook never logs the signature or body", async () => {
-    const logs = [vi.spyOn(console, "log"), vi.spyOn(console, "error"), vi.spyOn(console, "warn")];
-    const body = webhookBody(providerSubscriptionId);
-    const sig = sign(body);
-    await post(app, body, { "X-Razorpay-Signature": sig, "X-Razorpay-Event-Id": eventIds[2]! });
-    await post(app, body, { "X-Razorpay-Signature": "0" + sig.slice(1) });
-    const out = logs.flatMap((s) => s.mock.calls.flat().map(String)).join("\n");
-    logs.forEach((s) => s.mockRestore());
-    expect(out).not.toContain(sig);
+    const spies = [vi.spyOn(console, "log"), vi.spyOn(console, "error"), vi.spyOn(console, "warn")];
+    const lines: string[] = [];
+    const logged = new Hono();
+    logged.use(requestLog((l) => lines.push(l)));
+    logged.route("/", razorpayWebhook(db, { env: envOn }));
+    const good = webhookBody(providerSubscriptionId);
+    const malformed = '{"event":"subscription.activated","oops": ';
+    const secrets = [sign(good), good, sign(malformed), malformed, hashOf(good)];
+    for (const body of [good, malformed]) {
+      await logged.request("/webhooks/razorpay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Razorpay-Signature": sign(body) },
+        body,
+      });
+    }
+    await post(app, good, { "X-Razorpay-Signature": "0" + sign(good).slice(1) });
+    const out = [...lines, ...spies.flatMap((x) => x.mock.calls.flat().map(String))].join("\n");
+    spies.forEach((x) => x.mockRestore());
+    expect(lines.length).toBe(2);
+    expect(lines[0]).toContain("POST /webhooks/razorpay");
+    for (const secret of secrets) expect(out).not.toContain(secret);
     expect(out).not.toContain("subscription.activated");
   });
 });

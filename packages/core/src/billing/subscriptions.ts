@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { schema, newId, type Db } from "@muxaris/db";
 import { CoreError } from "../services/errors.js";
@@ -6,7 +6,8 @@ import type { RazorpayClient } from "./razorpay.js";
 
 const { clinics, subscriptions, billingEvents, auditLog } = schema;
 
-const OPEN_STATUSES = ["created", "authenticated", "active"];
+/** Statuses that block a new start. `created` (checkout never completed) is resumable instead. */
+const BLOCKING_STATUSES = ["authenticated", "active", "pending", "halted"];
 
 /**
  * Starts the Standard subscription for a clinic. The clinic row is locked FOR UPDATE for the
@@ -28,15 +29,24 @@ export async function startStandardSubscription(
       .for("update");
     if (!clinic) throw new CoreError("not_found", "clinic not found");
     const open = await tx
-      .select({ id: subscriptions.id })
+      .select({
+        id: subscriptions.id,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+        status: subscriptions.status,
+      })
       .from(subscriptions)
       .where(
         and(
           eq(subscriptions.clinicId, input.clinicId),
-          inArray(subscriptions.status, OPEN_STATUSES),
+          inArray(subscriptions.status, [...BLOCKING_STATUSES, "created"]),
         ),
-      );
-    if (open.length > 0) throw new CoreError("conflict", "clinic already has a subscription");
+      )
+      .orderBy(desc(subscriptions.createdAt));
+    if (open.some((s) => s.status !== "created"))
+      throw new CoreError("conflict", "clinic already has a subscription");
+    const pending = open[0];
+    if (pending)
+      return { subscriptionId: pending.id, providerSubscriptionId: pending.providerSubscriptionId };
     const r = await rz.createSubscription({
       planId: input.standardPlanId,
       totalCount: 12,
@@ -73,14 +83,17 @@ export interface RazorpayEvent {
 const eventSchema = z.object({
   event: z.string().min(1),
   payload: z.object({
-    subscription: z.object({
-      entity: z.object({
-        id: z.string().min(1),
-        status: z.string().min(1),
-        plan_id: z.string().min(1),
-        current_end: z.number().int().nonnegative().max(4_102_444_800).nullable().optional(),
-      }),
-    }),
+    // payment.* / order.* events carry no subscription entity: accepted and ignored.
+    subscription: z
+      .object({
+        entity: z.object({
+          id: z.string().min(1),
+          status: z.string().min(1),
+          plan_id: z.string().min(1),
+          current_end: z.number().int().nonnegative().max(4_102_444_800).nullable().optional(),
+        }),
+      })
+      .optional(),
   }),
 });
 
@@ -92,7 +105,9 @@ export function parseRazorpayEvent(body: unknown, eventId: string | undefined): 
     const where = parsed.error.issues[0]?.path.join(".") ?? "body";
     throw new CoreError("validation", `invalid razorpay event: ${where}`);
   }
-  const e = parsed.data.payload.subscription.entity;
+  const sub = parsed.data.payload.subscription;
+  if (!sub) return { id: eventId, event: parsed.data.event, raw: body as Record<string, unknown> };
+  const e = sub.entity;
   return {
     id: eventId,
     event: parsed.data.event,

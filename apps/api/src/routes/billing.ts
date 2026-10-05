@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { desc, eq } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
@@ -64,7 +65,10 @@ export function razorpayWebhook(db: Db, billing: { env: BillingEnv }) {
     } catch {
       return c.json({ error: { code: "validation", message: "invalid JSON" } }, 400);
     }
-    const ev = parseRazorpayEvent(parsed, c.req.header("X-Razorpay-Event-Id"));
+    // The event-id header is not covered by the HMAC, so it cannot be the idempotency key (a
+    // captured delivery could be replayed under fresh ids). Key on the signed body instead;
+    // Razorpay retries resend the identical body.
+    const ev = parseRazorpayEvent(parsed, createHash("sha256").update(raw).digest("hex"));
     return c.json({ result: await applyRazorpayEvent(db, ev) });
   });
   return r;

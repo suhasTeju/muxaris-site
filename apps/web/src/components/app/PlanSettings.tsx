@@ -32,12 +32,14 @@ export function PlanSettings({
   billing,
   tz,
   onUpgrade,
+  upgradeDisabled,
 }: {
   usage: UsageSummary | null;
   isOwner: boolean;
   billing: { enabled: boolean };
   tz: string;
   onUpgrade?: () => void;
+  upgradeDisabled?: boolean;
 }) {
   if (!usage) {
     return (
@@ -90,7 +92,12 @@ export function PlanSettings({
       ) : !isOwner ? (
         <p className="text-muted text-sm">Only the clinic owner can change the plan.</p>
       ) : usage.plan === "pilot" ? (
-        <button type="button" onClick={onUpgrade} className={`${primaryBtn} self-start`}>
+        <button
+          type="button"
+          onClick={onUpgrade}
+          disabled={upgradeDisabled ?? false}
+          className={`${primaryBtn} self-start`}
+        >
           Upgrade to Standard
         </button>
       ) : (

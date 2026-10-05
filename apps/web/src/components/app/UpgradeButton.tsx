@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { UsageSummary } from "@muxaris/shared";
+import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/api-client";
 import { PlanSettings } from "./PlanSettings";
 
@@ -13,16 +14,25 @@ declare global {
 
 const CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
 
+let checkoutLoading: Promise<void> | null = null;
+
 function loadCheckout(): Promise<void> {
   if (window.Razorpay) return Promise.resolve();
-  return new Promise((resolve, reject) => {
+  if (checkoutLoading) return checkoutLoading;
+  const p = new Promise<void>((resolve, reject) => {
     const s = document.createElement("script");
     s.src = CHECKOUT_SRC;
     s.async = true;
     s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Could not load the payment window. Try again."));
+    s.onerror = () => {
+      s.remove();
+      checkoutLoading = null;
+      reject(new Error("Checkout could not be loaded. Check your connection and try again."));
+    };
     document.body.appendChild(s);
   });
+  checkoutLoading = p;
+  return p;
 }
 
 /** Client wrapper: runs the Razorpay checkout for PlanSettings' Upgrade button. */
@@ -36,9 +46,11 @@ export function UpgradeButton(props: {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
 
   async function start() {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -56,15 +68,22 @@ export function UpgradeButton(props: {
         handler: () => setDone(true),
       }).open();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start the upgrade");
+      setError(
+        e instanceof ApiError && e.status === 409
+          ? "Your clinic already has a subscription. Refresh the page to see its status."
+          : e instanceof Error
+            ? e.message
+            : "Could not start the upgrade",
+      );
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
 
   return (
     <div className="flex flex-col gap-3">
-      <PlanSettings {...props} onUpgrade={start} />
+      <PlanSettings {...props} onUpgrade={start} upgradeDisabled={busy || done} />
       {done ? (
         <p role="status" className="text-sm">
           Payment received. Your plan updates within a minute.

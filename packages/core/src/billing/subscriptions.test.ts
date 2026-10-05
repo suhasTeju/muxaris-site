@@ -36,9 +36,7 @@ const ev = (id: string, event: string, status: string, subId = SUB) =>
 
 describe("parseRazorpayEvent", () => {
   it("rejects bodies without an event id, event name or subscription entity", () => {
-    expect(() =>
-      parseRazorpayEvent({ event: "subscription.activated", payload: {} }, "evt_x"),
-    ).toThrow(/subscription/);
+    expect(() => parseRazorpayEvent({ event: "x" }, "evt_x")).toThrow(/payload/);
     expect(() =>
       parseRazorpayEvent(
         { payload: { subscription: { entity: { id: "s", status: "active", plan_id: "p" } } } },
@@ -54,6 +52,22 @@ describe("parseRazorpayEvent", () => {
         undefined,
       ),
     ).toThrow(/event id/i);
+  });
+
+  it("accepts events without a subscription entity and ignores them without a billing_events row", async () => {
+    const e = parseRazorpayEvent(
+      { event: "payment.captured", payload: { payment: {} } },
+      "evt_pay",
+    );
+    expect(e.subscription).toBeUndefined();
+    if (reachable) {
+      expect(await applyRazorpayEvent(db, e)).toBe("ignored");
+      const rows = await db
+        .select()
+        .from(schema.billingEvents)
+        .where(eq(schema.billingEvents.id, "evt_pay"));
+      expect(rows).toHaveLength(0);
+    }
   });
 
   it("rejects a non-integer, negative or absurd current_end", () => {
@@ -86,23 +100,37 @@ describe("parseRazorpayEvent", () => {
     await pool.end();
   });
 
-  it("starts a subscription once and refuses a second active one", async () => {
+  it("a second start while checkout is pending reuses the created subscription", async () => {
     const rz = new FakeRazorpay();
     rz.nextId = SUB;
-    const r = await startStandardSubscription(db, rz, {
-      clinicId: c.clinic.id,
-      actorUserId: c.user.id,
-      standardPlanId: "plan_std",
-    });
-    expect(r.providerSubscriptionId).toBe(SUB);
+    const input = { clinicId: c.clinic.id, actorUserId: c.user.id, standardPlanId: "plan_std" };
+    const first = await startStandardSubscription(db, rz, input);
+    expect(first.providerSubscriptionId).toBe(SUB);
     expect(rz.created[0]?.notes).toEqual({ clinicId: c.clinic.id });
-    await expect(
-      startStandardSubscription(db, rz, {
-        clinicId: c.clinic.id,
-        actorUserId: c.user.id,
-        standardPlanId: "plan_std",
-      }),
-    ).rejects.toMatchObject({ code: "conflict" });
+    const second = await startStandardSubscription(db, rz, input);
+    expect(second).toEqual(first);
+    expect(rz.created.length).toBe(1);
+  });
+
+  it("refuses a new start while a subscription is active", async () => {
+    const rz = new FakeRazorpay();
+    const input = { clinicId: c.clinic.id, actorUserId: c.user.id, standardPlanId: "plan_std" };
+    const setStatus = (status: string) =>
+      db
+        .update(schema.subscriptions)
+        .set({ status })
+        .where(eq(schema.subscriptions.clinicId, c.clinic.id));
+    for (const status of ["active", "authenticated", "pending", "halted"]) {
+      await setStatus(status);
+      await expect(startStandardSubscription(db, rz, input)).rejects.toMatchObject({
+        code: "conflict",
+      });
+    }
+    await setStatus("created");
+    expect(rz.created.length).toBe(0);
+  });
+
+  it("audits the start once", async () => {
     const audits = await db
       .select()
       .from(schema.auditLog)
