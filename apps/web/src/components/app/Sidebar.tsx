@@ -12,11 +12,21 @@ export const NAV = [
     label: "Appointments",
     match: (p: string) => p.startsWith("/app/appointments"),
   },
+  {
+    href: "/app/patients",
+    label: "Patients",
+    match: (p: string) => p.startsWith("/app/patients"),
+  },
   { href: "/app/calls", label: "Calls", match: (p: string) => p.startsWith("/app/calls") },
   {
     href: "/app/callbacks",
     label: "Callbacks",
     match: (p: string) => p.startsWith("/app/callbacks"),
+  },
+  {
+    href: "/app/notifications",
+    label: "Notifications",
+    match: (p: string) => p.startsWith("/app/notifications"),
   },
   {
     href: "/app/assistant/try",

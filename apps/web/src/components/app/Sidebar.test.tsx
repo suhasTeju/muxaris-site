@@ -24,6 +24,22 @@ describe("Sidebar", () => {
     expect(api).toHaveBeenCalledWith("/v1/callbacks?status=open&limit=1");
   });
 
+  it("lists the navigation in order", () => {
+    api.mockResolvedValue({ callbacks: [], total: 0 });
+    render(<Sidebar open onNavigate={() => undefined} />);
+    const labels = screen.getAllByRole("link").map((l) => l.textContent);
+    expect(labels).toEqual([
+      "Overview",
+      "Appointments",
+      "Patients",
+      "Calls",
+      "Callbacks",
+      "Notifications",
+      "Assistant",
+      "Settings",
+    ]);
+  });
+
   it("renders no badge when the count is zero or the request fails", async () => {
     api.mockRejectedValue(new Error("down"));
     render(<Sidebar open onNavigate={() => undefined} />);

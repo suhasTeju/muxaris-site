@@ -8,6 +8,7 @@ import { formatDateTime } from "@/lib/dashboard";
 import { Badge } from "./Badge";
 import { EmptyState } from "./EmptyState";
 import { fieldClass, ghostBtn, primaryBtn } from "./Modal";
+import { RevealPhone } from "./RevealPhone";
 
 const PAGE = 50;
 type Tab = "open" | "done";
@@ -56,7 +57,10 @@ function Row({
   return (
     <li className="flex flex-col gap-3 px-4 py-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span className="font-medium tabular-nums">{cb.phoneMasked}</span>
+        <RevealPhone
+          masked={cb.phoneMasked}
+          path={`/v1/callbacks/${encodeURIComponent(cb.id)}/reveal-phone`}
+        />
         <Badge tone={cb.priority === "high" || cb.priority === "urgent" ? "warn" : "muted"}>
           {cb.priority}
         </Badge>

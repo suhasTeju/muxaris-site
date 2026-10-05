@@ -1,4 +1,4 @@
-import type { Appointment, Call } from "@muxaris/shared";
+import type { Appointment, Call, Notification } from "@muxaris/shared";
 import { OUTCOME_LABEL } from "@/lib/dashboard";
 
 type Tone = "good" | "warn" | "bad" | "muted";
@@ -57,4 +57,16 @@ export function CallStatusBadge({ status }: { status: Call["status"] }) {
   ) : (
     <Badge tone="warn">In progress</Badge>
   );
+}
+
+const NOTIFICATION: Record<Notification["status"], [Tone, string]> = {
+  queued: ["muted", "Queued"],
+  sent: ["good", "Sent"],
+  failed: ["warn", "Failed"],
+  skipped: ["muted", "Not sent"],
+};
+
+export function NotificationStatusBadge({ status }: { status: Notification["status"] }) {
+  const [tone, label] = NOTIFICATION[status];
+  return <Badge tone={tone}>{label}</Badge>;
 }

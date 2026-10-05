@@ -11,6 +11,8 @@ export interface AppointmentListProps {
   tz: string;
   onCancel?: (a: Appointment) => void;
   onReschedule?: (a: Appointment) => void;
+  onOutcome?: (a: Appointment, status: "completed" | "no_show") => void;
+  now?: Date;
   emptyText?: string;
 }
 
@@ -23,11 +25,14 @@ export function AppointmentList({
   tz,
   onCancel,
   onReschedule,
+  onOutcome,
+  now,
   emptyText = "No appointments today. Your assistant will book them as calls come in.",
 }: AppointmentListProps) {
   if (appointments.length === 0) {
     return <EmptyState>{emptyText}</EmptyState>;
   }
+  const cutoff = now ?? new Date();
   const service = new Map(services.map((s) => [s.id, s.name]));
   const groups = groupByDoctor(appointments, doctors);
   return (
@@ -61,7 +66,24 @@ export function AppointmentList({
                     ) : null}
                   </span>
                   <AppointmentStatusBadge status={a.status} />
-                  {(onCancel || onReschedule) && ACTIVE.includes(a.status) ? (
+                  {onOutcome && ACTIVE.includes(a.status) && new Date(a.endsAt) < cutoff ? (
+                    <span className="flex gap-2">
+                      <button
+                        type="button"
+                        className={ghostBtn}
+                        onClick={() => onOutcome(a, "completed")}
+                      >
+                        Completed
+                      </button>
+                      <button
+                        type="button"
+                        className={ghostBtn}
+                        onClick={() => onOutcome(a, "no_show")}
+                      >
+                        No-show
+                      </button>
+                    </span>
+                  ) : (onCancel || onReschedule) && ACTIVE.includes(a.status) ? (
                     <span className="flex gap-2">
                       {onReschedule && (
                         <button type="button" className={ghostBtn} onClick={() => onReschedule(a)}>

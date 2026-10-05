@@ -40,6 +40,7 @@ function AppointmentsInner() {
     services: Service[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const rangeKey = `${date}|${mode}|${tz}`;
   // Rows from another date or mode must not sit under the new header while the response is in flight.
@@ -88,6 +89,25 @@ function AppointmentsInner() {
     onCancel: setCancelling,
     onReschedule: setRescheduling,
   };
+  async function outcome(a: Appointment, status: "completed" | "no_show") {
+    setOutcomeError(null);
+    try {
+      const r = await api<{ appointment: Appointment }>(
+        `/v1/appointments/${encodeURIComponent(a.id)}/status`,
+        { method: "POST", body: { status } },
+      );
+      setLoaded((prev) =>
+        prev
+          ? {
+              ...prev,
+              appointments: prev.appointments.map((x) => (x.id === a.id ? r.appointment : x)),
+            }
+          : prev,
+      );
+    } catch (e) {
+      setOutcomeError(e instanceof Error ? e.message : "Could not update the appointment");
+    }
+  }
   const refresh = () => {
     setCreating(false);
     setCancelling(null);
@@ -174,7 +194,14 @@ function AppointmentsInner() {
       ) : !common || !ready ? (
         <p className="text-muted">Loading appointments…</p>
       ) : mode === "day" ? (
-        <AppointmentList {...common} />
+        <>
+          {outcomeError ? (
+            <p role="alert" className="text-danger mb-3 text-sm">
+              {outcomeError}
+            </p>
+          ) : null}
+          <AppointmentList {...common} onOutcome={outcome} />
+        </>
       ) : (
         <DayCalendar days={days} {...common} />
       )}
