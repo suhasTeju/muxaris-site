@@ -14,7 +14,16 @@ async function awsClient(): Promise<SecretsClient> {
 
 /** RDS-generated secret ({username,password,host,port,dbname}) → postgres:// URL. */
 export function databaseUrlFromRdsSecret(json: string): string {
-  const o = JSON.parse(json) as Record<string, unknown>;
+  // Never let a parse error quote the input: the message must stay value-free.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error("DB_SECRET_ARN is not valid JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+    throw new Error("DB_SECRET_ARN is not a JSON object");
+  const o = parsed as Record<string, unknown>;
   const missing = ["username", "password", "host", "port", "dbname"].filter(
     (k) => o[k] === undefined || o[k] === "",
   );

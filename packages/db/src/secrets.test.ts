@@ -21,6 +21,18 @@ describe("databaseUrlFromRdsSecret", () => {
   it("rejects a secret missing a field", () => {
     expect(() => databaseUrlFromRdsSecret(JSON.stringify({ username: "a" }))).toThrow(/host/);
   });
+  it("never quotes a malformed secret in the error", () => {
+    const bad = '{"password":"hunter2-plaintext"';
+    let msg = "";
+    try {
+      databaseUrlFromRdsSecret(bad);
+    } catch (e) {
+      msg = (e as Error).message;
+    }
+    expect(msg).toBe("DB_SECRET_ARN is not valid JSON");
+    expect(() => databaseUrlFromRdsSecret("null")).toThrow(/not a JSON object/);
+    expect(() => databaseUrlFromRdsSecret("[1]")).toThrow(/not a JSON object/);
+  });
 });
 
 describe("applySecretsToEnv", () => {
