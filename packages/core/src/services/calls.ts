@@ -614,20 +614,24 @@ export async function purgeExpiredCallbacks(
 ): Promise<{ purged: number }> {
   const now = opts.now ?? new Date();
   const cutoff = new Date(now.getTime() - (opts.retentionDays ?? 90) * 86_400_000);
-  const due = await db
-    .select({ id: callbacks.id, phone: callbacks.phone })
-    .from(callbacks)
-    .where(
-      and(eq(callbacks.status, "done"), lt(callbacks.doneAt, cutoff), isNull(callbacks.purgedAt)),
-    )
-    .limit(500);
-  let purged = 0;
-  for (const row of due) {
-    await db
-      .update(callbacks)
-      .set({ phone: maskPhone(row.phone), reason: "purged", note: null, purgedAt: now })
-      .where(and(eq(callbacks.id, row.id), isNull(callbacks.purgedAt)));
-    purged++;
-  }
-  return { purged };
+  return db.transaction(async (tx) => {
+    const due = await tx
+      .select({ id: callbacks.id, phone: callbacks.phone })
+      .from(callbacks)
+      .where(
+        and(eq(callbacks.status, "done"), lt(callbacks.doneAt, cutoff), isNull(callbacks.purgedAt)),
+      )
+      .limit(500)
+      .for("update", { skipLocked: true });
+    let purged = 0;
+    for (const row of due) {
+      const done = await tx
+        .update(callbacks)
+        .set({ phone: maskPhone(row.phone), reason: "purged", note: null, purgedAt: now })
+        .where(and(eq(callbacks.id, row.id), isNull(callbacks.purgedAt)))
+        .returning({ id: callbacks.id });
+      purged += done.length;
+    }
+    return { purged };
+  });
 }

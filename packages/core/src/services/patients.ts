@@ -2,6 +2,8 @@ import { and, asc, count, desc, eq, gte, ilike, inArray, or } from "drizzle-orm"
 import { schema, newId, type Db } from "@muxaris/db";
 import { maskPhone } from "@muxaris/shared";
 import type { DbLike } from "./db-types.js";
+import type { CallRow } from "./calls.js";
+import type { Appointment } from "./scheduling.js";
 import { CoreError } from "./errors.js";
 
 const { patients, appointments, calls, auditLog } = schema;
@@ -82,16 +84,28 @@ export interface PatientPatch {
   notes?: string | null;
 }
 
+function normaliseFullIndianMobile(q: string): string | null {
+  const m = /^(?:\+?91|0)?([6-9]\d{9})$/.exec(q.replace(/[\s-]/g, ""));
+  return m ? `+91${m[1]}` : null;
+}
+
 export async function listPatients(
   db: Db,
   clinicId: string,
   opts: { q?: string; limit: number; offset: number },
 ): Promise<{ patients: PatientView[]; total: number }> {
-  const like = opts.q ? `%${opts.q.replace(/[\\%_]/g, "\\$&")}%` : null;
+  const q = opts.q?.trim();
+  const like = q ? `%${q.replace(/[\\%_]/g, "\\$&")}%` : null;
+  // Phones match only as a complete number, so partial digits cannot reconstruct one unaudited.
+  const fullPhone = q ? normaliseFullIndianMobile(q) : null;
   const where = and(
     eq(patients.clinicId, clinicId),
     like
-      ? or(ilike(patients.name, like), ilike(patients.phone, like), ilike(patients.email, like))
+      ? or(
+          ilike(patients.name, like),
+          ilike(patients.email, like),
+          fullPhone ? eq(patients.phone, fullPhone) : undefined,
+        )
       : undefined,
   );
   const [rows, [tot]] = await Promise.all([
@@ -116,7 +130,21 @@ async function loadPatient(db: DbLike, clinicId: string, patientId: string): Pro
   return row;
 }
 
-export async function getPatient(db: Db, clinicId: string, patientId: string) {
+/** Call history entry for a patient; deliberately omits the caller's raw phone. */
+export interface PatientCallSummary {
+  id: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  durationS: number | null;
+  outcome: CallRow["outcome"];
+  summary: string | null;
+}
+
+export async function getPatient(
+  db: Db,
+  clinicId: string,
+  patientId: string,
+): Promise<{ patient: PatientView; appointments: Appointment[]; calls: PatientCallSummary[] }> {
   const row = await loadPatient(db, clinicId, patientId);
   const [apts, callRows] = await Promise.all([
     db
@@ -126,7 +154,14 @@ export async function getPatient(db: Db, clinicId: string, patientId: string) {
       .orderBy(desc(appointments.startsAt))
       .limit(100),
     db
-      .select()
+      .select({
+        id: calls.id,
+        startedAt: calls.startedAt,
+        endedAt: calls.endedAt,
+        durationS: calls.durationS,
+        outcome: calls.outcome,
+        summary: calls.summary,
+      })
       .from(calls)
       .where(and(eq(calls.clinicId, clinicId), eq(calls.patientId, patientId)))
       .orderBy(desc(calls.startedAt))

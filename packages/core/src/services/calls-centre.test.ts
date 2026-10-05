@@ -587,9 +587,34 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
       actorUserId: a.user.id,
     });
     expect(r.phone).toBe("+919876500001");
+    const audits = await db
+      .select()
+      .from(schema.auditLog)
+      .where(eq(schema.auditLog.entityId, cb.id));
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.action).toBe("callback.phone.reveal");
+    expect(JSON.stringify(audits[0]?.data ?? {})).not.toContain("0001");
+    await expect(
+      revealCallbackPhone(db, { clinicId: b.clinic.id, callbackId: cb.id, actorUserId: b.user.id }),
+    ).rejects.toMatchObject({ code: "not_found" });
     await updateCallback(db, { clinicId: a.clinic.id, callbackId: cb.id, status: "done" });
-    const later = new Date(Date.now() + 91 * 86_400_000);
-    expect((await purgeExpiredCallbacks(db, { now: later })).purged).toBeGreaterThanOrEqual(1);
+    await db
+      .update(schema.callbacks)
+      .set({ doneAt: new Date(Date.now() - 100 * 86_400_000) })
+      .where(eq(schema.callbacks.id, cb.id));
+    // open callbacks are never purged, however old
+    const open = await createCallback(db, {
+      clinicId: a.clinic.id,
+      phone: "+919876500002",
+      reason: "x",
+    });
+    await db
+      .update(schema.callbacks)
+      .set({ createdAt: new Date(Date.now() - 100 * 86_400_000) })
+      .where(eq(schema.callbacks.id, open.id));
+    expect((await purgeExpiredCallbacks(db, { retentionDays: 90 })).purged).toBeGreaterThanOrEqual(
+      1,
+    );
     const [row] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, cb.id));
     expect(row?.phone).toBe("+91 •••• ••0001");
     expect(row?.purgedAt).not.toBeNull();
@@ -597,13 +622,6 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
     await expect(
       revealCallbackPhone(db, { clinicId: a.clinic.id, callbackId: cb.id, actorUserId: a.user.id }),
     ).rejects.toMatchObject({ code: "conflict" });
-    // open callbacks are never purged
-    const open = await createCallback(db, {
-      clinicId: a.clinic.id,
-      phone: "+919876500002",
-      reason: "x",
-    });
-    await purgeExpiredCallbacks(db, { now: later });
     const [o] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, open.id));
     expect(o?.purgedAt).toBeNull();
   });

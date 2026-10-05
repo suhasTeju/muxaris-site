@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { schema } from "@muxaris/db";
+import { createCall, finishCall } from "./calls.js";
 import { CoreError } from "./errors.js";
 import {
   createPatient,
@@ -11,6 +12,7 @@ import {
 } from "./patients.js";
 import {
   bookAppointment,
+  rescheduleAppointment,
   createDoctor,
   createService,
   setAppointmentOutcome,
@@ -44,6 +46,19 @@ const { db, pool } = openDb();
     });
     const list = await listPatients(db, a.clinic.id, { q: "rav", limit: 10, offset: 0 });
     expect(list.total).toBe(1);
+    // phone matches only as a complete number; partial digits match nothing
+    expect(
+      (await listPatients(db, a.clinic.id, { q: "9876543210", limit: 10, offset: 0 })).total,
+    ).toBe(1);
+    expect(
+      (await listPatients(db, a.clinic.id, { q: "+91 98765-43210", limit: 10, offset: 0 })).total,
+    ).toBe(1);
+    expect((await listPatients(db, a.clinic.id, { q: "98765", limit: 10, offset: 0 })).total).toBe(
+      0,
+    );
+    expect((await listPatients(db, a.clinic.id, { q: "3210", limit: 10, offset: 0 })).total).toBe(
+      0,
+    );
     expect(list.patients[0]?.id).toBe(p.id);
     expect((await listPatients(db, b.clinic.id, { limit: 10, offset: 0 })).total).toBe(0);
   });
@@ -96,7 +111,18 @@ const { db, pool } = openDb();
       allowOutsideRules: true,
       now: new Date(past.getTime() - 86_400_000), // booking guards reject the past
     });
+    const call = await createCall(db, { clinicId: a.clinic.id, channel: "browser" });
+    await finishCall(db, {
+      callId: call.id,
+      clinicId: a.clinic.id,
+      status: "completed",
+      durationS: 5,
+      patientId: apt.patientId,
+    });
     const detail = await getPatient(db, a.clinic.id, apt.patientId);
+    expect(detail.calls).toHaveLength(1);
+    expect("callerPhone" in (detail.calls[0] ?? {})).toBe(false);
+    expect(detail.calls[0]?.id).toBe(call.id);
     expect(detail.appointments[0]?.id).toBe(apt.id);
     expect(detail.patient.phoneMasked.endsWith("3213")).toBe(true);
     const done = await setAppointmentOutcome(db, {
@@ -106,6 +132,12 @@ const { db, pool } = openDb();
       actorUserId: a.user.id,
     });
     expect(done.status).toBe("no_show");
+    const [outcomeAudit] = await db
+      .select()
+      .from(schema.auditLog)
+      .where(eq(schema.auditLog.entityId, apt.id));
+    expect(outcomeAudit?.action).toBe("appointment.status.edit");
+    expect(outcomeAudit?.data).toEqual({ from: "scheduled", to: "no_show" });
     await expect(
       setAppointmentOutcome(db, {
         clinicId: a.clinic.id,
@@ -138,5 +170,34 @@ const { db, pool } = openDb();
         actorUserId: a.user.id,
       }),
     ).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  it("rescheduling clears the reminder stamps", async () => {
+    const doc = await createDoctor(db, a.clinic.id, { name: "Dr Resched" });
+    const svc = await createService(db, a.clinic.id, { name: "Resched", durationMin: 30 });
+    const start = new Date(Date.now() + 5 * 86_400_000);
+    start.setUTCHours(5, 30, 0, 0);
+    const apt = await bookAppointment(db, {
+      clinicId: a.clinic.id,
+      patient: { phone: "+919876543215" },
+      doctorId: doc.id,
+      serviceId: svc.id,
+      startsAt: start,
+      source: "dashboard",
+      allowOutsideRules: true,
+    });
+    const stamp = new Date();
+    await db
+      .update(schema.appointments)
+      .set({ reminder24hSentAt: stamp, reminder2hSentAt: stamp })
+      .where(eq(schema.appointments.id, apt.id));
+    const moved = await rescheduleAppointment(db, {
+      clinicId: a.clinic.id,
+      appointmentId: apt.id,
+      newStartsAt: new Date(start.getTime() + 86_400_000),
+      allowOutsideRules: true,
+    });
+    expect(moved.reminder24hSentAt).toBeNull();
+    expect(moved.reminder2hSentAt).toBeNull();
   });
 });
