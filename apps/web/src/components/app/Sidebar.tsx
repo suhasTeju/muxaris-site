@@ -19,6 +19,11 @@ export const NAV = [
   },
   { href: "/app/calls", label: "Calls", match: (p: string) => p.startsWith("/app/calls") },
   {
+    href: "/app/analytics",
+    label: "Analytics",
+    match: (p: string) => p.startsWith("/app/analytics"),
+  },
+  {
     href: "/app/callbacks",
     label: "Callbacks",
     match: (p: string) => p.startsWith("/app/callbacks"),

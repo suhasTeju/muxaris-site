@@ -33,6 +33,7 @@ describe("Sidebar", () => {
       "Appointments",
       "Patients",
       "Calls",
+      "Analytics",
       "Callbacks",
       "Notifications",
       "Assistant",

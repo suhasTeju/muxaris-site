@@ -1,6 +1,12 @@
 import Link from "next/link";
 import type { Appointment, Call, Doctor, Service } from "@muxaris/shared";
-import { formatDuration, type OverviewStats, type Section, type Usage } from "@/lib/dashboard";
+import {
+  formatDay,
+  formatDuration,
+  type OverviewStats,
+  type Section,
+  type Usage,
+} from "@/lib/dashboard";
 import { AppointmentList } from "./AppointmentList";
 import { CallList } from "./CallList";
 import { KpiCard } from "./KpiCard";
@@ -20,6 +26,16 @@ function Unavailable({ what }: { what: string }) {
 }
 
 const DASH = "–";
+
+function usageHint(u: Usage, tz: string): string {
+  const base =
+    u.plan === "pilot" && u.pilotEndsAt
+      ? `Pilot ends ${formatDay(u.pilotEndsAt, tz)}`
+      : u.plan === "pilot"
+        ? "Pilot plan"
+        : "Standard plan";
+  return u.overageSeconds > 0 ? `${base} · ${Math.ceil(u.overageSeconds / 60)} min over` : base;
+}
 
 export function OverviewView({
   clinicName,
@@ -69,7 +85,7 @@ export function OverviewView({
             label="Minutes used this month"
             value={`${minutesUsed} / ${minutesIncluded}`}
             ratio={usageRatio}
-            hint={`${usage.data.plan === "pilot" ? "Pilot" : "Standard"} plan`}
+            hint={usageHint(usage.data, tz)}
           />
         ) : (
           <KpiCard label="Minutes used this month" value={DASH} hint="Couldn't load" />

@@ -59,6 +59,7 @@ describe("OverviewView", () => {
     expect(screen.getByText(/Couldn't load recent calls/)).toBeTruthy();
     expect(screen.getByText(/No appointments today/)).toBeTruthy();
     expect(screen.getByText("10 / 100")).toBeTruthy();
+    expect(screen.getByText(/Pilot ends/)).toBeTruthy();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
