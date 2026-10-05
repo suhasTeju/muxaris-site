@@ -155,6 +155,8 @@ afterAll(async () => {
       },
     });
   const sign = (body: string) => createHmac("sha256", "whsec").update(body).digest("hex");
+  /** A same-length hex string that differs from the real signature in its first character. */
+  const flip = (sig: string) => (sig.startsWith("0") ? "1" : "0") + sig.slice(1);
   const post = (a: typeof app, body: string, headers: Record<string, string>) =>
     a.request("/webhooks/razorpay", {
       method: "POST",
@@ -169,7 +171,7 @@ afterAll(async () => {
     const first = await post(app, body, { "X-Razorpay-Signature": sig });
     expect(first.status).toBe(200);
     expect(await first.json()).toEqual({ result: "applied" });
-    const bad = await post(app, body, { "X-Razorpay-Signature": "0" + sig.slice(1) });
+    const bad = await post(app, body, { "X-Razorpay-Signature": flip(sig) });
     expect(bad.status).toBe(400);
     const dup = await post(app, body, { "X-Razorpay-Signature": sig });
     expect(dup.status).toBe(200);
@@ -237,7 +239,7 @@ afterAll(async () => {
         body,
       });
     }
-    await post(app, good, { "X-Razorpay-Signature": "0" + sign(good).slice(1) });
+    await post(app, good, { "X-Razorpay-Signature": flip(sign(good)) });
     const out = [...lines, ...spies.flatMap((x) => x.mock.calls.flat().map(String))].join("\n");
     spies.forEach((x) => x.mockRestore());
     expect(lines.length).toBe(2);
