@@ -173,22 +173,25 @@ short, on a fresh account:
     scripts/bootstrap-aws.sh --secrets            # Sarvam etc. from .env into muxaris/app
     scripts/bootstrap-aws.sh --outputs            # DB_SECRET_ARN, APP_SECRET_ARN into .env; set IMAGE_TAG
     scripts/push-images.sh <git short sha>
-    npm run deploy:workers -w @muxaris/infra      # then deploy:services, deploy:observability, deploy:cicd
-    scripts/migrate.sh
+    npm run deploy:workers -w @muxaris/infra      # then deploy:migrate
+    scripts/migrate.sh                            # migrations run BEFORE the services update
+    npm run deploy:services -w @muxaris/infra     # then deploy:observability, deploy:cicd
     scripts/smoke.sh http://<AlbDnsName>
     scripts/request-cert.sh                       # prints the ACM validation CNAMEs and CERT_ARN=
 
-On a truly empty account set `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` to `pending` in `.env`
-before the first `scripts/bootstrap-aws.sh` (the CDK app refuses to synth without them); see the
-Runbook. `infra/scripts/cdk.sh` sources `.env` last, so set `IMAGE_TAG` and `CERT_ARN` in `.env`,
-not as a command prefix.
+`MuxarisAuth` deploys on an empty account with no placeholders; Services, Migrate and Cicd refuse
+to deploy without the Cognito ids, and Services and Migrate without `IMAGE_TAG`. Services also
+refuses an empty `CERT_ARN` unless `ALLOW_HTTP_ONLY=1` (the deliberate HTTP-only first deploy), so
+a missing certificate cannot silently remove HTTPS. `infra/scripts/cdk.sh` sources `.env` last, so
+set these in `.env`, not as a command prefix.
 
-Then add `CERT_ARN` to `.env`, redeploy `MuxarisServices`, point `api.muxaris.com` and
+Then add `CERT_ARN` to `.env` (and remove `ALLOW_HTTP_ONLY`), redeploy `MuxarisServices`, point `api.muxaris.com` and
 `voice.muxaris.com` at the ALB at GoDaddy, run `scripts/smoke.sh https://api.muxaris.com`, and set
 the Netlify variables below.
 
-After that, every push to `main` runs `.github/workflows/deploy-aws.yml` (images, CDK deploy,
-migrations, smoke test) through GitHub OIDC with no stored AWS keys. It reads these repository
+After that, every successful CI run on `main` that touches more than web or docs runs
+`.github/workflows/deploy-aws.yml` (images, CDK deploy of Data, Workers and Migrate, migrations,
+then Services and Observability, smoke test) through GitHub OIDC with no stored AWS keys. It reads these repository
 variables (Settings, Secrets and variables, Actions, Variables):
 
 | Variable               | Value                                                     |
@@ -196,10 +199,11 @@ variables (Settings, Secrets and variables, Actions, Variables):
 | `AWS_DEPLOY_ROLE_ARN`  | output `DeployRoleArn` of the `MuxarisCicd` stack         |
 | `COGNITO_USER_POOL_ID` | Cognito user pool id                                      |
 | `COGNITO_CLIENT_ID`    | Cognito app client id                                     |
-| `CERT_ARN`             | ACM certificate ARN; unset means the ALB serves HTTP only |
+| `CERT_ARN`             | ACM certificate ARN; unset also needs `ALLOW_HTTP_ONLY=1` (set by the workflow) and serves HTTP only |
 | `NOTIFY_FROM_EMAIL`    | SES sender address                                        |
 | `ALARM_EMAIL`          | alarm notification recipient                              |
 | `BILLING_ENABLED`      | `1` to enable billing, anything else for off              |
+| `TELEPHONY_PROVIDER`   | `twilio` to turn phone calls on, empty for off            |
 
 The workflow has not yet run on a real push to `main`.
 
@@ -244,10 +248,10 @@ gateway are deployed to AWS, not by Netlify: `NEXT_PUBLIC_API_URL` is `https://a
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `scripts/dev.sh` (`npm run dev`)             | Local stack: Postgres, migrations, seed, then web, API, gateway and workers                               |
 | `scripts/bootstrap-aws.sh`                   | CDK bootstrap and the Auth stack; prints the Cognito ids                                                  |
-| `scripts/bootstrap-aws.sh --secrets`         | Upserts the `muxaris/app` secret from `.env` (prints key names only)                                      |
+| `scripts/bootstrap-aws.sh --secrets`         | Merges keys from `.env` into the `muxaris/app` secret (prints key names only)                                      |
 | `scripts/bootstrap-aws.sh --outputs`         | Prints stack outputs as `KEY=value` lines                                                                 |
 | `scripts/build-images.sh [tag]`              | Builds both service images for linux/arm64 locally                                                        |
-| `scripts/push-images.sh [tag]`               | Builds and pushes both images to ECR (immutable tags); prints `IMAGE_TAG=`                                |
+| `scripts/push-images.sh [tag]`               | Builds and pushes both images to ECR (immutable tags; an existing tag is skipped); prints `IMAGE_TAG=`                                |
 | `scripts/migrate.sh`                         | Runs the `muxaris-migrate` Fargate task, prints the last 50 log lines, fails on a non-zero exit code      |
 | `scripts/smoke.sh <base-url>`                | Post-deploy checks through the ALB (`SMOKE_TOKEN` is only used over https)                                |
 | `scripts/request-cert.sh`                    | Requests the ACM certificate; prints the DNS validation CNAMEs and `CERT_ARN=`                            |

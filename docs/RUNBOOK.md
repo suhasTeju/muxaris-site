@@ -39,37 +39,45 @@ build `linux/arm64` (on an Intel host that means QEMU emulation, which is slow).
    `NEXT_PUBLIC_COGNITO_CLIENT_ID`, `NEXT_PUBLIC_COGNITO_DOMAIN`, `COGNITO_USER_POOL_ID`,
    `COGNITO_CLIENT_ID`. Put them in `.env`.
 
-   The CDK app refuses to synthesize any stack while `COGNITO_USER_POOL_ID` or `COGNITO_CLIENT_ID`
-   is empty (`infra/bin/muxaris.ts`), `MuxarisAuth` included. On a truly empty account, set both to
-   a placeholder such as `pending` for this first run, then replace them with the printed values.
-   This path has not been exercised from scratch: the Auth stack was deployed before that check
-   existed.
+   `MuxarisAuth` deploys on an empty account without any placeholder: the config check
+   (`validateConfig` in `infra/lib/config.ts`) only applies to the stacks that need the values.
+   `MuxarisServices` and `MuxarisCicd` refuse to deploy while `COGNITO_USER_POOL_ID` or
+   `COGNITO_CLIENT_ID` is empty, `MuxarisServices` and `MuxarisMigrate` refuse an empty `IMAGE_TAG`,
+   and `MuxarisServices` refuses an empty `CERT_ARN` unless `ALLOW_HTTP_ONLY=1`.
 
 2. **Network and data.**
    `npm run cdk -w @muxaris/infra -- deploy MuxarisNetwork MuxarisData --require-approval never`
    (or `npm run deploy:network -w @muxaris/infra`, then `deploy:data`). This creates the VPC, the
-   RDS instance, both secrets (`muxaris/db` filled by RDS, `muxaris/app` empty) and the two ECR
-   repositories.
+   RDS instance, both secrets (`muxaris/db` filled by RDS, `muxaris/app` holding a generated
+   placeholder until step 3) and the two ECR repositories.
 3. **Secrets.** Fill the Sarvam key (and the Razorpay and WhatsApp values, if used) in `.env`, then
-   run `scripts/bootstrap-aws.sh --secrets`. It writes the non-empty ones from this fixed list into
+   run `scripts/bootstrap-aws.sh --secrets`. It merges the non-empty ones from this fixed list into
    `muxaris/app` and prints the key names only: `SARVAM_TTS_API_KEY`, `RAZORPAY_KEY_ID`,
    `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PLAN_ID_STANDARD`, `WHATSAPP_TOKEN`,
-   `WHATSAPP_PHONE_ID`. It replaces the whole secret each time (see "Rotate a secret").
+   `WHATSAPP_PHONE_ID`, `TWILIO_AUTH_TOKEN`, `TELEPHONY_STREAM_SECRET`. Keys already in the secret
+   and not in `.env` are kept (see "Rotate a secret").
 4. **Outputs.** `scripts/bootstrap-aws.sh --outputs` prints stack outputs as `KEY=value` lines. Copy
    `DB_SECRET_ARN` and `APP_SECRET_ARN` into `.env`, and set `IMAGE_TAG=<git short sha>`
    (`git rev-parse --short HEAD`).
 5. **Images.** `scripts/push-images.sh <sha>` builds both arm64 images and pushes them as
-   `muxaris-api:<sha>` and `muxaris-voice-gateway:<sha>`. Tags are immutable: it refuses before
-   pushing if either tag already exists, so a fixed image needs a new commit.
-6. **Workers, services, observability, cicd.** Deploy in this order:
+   `muxaris-api:<sha>` and `muxaris-voice-gateway:<sha>`. Tags are immutable and never retagged: a
+   repository that already has the tag is skipped, so re-running after a failure works, and a fixed
+   image needs a new commit.
+6. **Workers, migrate, services, observability, cicd.** Deploy in this order:
    `npm run deploy:workers -w @muxaris/infra` (this also deploys `MuxarisStorage`, which it depends
-   on), then `deploy:services`, `deploy:observability` and `deploy:cicd`. Services needs
-   `IMAGE_TAG` and the Cognito ids; `infra/scripts/cdk.sh` sources `.env`. Set `ALARM_EMAIL` before
+   on), `deploy:migrate`, then step 7, then `deploy:services`, `deploy:observability` and
+   `deploy:cicd`. Services needs `IMAGE_TAG` and the Cognito ids, and `CERT_ARN` or, before the
+   certificate exists (step 11), `ALLOW_HTTP_ONLY=1` in `.env`; `infra/scripts/cdk.sh` sources
+   `.env`. Workers deployed before the first migration will log `relation ... does not exist` and
+   trip the Sweep and Reminders error alarms until the migration has run (seen on the first
+   deploy); they clear on the next scheduled run. Set `ALARM_EMAIL` before
    the observability deploy if alarms should reach an inbox, and confirm the subscription email AWS
    sends. Email delivery also needs the SES identity from `deploy:notify` (`MuxarisNotify`), whose
    DKIM and MAIL FROM records you add at GoDaddy by hand; it is not part of this sequence.
-7. **Migrate.** `scripts/migrate.sh` runs the `muxaris-migrate` Fargate task in the public subnets,
-   waits for it, prints the last 50 lines of `/muxaris/migrate` and exits non-zero if the task did.
+7. **Migrate.** `scripts/migrate.sh` (after `deploy:migrate`, before `deploy:services`) runs the
+   `muxaris-migrate` Fargate task in the public subnets, waits for it, prints the last 50 lines of
+   `/muxaris/migrate` and exits non-zero if the task did. It reads the subnets and security group
+   from the `MuxarisMigrate` outputs.
 8. **Smoke over HTTP.** `scripts/smoke.sh http://<AlbDnsName>`, where the name is the `AlbDnsName`
    output of `MuxarisServices` (`svc AlbDnsName`). It checks `/healthz`, that `/v1/me` without a
    token is 401, and that the gateway answers a bad-origin upgrade with 403.
@@ -79,7 +87,7 @@ build `linux/arm64` (on an Intel host that means QEMU emulation, which is slow).
 10. **DNS, validation.** At GoDaddy add the two validation CNAMEs exactly as printed (GoDaddy
     usually wants the host part without `.muxaris.com`). Keep them there: ACM renews through them.
     Re-run `scripts/request-cert.sh` until it prints `Status: ISSUED`.
-11. **HTTPS.** Add `CERT_ARN=<arn>` to `.env` and redeploy `MuxarisServices`
+11. **HTTPS.** Add `CERT_ARN=<arn>` to `.env`, remove `ALLOW_HTTP_ONLY`, and redeploy `MuxarisServices`
     (`npm run deploy:services -w @muxaris/infra`). The ALB gains the 443 listener and port 80
     becomes a permanent redirect to HTTPS.
 12. **DNS, traffic.** At GoDaddy add CNAMEs `api.muxaris.com` and `voice.muxaris.com`, both pointing
@@ -95,23 +103,38 @@ build `linux/arm64` (on an Intel host that means QEMU emulation, which is slow).
 
 ## Deploy a change
 
-Push to `main`. `.github/workflows/deploy-aws.yml` then (no AWS secrets; GitHub OIDC assumes
-`MuxarisGithubDeploy`) builds both arm64 images tagged with the first 7 characters of the commit
-SHA (`git rev-parse --short HEAD` may print more, so use the same 7 for a manual deploy), pushes them to ECR, runs `cdk deploy MuxarisData MuxarisWorkers MuxarisServices
-MuxarisObservability`, runs `scripts/migrate.sh`, and smoke-tests the ALB over HTTP. It does not
+Push to `main`. When the `ci` workflow finishes green for that push, `.github/workflows/deploy-aws.yml`
+(triggered by `workflow_run`, so a red CI never deploys) checks out the tested commit and, unless
+the push only changed `apps/web`, `docs`, Markdown or `netlify.toml` (then it exits early, so a
+web-only push does not replace the gateway), builds both arm64 images tagged with the first 7
+characters of the commit SHA (`git rev-parse --short HEAD` may print more, so use the same 7 for a
+manual deploy; an image that already exists is not rebuilt, so "Re-run jobs" works), pushes them to
+ECR, then deploys `MuxarisData`, `MuxarisWorkers` and `MuxarisMigrate`, runs `scripts/migrate.sh`
+(migrations run before the services update, so new code never meets the old schema), deploys
+`MuxarisServices` and `MuxarisObservability`, and smoke-tests: `https://api.muxaris.com` when the
+`CERT_ARN` variable is set, otherwise `http://<AlbDnsName>`. It does not
 deploy `MuxarisNetwork`, `MuxarisCicd`, `MuxarisAuth` or `MuxarisNotify`; deploy those by hand when
 they change. The workflow has not yet run on a real push, so expect to debug its first run.
 
 The repository variables the workflow reads (`AWS_DEPLOY_ROLE_ARN`, `COGNITO_USER_POOL_ID`,
-`COGNITO_CLIENT_ID`, `CERT_ARN`, `NOTIFY_FROM_EMAIL`, `ALARM_EMAIL`, `BILLING_ENABLED`) are listed in
+`COGNITO_CLIENT_ID`, `CERT_ARN`, `NOTIFY_FROM_EMAIL`, `ALARM_EMAIL`, `BILLING_ENABLED`,
+`TELEPHONY_PROVIDER`) are listed in
 the [README table](../README.md#deploy-quick-start).
 
-The workflow does not pass `SMS_ENABLED`, `MAX_SESSIONS`, `MAX_CALL_SECONDS` or `PUBLIC_API_URL`, so
-a CI deploy always uses their defaults (SMS off, 15 sessions, 1200 s, `https://api.muxaris.com`).
+The workflow does not pass `SMS_ENABLED`, `MAX_SESSIONS` or `MAX_CALL_SECONDS`, so a CI deploy
+always uses their defaults (SMS off, 15 sessions, 1200 s). `PUBLIC_API_URL` is never read from the
+environment: it is always `https://api.muxaris.com`, derived from `API_HOST`. Because
+`infra/scripts/cdk.sh` sources `.env`, a value set there for local testing (`SMS_ENABLED`,
+`BILLING_ENABLED`, `NOTIFY_FROM_EMAIL`, `TELEPHONY_PROVIDER`) ships to production on a laptop deploy.
+
+**One-time transition (MuxarisMigrate).** The migrate task, its two roles and `/muxaris/migrate`
+used to belong to `MuxarisServices`. They keep fixed names, so the first deploy of `MuxarisMigrate`
+fails while Services still owns them. Deploy the new `MuxarisServices` first (it drops them), then
+`MuxarisMigrate`, and from then on use the order above.
 
 Manual equivalent, from a checkout with `.env` filled in. `infra/scripts/cdk.sh` sources `.env`
 after your environment, so `.env` always wins: a `IMAGE_TAG=... npm run ...` prefix is silently
-ignored, and an empty `IMAGE_TAG` falls back to `latest`, which does not exist in ECR. Edit `.env`
+ignored (an empty `IMAGE_TAG` is refused, and `latest` does not exist in ECR). Edit `.env`
 instead:
 
 ```sh
@@ -119,21 +142,25 @@ SHA=$(git rev-parse --short HEAD)
 scripts/push-images.sh "$SHA"
 sed -i '' "s/^IMAGE_TAG=.*/IMAGE_TAG=$SHA/" .env   # GNU sed: drop the ''
 npm run cdk -w @muxaris/infra -- deploy \
-  MuxarisData MuxarisWorkers MuxarisServices MuxarisObservability --require-approval never
+  MuxarisData MuxarisWorkers MuxarisMigrate --require-approval never
 scripts/migrate.sh
+npm run cdk -w @muxaris/infra -- deploy MuxarisServices MuxarisObservability --require-approval never
 scripts/smoke.sh https://api.muxaris.com
 ```
 
-A deploy replaces the gateway task with `minHealthyPercent 0`: the old task is told to stop (90 s
-`stopTimeout`) before the new one starts, so there is a short gap with no gateway and calls still
-running after 90 s are cut. Deploy when the dashboard shows no calls. The API keeps a healthy task
-throughout.
+A deploy replaces the gateway task with `minHealthyPercent 0`: the old task is deregistered (the
+ALB keeps its live calls open for the 90 s deregistration delay) and then told to stop, and the new
+one starts only after that, so there is a gap of a few minutes with no gateway, and calls still
+running after the delay are cut. On SIGTERM the gateway ends calls at once and gives recording
+uploads up to 80 s (under the 90 s `stopTimeout`). Deploy when the dashboard shows no calls. The API
+keeps a healthy task throughout.
 
 ## Rotate a secret
 
-`scripts/bootstrap-aws.sh --secrets` replaces the whole of `muxaris/app` with the non-empty keys
-from the fixed list in `.env` (see "Deploy from scratch", step 3). Anything not in that list, such
-as the telephony values, is erased by it: re-add them afterwards (see "Twilio go-live").
+`scripts/bootstrap-aws.sh --secrets` merges the non-empty keys from the fixed list in `.env` (see
+"Deploy from scratch", step 3) into the existing `muxaris/app` JSON, so rotating one key leaves the
+others alone. A current value that is not a JSON object (the generated placeholder) counts as `{}`.
+Keys outside that list can still be added by hand with the `jq '. + {...}'` pattern below.
 
 Processes read secrets once at start, so a new value only takes effect after a restart:
 
@@ -164,8 +191,8 @@ npm run deploy:services -w @muxaris/infra
 Set the tag in `.env`; an `IMAGE_TAG=... npm run` prefix does not work because `.env` wins. Put
 `IMAGE_TAG` back to the newest sha afterwards.
 
-The deploy reads `CERT_ARN` and the Cognito ids from `.env`. If `CERT_ARN` is missing, the stack is
-redeployed without the HTTPS listener and the site drops to plain HTTP, so check `.env` first.
+The deploy reads `CERT_ARN` and the Cognito ids from `.env`. An empty `CERT_ARN` is refused (set
+`ALLOW_HTTP_ONLY=1` only if you really want the HTTP-only listener).
 Database migrations are not rolled back; a rollback across a migration needs a manual fix. The ECS
 deployment circuit breaker also rolls a failed deployment back by itself.
 
@@ -192,6 +219,8 @@ metrics.
 | Alarm                                        | Fires when                                    | First thing to check                                                                                                  |
 | -------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `Alb5xxAlarm`                                | 5 or more target 5xx in 5 minutes             | Tail `/muxaris/api` and `/muxaris/voice-gateway`; if it started with a deploy, roll back.                             |
+| `AlbElb5xxAlarm`                             | 5 or more ALB-generated 5xx in 5 minutes      | The ALB answers 503 itself when a target group has no healthy targets: check the services and the target groups.     |
+| `ApiUnhealthyHostsAlarm`, `GatewayUnhealthyHostsAlarm` | a target group has an unhealthy host for two 1-minute periods | The ECS service events and the task logs; a failing health check on `/healthz`.   |
 | `GatewayCpuAlarm`                            | gateway CPU at or above 85% for two periods   | The `CallsStarted` graph: are many calls running at once? `MAX_SESSIONS` is 15 per task. See "Scale the gateway".     |
 | `PostCallErrorsAlarm`                        | the post-call Lambda errored                  | Its `/aws/lambda/...` logs, then the DLQ. Usually a Bedrock error or a database connection.                           |
 | `SweepErrorsAlarm`                           | the sweep Lambda errored                      | Its logs. The sweep also runs the 90-day purge, so retention is late while it fails.                                  |
@@ -270,7 +299,7 @@ If one task is not enough, raise the task size first (`cpu` and `memoryLimitMiB`
 DNS is at GoDaddy; nothing in AWS manages it. Records in play: the two ACM validation CNAMEs (keep
 them), `api.muxaris.com` and `voice.muxaris.com` as CNAMEs to the ALB DNS name, and the SES DKIM and
 MAIL FROM records from `MuxarisNotify`. If the ALB is ever replaced its DNS name changes; update
-both CNAMEs. Until the certificate is issued and `CERT_ARN` is set, the ALB serves HTTP only, which
+both CNAMEs. Until the certificate is issued and `CERT_ARN` is set (deploying meanwhile needs `ALLOW_HTTP_ONLY=1`), the ALB serves HTTP only, which
 a browser on https://muxaris.com cannot call (mixed content).
 
 ## Twilio go-live
@@ -280,24 +309,14 @@ setup are in [TELEPHONY.md](TELEPHONY.md). On AWS:
 
 1. Buy a Twilio number and finish KYC. Set its voice webhook to
    `POST https://api.muxaris.com/webhooks/telephony/twilio`.
-2. The API task already has `PUBLIC_API_URL=https://api.muxaris.com` and
-   `VOICE_WSS_URL=wss://voice.muxaris.com` from the stack. The other three values are not in the
-   task definitions; put them in `muxaris/app`, which both processes read at start.
-   `scripts/bootstrap-aws.sh --secrets` cannot write them, so merge them by hand (read them from
-   the terminal so they stay out of your shell history):
+2. The API task has `PUBLIC_API_URL=https://api.muxaris.com` (derived) and
+   `VOICE_WSS_URL=wss://voice.muxaris.com` from the stack. Put `TWILIO_AUTH_TOKEN` and
+   `TELEPHONY_STREAM_SECRET` (for example `openssl rand -hex 32`) in `.env`, run
+   `scripts/bootstrap-aws.sh --secrets` (it merges, other keys survive), set
+   `TELEPHONY_PROVIDER=twilio` (the repository variable in CI, `.env` for a laptop deploy) and
+   redeploy `MuxarisServices` so both task definitions carry it.
 
-   ```sh
-   read -rs TWILIO_AUTH_TOKEN; read -rs TELEPHONY_STREAM_SECRET   # for example: openssl rand -hex 32
-   NEW=$(aws secretsmanager get-secret-value --secret-id muxaris/app --query SecretString --output text \
-     | jq -c --arg t "$TWILIO_AUTH_TOKEN" --arg s "$TELEPHONY_STREAM_SECRET" \
-       '. + {TELEPHONY_PROVIDER:"twilio", TWILIO_AUTH_TOKEN:$t, TELEPHONY_STREAM_SECRET:$s}')
-   aws secretsmanager put-secret-value --secret-id muxaris/app --secret-string "$NEW"
-   unset TWILIO_AUTH_TOKEN TELEPHONY_STREAM_SECRET NEW
-   ```
-
-   Running `--secrets` again later removes them; repeat this step afterwards.
-
-3. Restart both services (see "Rotate a secret").
+3. The Services redeploy restarts both services; after a later secret-only change, restart them (see "Rotate a secret").
 4. Map the number to a clinic in `phone_numbers` (the SQL is in TELEPHONY.md; see "Database" for how
    to run it).
 5. Call the number. The gateway log shows `session accepted`; a bad signature shows as a 403 on the

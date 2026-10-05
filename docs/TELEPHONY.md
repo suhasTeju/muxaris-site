@@ -46,6 +46,13 @@ is the precondition before serving the public. The number is never logged.
    | `PUBLIC_API_URL`          | API          | `https://api.muxaris.com`                          |
    | `VOICE_WSS_URL`           | API          | `wss://voice.muxaris.com`                          |
 
+   **On AWS** the task definitions carry `TELEPHONY_PROVIDER`, `PUBLIC_API_URL` (derived as
+   `https://api.muxaris.com`, never read from `.env`) and `VOICE_WSS_URL`; the two secrets come
+   from `muxaris/app`. Put `TWILIO_AUTH_TOKEN` and `TELEPHONY_STREAM_SECRET` in `.env` and run
+   `scripts/bootstrap-aws.sh --secrets` (it merges into the existing secret, so other keys
+   survive), set `TELEPHONY_PROVIDER=twilio` (the `TELEPHONY_PROVIDER` repository variable in CI,
+   or `.env` for a laptop deploy), then redeploy `MuxarisServices`.
+
 4. Map the number to a clinic (E.164, exactly as Twilio sends `To`):
 
    ```sql

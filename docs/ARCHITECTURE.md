@@ -76,11 +76,14 @@ Netlify; DNS is at GoDaddy. See [AWS-SERVICES.md](AWS-SERVICES.md) for the servi
   `LlmFirstTokenMs`, `TtsFirstAudioMs` (the values on the `turn` line), and the counts
   `CallsStarted` (`session accepted`), `CallsSettled` (`call settled`), `QuotaRejected`
   (`quota exhausted`), `BusyRejected` (`busy`) and `ProviderErrors` (`provider error` or
-  `llm error`). Alarms (ALB 5xx, gateway CPU, Lambda errors, RDS CPU and free storage, DLQ depth)
+  `llm error`). Alarms (ALB target 5xx, ALB's own 5xx, unhealthy hosts per target group, gateway CPU, Lambda
+  errors, RDS CPU and free storage, DLQ depth)
   all go to the SNS topic `muxaris-alarms`; the `muxaris` dashboard graphs everything above.
 - **Migrations** run as the one-off Fargate task `muxaris-migrate` (the API image with
   `node packages/db/dist/migrate.js`), started by `scripts/migrate.sh` locally and by the deploy
-  workflow in CI.
+  workflow in CI. The task definition lives in its own stack, `MuxarisMigrate`, deployed with the
+  new image tag before `MuxarisServices` (Data, Workers, Migrate, `migrate.sh`, Services,
+  Observability), so migrations run before the new API and gateway start.
 - **Known limits.**
   - One gateway task: the per-process concurrency counters (`MAX_SESSIONS`, plan concurrency)
     cannot be shared, so the gateway does not scale out. See the runbook for what a shared store
@@ -202,9 +205,9 @@ What the stacks grant, per process. Every role is created by CDK; the deploy rol
 - The stale-call sweep and the retention purge run in the `sweepHandler` Lambda on an EventBridge
   schedule every 15 minutes (the local worker still runs them every minute). Closed: the earlier
   carry-over that they only ran where the worker ran.
-- The gateway task has `stopTimeout` 90 s and the ALB deregistration delay matches it, so a deploy
-  gives in-flight recording uploads and calls time to finish. Closed: the earlier carry-over to set
-  `stopTimeout`. A call still running after 90 s is cut by a deploy.
+- The ALB deregistration delay (90 s) keeps live calls open while a deploy drains the old gateway
+  task; a call still running after that is cut. On SIGTERM the gateway ends calls at once and gives
+  recording uploads up to 80 s (`SHUTDOWN_GRACE_MS`), under the container `stopTimeout` of 90 s.
 - The post-call SQS mapping reports batch item failures, so one bad message no longer retries the
   whole batch. Closed.
 - Drizzle applies all pending migrations in a single transaction. On a fresh database a later
