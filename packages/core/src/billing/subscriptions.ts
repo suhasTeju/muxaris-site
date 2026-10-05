@@ -7,7 +7,7 @@ import type { RazorpayClient } from "./razorpay.js";
 const { clinics, subscriptions, billingEvents, auditLog } = schema;
 
 /** Statuses that block a new start. `created` (checkout never completed) is resumable instead. */
-const BLOCKING_STATUSES = ["authenticated", "active", "pending", "halted"];
+const BLOCKING_STATUSES = ["authenticated", "active", "pending", "halted", "paused"];
 
 /**
  * Starts the Standard subscription for a clinic. The clinic row is locked FOR UPDATE for the
@@ -97,7 +97,7 @@ const eventSchema = z.object({
   }),
 });
 
-/** `eventId` is the `x-razorpay-event-id` header; it is the idempotency key. */
+/** `eventId` is the sha256 of the signed raw webhook body; it is the idempotency key. */
 export function parseRazorpayEvent(body: unknown, eventId: string | undefined): RazorpayEvent {
   if (!eventId) throw new CoreError("validation", "missing event id");
   const parsed = eventSchema.safeParse(body);
@@ -145,6 +145,11 @@ function planForStatus(status: string): "standard" | "pilot" | null {
   }
 }
 
+function subscriptionEntity(raw: Record<string, unknown>): Record<string, unknown> {
+  const payload = raw["payload"] as { subscription?: { entity?: Record<string, unknown> } };
+  return payload.subscription?.entity ?? {};
+}
+
 /** The only code path that changes clinics.plan. Idempotent on the provider event id. */
 export async function applyRazorpayEvent(
   db: Db,
@@ -159,7 +164,8 @@ export async function applyRazorpayEvent(
         id: ev.id,
         event: ev.event,
         subscriptionId: sub.id,
-        payload: ev.raw,
+        // Only the subscription entity is kept, not the whole webhook body.
+        payload: subscriptionEntity(ev.raw),
       })
       .onConflictDoNothing()
       .returning({ id: billingEvents.id });

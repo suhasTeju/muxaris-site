@@ -156,13 +156,13 @@ export async function getMonthlyUsage(
   timezone = "Asia/Kolkata",
 ): Promise<MonthlyUsage[]> {
   if (months < 1) return [];
+  const [y, m] = usageMonth(timezone, at).split("-").map(Number) as [number, number];
   const keys: string[] = [];
   for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(at);
-    d.setUTCDate(1);
-    d.setUTCHours(12, 0, 0, 0);
-    d.setUTCMonth(d.getUTCMonth() - i);
-    keys.push(usageMonth(timezone, d));
+    const idx = y * 12 + (m - 1) - i;
+    keys.push(
+      `${String(Math.floor(idx / 12)).padStart(4, "0")}-${String((idx % 12) + 1).padStart(2, "0")}`,
+    );
   }
   const rows = await db
     .select()

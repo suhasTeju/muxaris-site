@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newId, schema } from "@muxaris/db";
 import { getCallAnalytics, getMonthlyUsage, localDayWindow } from "./analytics.js";
+import { createCall } from "./calls.js";
 import { recordCallUsage } from "./usage.js";
 import { dbReachable, makeTestClinic, openDb, warnIfUnreachable } from "./test-support.js";
 
@@ -104,7 +105,12 @@ describe("localDayWindow", () => {
   });
 
   it("zero-fills monthly usage, oldest first", async () => {
-    await recordCallUsage(db, { clinicId: c.clinic.id, month: "2026-07", callSeconds: 600 });
+    await recordCallUsage(db, {
+      callId: (await createCall(db, { clinicId: c.clinic.id, channel: "browser" })).id,
+      clinicId: c.clinic.id,
+      month: "2026-07",
+      callSeconds: 600,
+    });
     const m = await getMonthlyUsage(
       db,
       c.clinic.id,
@@ -115,5 +121,17 @@ describe("localDayWindow", () => {
     expect(m.map((x) => x.month)).toEqual(["2026-07", "2026-08", "2026-09"]);
     expect(m[0]).toMatchObject({ callSeconds: 600, calls: 1 });
     expect(m[1]).toMatchObject({ callSeconds: 0, calls: 0 });
+  });
+
+  it("keys months from the clinic-local month of `at`", async () => {
+    // 2026-10-31T19:00Z is already Nov 1 00:30 in Asia/Kolkata.
+    const m = await getMonthlyUsage(
+      db,
+      c.clinic.id,
+      2,
+      new Date("2026-10-31T19:00:00Z"),
+      "Asia/Kolkata",
+    );
+    expect(m.map((x) => x.month)).toEqual(["2026-10", "2026-11"]);
   });
 });

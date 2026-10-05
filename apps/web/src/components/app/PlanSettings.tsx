@@ -2,6 +2,9 @@
 import type { UsageSummary } from "@muxaris/shared";
 import { primaryBtn } from "./Modal";
 
+/** Latest subscription states where a new checkout would conflict with the stuck one. */
+const PAYMENT_STUCK = ["halted", "pending", "authenticated"];
+
 function formatDate(iso: string, tz: string): string {
   let timeZone: string | undefined = tz;
   try {
@@ -33,6 +36,7 @@ export function PlanSettings({
   tz,
   onUpgrade,
   upgradeDisabled,
+  subscriptionStatus,
 }: {
   usage: UsageSummary | null;
   isOwner: boolean;
@@ -40,6 +44,8 @@ export function PlanSettings({
   tz: string;
   onUpgrade?: () => void;
   upgradeDisabled?: boolean;
+  /** Status of the clinic's latest subscription, if any. */
+  subscriptionStatus?: string | undefined;
 }) {
   if (!usage) {
     return (
@@ -91,6 +97,10 @@ export function PlanSettings({
         </p>
       ) : !isOwner ? (
         <p className="text-muted text-sm">Only the clinic owner can change the plan.</p>
+      ) : usage.plan === "pilot" && PAYMENT_STUCK.includes(subscriptionStatus ?? "") ? (
+        <p role="status" className="text-sm">
+          Payment pending or failed. Update your payment method in Razorpay or contact support.
+        </p>
       ) : usage.plan === "pilot" ? (
         <button
           type="button"

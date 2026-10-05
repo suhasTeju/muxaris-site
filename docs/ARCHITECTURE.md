@@ -75,6 +75,9 @@ dashboard seeks with `turn - call.startedAt - recorderT0Ms`.
   `call_seconds`, `calls`, `llm_input_tokens`, `llm_output_tokens`). It is written when a call
   settles and by the stale-call sweep, and keyed by the month the call started. `GET /v1/usage`
   returns it as `UsageSummary` together with the plan, included minutes and overage.
+  Usage is recorded exactly once per call via `calls.usage_recorded_at` (claimed in the same
+  transaction as the ledger upsert), and swept calls bill the time up to their last turn, never
+  a fabricated maximum. `billing_events` stores the subscription entity only, not the whole body.
 - **Gateway rule.** A session is rejected at zero remaining plan seconds (close code 4029,
   `quota`). A call that has started is never cut off by the plan: it runs to `MAX_CALL_SECONDS`
   and the overage is recorded in the ledger. Concurrency is limited per plan, per process.

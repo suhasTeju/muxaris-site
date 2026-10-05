@@ -42,6 +42,24 @@ describe("PlanSettings", () => {
     ).toBeTruthy();
   });
 
+  it("pilot with a halted subscription: payment message instead of the Upgrade button", () => {
+    render(
+      <PlanSettings
+        usage={usage}
+        isOwner
+        billing={{ enabled: true }}
+        tz="Asia/Kolkata"
+        subscriptionStatus="halted"
+      />,
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(
+      screen.getByText(
+        "Payment pending or failed. Update your payment method in Razorpay or contact support.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("billing enabled, not owner: no button, owner-only copy", () => {
     render(
       <PlanSettings usage={usage} isOwner={false} billing={{ enabled: true }} tz="Asia/Kolkata" />,

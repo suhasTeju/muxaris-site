@@ -104,6 +104,16 @@ afterAll(async () => {
     expect((await req(`/analytics/calls?from=2026-09-01`, clinicId)).status).toBe(400);
   });
 
+  it("accepts a 92-day range and rejects a 93-day range", async () => {
+    // Inclusive day counts: Sep 1 to Dec 1 is 92 days, Sep 1 to Dec 2 is 93.
+    expect((await req(`/analytics/calls?from=2026-09-01&to=2026-12-01`, clinicId)).status).toBe(
+      200,
+    );
+    expect((await req(`/analytics/calls?from=2026-09-01&to=2026-12-02`, clinicId)).status).toBe(
+      400,
+    );
+  });
+
   it("rejects impossible calendar dates with a 400 validation error", async () => {
     const res = await req(`/analytics/calls?from=2026-02-30&to=2026-03-01`, clinicId);
     expect(res.status).toBe(400);

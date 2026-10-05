@@ -120,7 +120,7 @@ describe("parseRazorpayEvent", () => {
         .update(schema.subscriptions)
         .set({ status })
         .where(eq(schema.subscriptions.clinicId, c.clinic.id));
-    for (const status of ["active", "authenticated", "pending", "halted"]) {
+    for (const status of ["active", "authenticated", "pending", "halted", "paused"]) {
       await setStatus(status);
       await expect(startStandardSubscription(db, rz, input)).rejects.toMatchObject({
         code: "conflict",
@@ -152,6 +152,14 @@ describe("parseRazorpayEvent", () => {
     );
     let [clinic] = await db.select().from(schema.clinics).where(eq(schema.clinics.id, c.clinic.id));
     expect(clinic?.plan).toBe("standard");
+    const [stored] = await db
+      .select()
+      .from(schema.billingEvents)
+      .where(eq(schema.billingEvents.id, eid(1)));
+    // Only the subscription entity is kept, not the whole webhook body.
+    expect(stored?.payload).toMatchObject({ id: SUB, status: "active" });
+    expect(stored?.payload).not.toHaveProperty("event");
+    expect(stored?.payload).not.toHaveProperty("payload");
     const audits = await db
       .select()
       .from(schema.auditLog)

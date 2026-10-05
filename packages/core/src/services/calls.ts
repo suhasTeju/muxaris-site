@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, sql, type SQL } from "dri
 import { schema, newId, type Db } from "@muxaris/db";
 import { maskPhone } from "@muxaris/shared";
 import { CoreError } from "./errors.js";
-import { recordCallUsage, usageMonth } from "./usage.js";
+import { recordCallUsageIn, usageMonth } from "./usage.js";
 
 const { calls, callTurns, callbacks, patients, auditLog } = schema;
 
@@ -504,46 +504,59 @@ export async function sweepStaleCalls(
     now?: Date;
     inProgressOlderThanMin?: number;
     recordingPendingOlderThanMin?: number;
+    maxCallSeconds?: number;
   } = {},
 ): Promise<{ abandoned: number; recordingsFailed: number; usageRecorded: number }> {
   const now = opts.now ?? new Date();
   const cutoff = (min: number) => new Date(now.getTime() - min * 60_000);
-  const abandoned = await db
-    .update(calls)
-    .set({
-      status: "abandoned",
-      outcome: sql`COALESCE(${calls.outcome}, 'abandoned'::call_outcome)`,
-      outcomeSource: sql`COALESCE(${calls.outcomeSource}, 'gateway')`,
-      endedAt: sql`COALESCE(${calls.endedAt}, ${now.toISOString()}::timestamptz)`,
-      // A swept call really ended long ago; never record more than the maximum call length.
-      durationS: sql`COALESCE(${calls.durationS}, LEAST(${MAX_CALL_S}, EXTRACT(EPOCH FROM (${now.toISOString()}::timestamptz - ${calls.startedAt}))::int))`,
-    })
+  const maxCallS = opts.maxCallSeconds ?? MAX_CALL_S;
+  const candidates = await db
+    .select({ id: calls.id })
+    .from(calls)
     .where(
       and(
         eq(calls.status, "in_progress"),
         lt(calls.startedAt, cutoff(opts.inProgressOlderThanMin ?? 30)),
       ),
-    )
-    .returning({
-      id: calls.id,
-      clinicId: calls.clinicId,
-      startedAt: calls.startedAt,
-      durationS: calls.durationS,
-    });
-  // Swept calls never reached the gateway's settle path, so record their usage here.
+    );
+  let abandoned = 0;
   let usageRecorded = 0;
-  for (const row of abandoned) {
-    const [clinic] = await db
-      .select({ timezone: schema.clinics.timezone })
-      .from(schema.clinics)
-      .where(eq(schema.clinics.id, row.clinicId));
-    if (!clinic) continue;
-    await recordCallUsage(db, {
-      clinicId: row.clinicId,
-      month: usageMonth(clinic.timezone, row.startedAt),
-      callSeconds: row.durationS ?? 0,
+  for (const { id } of candidates) {
+    // Abandon + ledger write in one transaction; the once-guard keeps a call already billed by
+    // the gateway from being billed again.
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(calls)
+        .set({
+          status: "abandoned",
+          outcome: sql`COALESCE(${calls.outcome}, 'abandoned'::call_outcome)`,
+          outcomeSource: sql`COALESCE(${calls.outcomeSource}, 'gateway')`,
+          endedAt: sql`COALESCE(${calls.endedAt}, ${now.toISOString()}::timestamptz)`,
+          // Never-settled call: bill up to its last turn (0 with no turns), capped at the max.
+          durationS: sql`COALESCE(${calls.durationS}, LEAST(${maxCallS}, GREATEST(0, COALESCE((SELECT EXTRACT(EPOCH FROM (max(t.started_at) - ${calls.startedAt}))::int FROM call_turns t WHERE t.call_id = ${calls.id}), 0))))`,
+        })
+        .where(and(eq(calls.id, id), eq(calls.status, "in_progress")))
+        .returning({
+          id: calls.id,
+          clinicId: calls.clinicId,
+          startedAt: calls.startedAt,
+          durationS: calls.durationS,
+        });
+      if (!row) return;
+      abandoned++;
+      const [clinic] = await tx
+        .select({ timezone: schema.clinics.timezone })
+        .from(schema.clinics)
+        .where(eq(schema.clinics.id, row.clinicId));
+      if (!clinic) return;
+      const r = await recordCallUsageIn(tx, {
+        callId: row.id,
+        clinicId: row.clinicId,
+        month: usageMonth(clinic.timezone, row.startedAt),
+        callSeconds: row.durationS ?? 0,
+      });
+      if (r.recorded) usageRecorded++;
     });
-    usageRecorded++;
   }
   const failed = await db
     .update(calls)
@@ -556,7 +569,7 @@ export async function sweepStaleCalls(
       ),
     )
     .returning({ id: calls.id });
-  return { abandoned: abandoned.length, recordingsFailed: failed.length, usageRecorded };
+  return { abandoned, recordingsFailed: failed.length, usageRecorded };
 }
 
 /**

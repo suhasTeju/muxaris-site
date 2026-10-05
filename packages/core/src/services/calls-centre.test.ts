@@ -22,7 +22,7 @@ import {
   updateCallback,
 } from "./calls.js";
 import { createPatient } from "./patients.js";
-import { usageMonth } from "./usage.js";
+import { recordCallUsage, usageMonth } from "./usage.js";
 import { dbReachable, makeTestClinic, openDb, warnIfUnreachable } from "./test-support.js";
 
 const { db, pool } = openDb();
@@ -395,7 +395,7 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
         outcomeSource: "gateway",
       });
       expect(o.endedAt).not.toBeNull();
-      expect(o.durationS).toBe(1200); // capped at the maximum call length
+      expect(o.durationS).toBe(0); // never-settled call with no turns: nothing real to bill
       expect((await getCall(db, t.clinic.id, newC.id)).call.status).toBe("in_progress");
     } finally {
       await t.cleanup();
@@ -497,6 +497,14 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
         .update(schema.calls)
         .set({ startedAt: new Date(now.getTime() - 5 * 3600_000) })
         .where(eq(schema.calls.id, c.id));
+      await appendTurn(db, {
+        callId: c.id,
+        clinicId: t.clinic.id,
+        seq: 0,
+        role: "user",
+        text: "x",
+        startedAt: new Date(now.getTime() - 2 * 3600_000),
+      });
       await sweepStaleCalls(db, { now });
       expect((await getCall(db, t.clinic.id, c.id)).call.durationS).toBe(1200);
     } finally {
@@ -504,26 +512,88 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
     }
   });
 
-  it("sweep records the swept call's usage in the ledger", async () => {
+  const ledgerFor = async (clinicId: string, tz: string, at: Date) => {
+    const [row] = await db
+      .select()
+      .from(schema.usageLedger)
+      .where(
+        and(
+          eq(schema.usageLedger.clinicId, clinicId),
+          eq(schema.usageLedger.month, usageMonth(tz, at)),
+        ),
+      );
+    return row;
+  };
+
+  it("sweep bills the time up to the last turn, not the maximum", async () => {
     const t = await makeTestClinic(db, "cc-sweep-usage");
     try {
       const now = new Date();
       const startedAt = new Date(now.getTime() - 40 * 60_000);
       const c = await createCall(db, { clinicId: t.clinic.id, channel: "phone" });
       await db.update(schema.calls).set({ startedAt }).where(eq(schema.calls.id, c.id));
+      await appendTurn(db, {
+        callId: c.id,
+        clinicId: t.clinic.id,
+        seq: 0,
+        role: "user",
+        text: "hi",
+        startedAt: new Date(startedAt.getTime() + 10_000),
+      });
+      await appendTurn(db, {
+        callId: c.id,
+        clinicId: t.clinic.id,
+        seq: 1,
+        role: "assistant",
+        text: "hello",
+        startedAt: new Date(startedAt.getTime() + 45_000),
+      });
       const r = await sweepStaleCalls(db, { now, inProgressOlderThanMin: 30 });
-      expect(r.usageRecorded).toBeGreaterThanOrEqual(1);
-      const [row] = await db
-        .select()
-        .from(schema.usageLedger)
-        .where(
-          and(
-            eq(schema.usageLedger.clinicId, t.clinic.id),
-            eq(schema.usageLedger.month, usageMonth(t.clinic.timezone, startedAt)),
-          ),
-        );
-      expect(row!.calls).toBeGreaterThanOrEqual(1);
-      expect(row!.callSeconds).toBeGreaterThanOrEqual(1);
+      expect(r.usageRecorded).toBe(1);
+      expect((await getCall(db, t.clinic.id, c.id)).call.durationS).toBe(45);
+      const row = await ledgerFor(t.clinic.id, t.clinic.timezone, startedAt);
+      expect(row).toMatchObject({ calls: 1, callSeconds: 45 });
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("sweep of a call with no turns bills 0 seconds", async () => {
+    const t = await makeTestClinic(db, "cc-sweep-noturn");
+    try {
+      const now = new Date();
+      const startedAt = new Date(now.getTime() - 40 * 60_000);
+      const c = await createCall(db, { clinicId: t.clinic.id, channel: "phone" });
+      await db.update(schema.calls).set({ startedAt }).where(eq(schema.calls.id, c.id));
+      await sweepStaleCalls(db, { now, inProgressOlderThanMin: 30 });
+      const row = await ledgerFor(t.clinic.id, t.clinic.timezone, startedAt);
+      expect(row).toMatchObject({ calls: 1, callSeconds: 0 });
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("sweep does not re-bill a call whose usage was already recorded", async () => {
+    const t = await makeTestClinic(db, "cc-sweep-once");
+    try {
+      const now = new Date();
+      const startedAt = new Date(now.getTime() - 40 * 60_000);
+      const c = await createCall(db, { clinicId: t.clinic.id, channel: "phone" });
+      await db.update(schema.calls).set({ startedAt }).where(eq(schema.calls.id, c.id));
+      const month = usageMonth(t.clinic.timezone, startedAt);
+      const first = await recordCallUsage(db, {
+        callId: c.id,
+        clinicId: t.clinic.id,
+        month,
+        callSeconds: 60,
+      });
+      expect(first.recorded).toBe(true);
+      const r = await sweepStaleCalls(db, { now, inProgressOlderThanMin: 30 });
+      expect(r.abandoned).toBeGreaterThanOrEqual(1);
+      expect(r.usageRecorded).toBe(0);
+      expect((await getCall(db, t.clinic.id, c.id)).call.status).toBe("abandoned");
+      const row = await ledgerFor(t.clinic.id, t.clinic.timezone, startedAt);
+      expect(row).toMatchObject({ calls: 1, callSeconds: 60 });
     } finally {
       await t.cleanup();
     }

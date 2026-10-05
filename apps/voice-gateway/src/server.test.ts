@@ -1,6 +1,12 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { createClinicForUser, loadDemoClinicData, upsertUser, usageMonth } from "@muxaris/core";
+import {
+  createClinicForUser,
+  loadDemoClinicData,
+  sweepStaleCalls,
+  upsertUser,
+  usageMonth,
+} from "@muxaris/core";
 import { createDb, newId, schema, type Db } from "@muxaris/db";
 import { desc, eq } from "drizzle-orm";
 import type { PostCallMessage } from "@muxaris/shared";
@@ -520,6 +526,85 @@ async function until<T>(
       .orderBy(schema.callTurns.seq)
       .limit(1);
     expect(ready.greeting).toBe(turn0!.text);
+  });
+
+  it("keys the ledger month from the call's start, not its close (Asia/Kolkata)", async () => {
+    // Started 23:55 IST on Oct 31; closed 00:15 IST on Nov 1.
+    let t = new Date("2026-10-31T18:25:00Z");
+    const { port } = await start({ now: () => t });
+    const c = await open(port);
+    c.ws.send(startFrame(member));
+    await c.waitFor((e) => e.type === "ready");
+    for (let i = 0; i < 10; i++) c.ws.send(Buffer.alloc(3200));
+    await c.waitFor((e) => e.type === "state");
+    t = new Date("2026-10-31T18:45:00Z");
+    end(c);
+    await c.closed;
+    const row = await until(async () => (await ledger())[0]);
+    expect(row.month).toBe("2026-10");
+  });
+
+  // finishCall fails `failures` times (the session's own attempt, then settle's retry).
+  async function callWithFailingFinish(failures: number) {
+    let armed = false;
+    let left = failures;
+    const flakyDb = new Proxy(db, {
+      get(t, p) {
+        if (p === "update" && armed && left > 0) {
+          return () => {
+            left--;
+            throw new Error("db down");
+          };
+        }
+        const v = Reflect.get(t, p, t);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    }) as Db;
+    const { port } = await start({ db: flakyDb });
+    const c = await open(port);
+    c.ws.send(startFrame(member));
+    const ready = await c.waitFor((e) => e.type === "ready");
+    for (let i = 0; i < 10; i++) c.ws.send(Buffer.alloc(3200));
+    await c.waitFor((e) => e.type === "state");
+    armed = true;
+    end(c);
+    await c.closed;
+    const row = await until(async () => (await ledger())[0]);
+    const callId = ready.callId as string;
+    const getRow = async () =>
+      (await db.select().from(schema.calls).where(eq(schema.calls.id, callId)))[0]!;
+    return { row, callId, getRow };
+  }
+  const sweepNow = () => sweepStaleCalls(db, { inProgressOlderThanMin: 30 });
+
+  it("settle finishes the row again when the session's finishCall failed, and bills once", async () => {
+    const { row, callId, getRow } = await callWithFailingFinish(1);
+    await until(async () => (await getRow()).status !== "in_progress");
+    const call = await getRow();
+    expect(call.status).toBe("completed");
+    expect(row.calls).toBe(1);
+    expect(row.callSeconds).toBe(call.durationS);
+    // Even if the row is old, a later sweep must not bill again.
+    await db
+      .update(schema.calls)
+      .set({ startedAt: new Date(Date.now() - 3 * 3600_000) })
+      .where(eq(schema.calls.id, callId));
+    await sweepNow();
+    const after = (await ledger())[0]!;
+    expect(after).toMatchObject({ calls: 1, callSeconds: row.callSeconds });
+  });
+
+  it("bills once even when both finish attempts fail; the sweep then closes the row without re-billing", async () => {
+    const { row, callId, getRow } = await callWithFailingFinish(2);
+    expect(row.calls).toBe(1);
+    expect((await getRow()).status).toBe("in_progress");
+    await db
+      .update(schema.calls)
+      .set({ startedAt: new Date(Date.now() - 3 * 3600_000) })
+      .where(eq(schema.calls.id, callId));
+    await sweepNow();
+    expect((await getRow()).status).toBe("abandoned");
+    expect((await ledger())[0]).toMatchObject({ calls: 1, callSeconds: row.callSeconds });
   });
 
   it("does not lose an `end` sent while setup is still running", async () => {

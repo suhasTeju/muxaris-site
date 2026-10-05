@@ -66,6 +66,8 @@ export const calls = pgTable(
       purged?: boolean;
     }>(),
     analysedAt: timestamp("analysed_at", { withTimezone: true }),
+    /** Set once when this call's usage has been added to the ledger (exactly-once guard). */
+    usageRecordedAt: timestamp("usage_recorded_at", { withTimezone: true }),
   },
   (t) => [
     index("calls_clinic_started_idx").on(t.clinicId, t.startedAt),

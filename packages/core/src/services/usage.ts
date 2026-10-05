@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
 import { CoreError } from "./errors.js";
 
-const { plans, clinics, usageLedger } = schema;
+const { plans, clinics, usageLedger, calls } = schema;
 
 /** "YYYY-MM" for `at` in the given IANA timezone (the usage_ledger month key). */
 export function usageMonth(timezone: string, at: Date = new Date()): string {
@@ -41,17 +41,46 @@ export function pilotEndsAt(createdAt: Date): Date {
   return new Date(createdAt.getTime() + PILOT_DAYS * 86_400_000);
 }
 
-/** Atomically adds one finished call to the month's ledger. */
+export type UsageDb = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+export type CallUsageInput = {
+  callId: string;
+  clinicId: string;
+  month: string;
+  callSeconds: number;
+  llmInputTokens?: number;
+  llmOutputTokens?: number;
+};
+
+/**
+ * Adds one finished call to the month's ledger, at most once per call: the `calls` row is
+ * claimed via `usage_recorded_at` and the ledger upserted in the same transaction. Returns
+ * `{ recorded: false }` (writing nothing) when the call's usage was already recorded.
+ */
 export async function recordCallUsage(
   db: Db,
-  input: {
-    clinicId: string;
-    month: string;
-    callSeconds: number;
-    llmInputTokens?: number;
-    llmOutputTokens?: number;
-  },
-) {
+  input: CallUsageInput,
+): Promise<{ recorded: boolean }> {
+  return db.transaction((tx) => recordCallUsageIn(tx, input));
+}
+
+/** Same as {@link recordCallUsage}, for callers already inside a transaction. */
+export async function recordCallUsageIn(
+  db: UsageDb,
+  input: CallUsageInput,
+): Promise<{ recorded: boolean }> {
+  const claimed = await db
+    .update(calls)
+    .set({ usageRecordedAt: sql`now()` })
+    .where(
+      and(
+        eq(calls.id, input.callId),
+        eq(calls.clinicId, input.clinicId),
+        sql`${calls.usageRecordedAt} IS NULL`,
+      ),
+    )
+    .returning({ id: calls.id });
+  if (claimed.length === 0) return { recorded: false };
   const seconds = Math.max(0, Math.round(input.callSeconds));
   const inTok = Math.max(0, Math.round(input.llmInputTokens ?? 0));
   const outTok = Math.max(0, Math.round(input.llmOutputTokens ?? 0));
@@ -74,4 +103,5 @@ export async function recordCallUsage(
         llmOutputTokens: sql`${usageLedger.llmOutputTokens} + excluded.llm_output_tokens`,
       },
     });
+  return { recorded: true };
 }

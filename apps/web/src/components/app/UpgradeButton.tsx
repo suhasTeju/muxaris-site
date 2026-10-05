@@ -41,6 +41,7 @@ export function UpgradeButton(props: {
   isOwner: boolean;
   billing: { enabled: boolean };
   tz: string;
+  subscriptionStatus?: string | undefined;
 }) {
   const api = useApi();
   const [busy, setBusy] = useState(false);

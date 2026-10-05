@@ -81,6 +81,7 @@ export default async function SettingsPage() {
             isOwner={role === "owner"}
             billing={{ enabled: billingStatus.enabled }}
             tz={clinic.timezone}
+            subscriptionStatus={billingStatus.subscription?.status}
           />
         </Section>
 

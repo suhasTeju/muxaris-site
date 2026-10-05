@@ -589,16 +589,25 @@ export function createServer(deps: ServerDeps): GatewayServer {
         const durationS = session.durationS;
         void (async () => {
           try {
-            if (finishRow) {
-              await finishCall(db, {
-                callId,
-                clinicId,
-                status: "failed",
-                outcome: "abandoned",
-                durationS,
-              });
+            // The row may still be in_progress if the session's own finishCall failed (or the
+            // session never closed out): finish it again (idempotent) with the real outcome.
+            if (finishRow || !session.finished) {
+              const f = finishRow ? null : session.finishOutcome;
+              try {
+                await finishCall(db, {
+                  callId,
+                  clinicId,
+                  status: f?.status ?? "failed",
+                  outcome: f?.outcome ?? "abandoned",
+                  durationS: f?.durationS ?? durationS,
+                });
+              } catch {
+                // Still bill below; the once-guard keeps the later sweep from billing again.
+                sessLog.error("call finish retry failed", { callId });
+              }
             }
             await recordCallUsage(db, {
+              callId,
               clinicId,
               month: usageMonth(clinic.clinic.timezone, startedAt),
               callSeconds: durationS,

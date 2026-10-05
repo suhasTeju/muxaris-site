@@ -225,6 +225,12 @@ export class VoiceSession {
   private ended = false;
   private disclosurePending = false;
   private finalDurationS: number | undefined;
+  private finishState: {
+    ok: boolean;
+    status: "completed" | "failed";
+    outcome: CallOutcome;
+    durationS: number;
+  } | null = null;
   private startedAt = 0;
 
   /** Bumped on every barge-in: anything tagged with an older epoch is stale and dropped. */
@@ -454,6 +460,21 @@ export class VoiceSession {
     this.providerError("stt");
   }
 
+  /** True once the session's own `finishCall` succeeded (the call row is closed out). */
+  get finished(): boolean {
+    return this.finishState?.ok ?? false;
+  }
+
+  /** The status/outcome/duration the session tried to finish the call with (null before end). */
+  get finishOutcome(): {
+    status: "completed" | "failed";
+    outcome: CallOutcome;
+    durationS: number;
+  } | null {
+    const f = this.finishState;
+    return f ? { status: f.status, outcome: f.outcome, durationS: f.durationS } : null;
+  }
+
   /** Call duration in seconds: final once ended, running before that (0 if never started). */
   get durationS(): number {
     if (this.finalDurationS !== undefined) return this.finalDurationS;
@@ -502,11 +523,13 @@ export class VoiceSession {
     const outcome = this.outcome();
     const durationS = this.durationS;
     this.finalDurationS = durationS;
+    const status = reason === "error" ? "failed" : "completed";
+    this.finishState = { ok: false, status, outcome, durationS };
     try {
       await finishCall(this.db, {
         callId: this.ctx.callId,
         clinicId: this.ctx.clinic.clinic.id,
-        status: reason === "error" ? "failed" : "completed",
+        status,
         outcome,
         durationS,
         ...(this.detectedLanguage ? { languageDetected: this.detectedLanguage } : {}),
@@ -514,6 +537,7 @@ export class VoiceSession {
         ...(this.tctx.patientId ? { patientId: this.tctx.patientId } : {}),
         ...(this.recorder ? { recorderStartedAt: new Date(this.recorder.startedAtMs) } : {}),
       });
+      this.finishState.ok = true;
     } catch (e) {
       this.log.error("finishCall failed", { code: errCode(e) });
     }

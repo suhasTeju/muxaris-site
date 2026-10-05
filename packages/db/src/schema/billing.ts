@@ -59,7 +59,7 @@ export const subscriptions = pgTable(
 
 /** One row per provider event id: the webhook's idempotency ledger. */
 export const billingEvents = pgTable("billing_events", {
-  id: text("id").primaryKey(), // provider event id (Razorpay `x-razorpay-event-id`)
+  id: text("id").primaryKey(), // idempotency key: sha256 of the signed raw webhook body
   provider: text("provider").notNull().default("razorpay"),
   event: text("event").notNull(),
   subscriptionId: text("subscription_id"),
