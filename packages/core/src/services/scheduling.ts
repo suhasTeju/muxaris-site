@@ -1,6 +1,8 @@
 import { addMinutes } from "date-fns";
 import { and, asc, eq, gt, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { schema, newId, type Db } from "@muxaris/db";
+import type { ChannelFlags } from "@muxaris/shared";
+import { queueAppointmentNotification } from "../notifications/outbox.js";
 import {
   findSlots,
   localDateString,
@@ -612,6 +614,8 @@ export async function bookAppointment(
     /** Explicit staff opt-in: bypass working hours, lead time and grain (never overlaps). */
     allowOutsideRules?: boolean;
     now?: Date;
+    /** When set, an outbox row for this change is written in the same transaction. */
+    notify?: ChannelFlags;
   },
 ): Promise<Appointment> {
   assertValidDate(input.startsAt, "startsAt");
@@ -652,6 +656,13 @@ export async function bookAppointment(
         notes: input.notes ?? null,
       })
       .returning();
+    if (input.notify)
+      await queueAppointmentNotification(tx, {
+        clinicId: input.clinicId,
+        appointmentId: row!.id,
+        kind: "appointment_confirmed",
+        channels: input.notify,
+      });
     return row!;
   });
 }
@@ -667,6 +678,8 @@ export async function rescheduleAppointment(
     /** Explicit staff opt-in: bypass working hours, lead time and grain (never overlaps). */
     allowOutsideRules?: boolean;
     now?: Date;
+    /** When set, an outbox row for this change is written in the same transaction. */
+    notify?: ChannelFlags;
   },
 ): Promise<Appointment> {
   assertValidDate(input.newStartsAt, "newStartsAt");
@@ -725,6 +738,13 @@ export async function rescheduleAppointment(
       )
       .returning();
     if (!row) throw new CoreError("conflict", "appointment already finalised");
+    if (input.notify)
+      await queueAppointmentNotification(tx, {
+        clinicId: input.clinicId,
+        appointmentId: row.id,
+        kind: "appointment_rescheduled",
+        channels: input.notify,
+      });
     return row;
   });
 }
@@ -732,7 +752,13 @@ export async function rescheduleAppointment(
 /** Cancelling a completed/no_show appointment is a conflict; cancelling a cancelled one is a no-op. */
 export async function cancelAppointment(
   db: Db,
-  input: { clinicId: string; appointmentId: string; reason?: string },
+  input: {
+    clinicId: string;
+    appointmentId: string;
+    reason?: string;
+    /** When set, an outbox row for this change is written in the same transaction. */
+    notify?: ChannelFlags;
+  },
 ): Promise<Appointment> {
   return db.transaction(async (tx) => {
     const find = () =>
@@ -766,6 +792,13 @@ export async function cancelAppointment(
       )
       .returning();
     if (!row) throw new CoreError("conflict", "appointment already finalised");
+    if (input.notify)
+      await queueAppointmentNotification(tx, {
+        clinicId: input.clinicId,
+        appointmentId: row.id,
+        kind: "appointment_cancelled",
+        channels: input.notify,
+      });
     return row;
   });
 }
