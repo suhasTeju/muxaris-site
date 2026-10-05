@@ -89,6 +89,11 @@ describe("CicdStack", () => {
     expect(run?.Condition).toEqual({
       ArnEquals: { "ecs:cluster": "arn:aws:ecs:ap-south-1:005533348545:cluster/muxaris" },
     });
+    expect(withAction(t, "ecs:DescribeServices")[0]?.Resource).toEqual([
+      "arn:aws:ecs:ap-south-1:005533348545:cluster/muxaris",
+      "arn:aws:ecs:ap-south-1:005533348545:service/muxaris/*",
+    ]);
+    expect(withAction(t, "ecs:DescribeTaskDefinition")[0]?.Resource).toBe("*");
     expect(withAction(t, "ecs:DescribeTasks")[0]?.Resource).toBe(
       "arn:aws:ecs:ap-south-1:005533348545:task/muxaris/*",
     );

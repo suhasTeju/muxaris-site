@@ -64,6 +64,17 @@ export class CicdStack extends Stack {
         resources: [`arn:aws:ecs:${REGION}:${ACCOUNT}:task/muxaris/*`],
       }),
     );
+    // The deploy workflow's `changes` job reads the running API task definition to learn the deployed
+    // commit. DescribeTaskDefinition has no resource-level scoping.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["ecs:ListServices", "ecs:DescribeServices"],
+        resources: [clusterArn, `arn:aws:ecs:${REGION}:${ACCOUNT}:service/muxaris/*`],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({ actions: ["ecs:DescribeTaskDefinition"], resources: ["*"] }),
+    );
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ["iam:PassRole"],

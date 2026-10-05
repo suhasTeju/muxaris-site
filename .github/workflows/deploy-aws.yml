@@ -3,9 +3,10 @@
 # NOT YET EXECUTED: this branch has never been pushed and main only holds the Astro site, so this
 # workflow has not run anywhere and is unverified. Expect to debug it on its first real run.
 #
-# Triggered by the `ci` workflow completing on main (a red CI never deploys), or by hand. A push
-# that only changed web, docs or Markdown is detected in the `changes` job and skips the deploy, so
-# it does not replace the gateway. (`paths-ignore` cannot apply to `workflow_run`.)
+# Triggered by the `ci` workflow completing on main (a red CI never deploys), or by hand. The
+# `changes` job diffs the tested commit against the commit currently running on the API service (its
+# image tag) and skips the deploy when only web, docs or Markdown changed, so a site-only push does
+# not replace the gateway. (`paths-ignore` cannot apply to `workflow_run`.)
 #
 # Order: Data, Workers, Migrate, scripts/migrate.sh, then Services and Observability, so new code
 # never meets the old schema.
@@ -36,10 +37,13 @@ concurrency:
   cancel-in-progress: false
 jobs:
   changes:
-    # Decides whether the tested commit changed anything that needs a deploy.
+    # Decides whether anything since the currently deployed commit needs a deploy. A push can carry
+    # several commits, so the diff runs from the deployed commit (the API service's image tag), not
+    # from the head commit's parent. Unknown deployed state always deploys.
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
     outputs:
       deploy: ${{ steps.diff.outputs.deploy }}
@@ -47,19 +51,31 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
       - id: diff
         env:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           if [[ -z "$HEAD_SHA" ]]; then echo "deploy=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          files="$(git diff --name-only "$HEAD_SHA^" "$HEAD_SHA")"
-          echo "$files"
+          svc="$(aws ecs list-services --cluster muxaris --query 'serviceArns' --output text | tr '\t' '\n' | grep ApiService || true)"
+          td="$(aws ecs describe-services --cluster muxaris --services "$svc" --query 'services[0].taskDefinition' --output text 2>/dev/null || true)"
+          image="$(aws ecs describe-task-definition --task-definition "$td" --query 'taskDefinition.containerDefinitions[0].image' --output text 2>/dev/null || true)"
+          deployed="${image##*:}"
+          if [[ -z "$deployed" || "$deployed" == "None" ]] || ! git cat-file -e "$deployed^{commit}" 2>/dev/null; then
+            echo "deployed commit unknown ($deployed): deploying"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files="$(git diff --name-only "$deployed" "$HEAD_SHA")"
+          echo "changed since deployed $deployed:"; echo "$files"
           # Anything outside web, docs, Markdown and netlify.toml needs a deploy.
           if grep -qvE '^(apps/web/|docs/|netlify\.toml$)|\.md$' <<<"$files"; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           else
-            echo "only web or docs changed: nothing to deploy"
+            echo "only web or docs changed since the deployed commit: nothing to deploy"
             echo "deploy=false" >> "$GITHUB_OUTPUT"
           fi
   deploy:
