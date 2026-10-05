@@ -8,3 +8,5 @@ export const WEB_ORIGINS = [
   "https://www.muxaris.com",
   "http://localhost:3000",
 ];
+export const API_HOST = "api.muxaris.com";
+export const VOICE_HOST = "voice.muxaris.com";

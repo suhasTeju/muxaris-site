@@ -4,8 +4,9 @@ import { DataStack } from "../lib/data-stack.js";
 import { NetworkStack } from "../lib/network-stack.js";
 import { NotifyStack } from "../lib/notify-stack.js";
 import { StorageStack } from "../lib/storage-stack.js";
+import { ServicesStack } from "../lib/services-stack.js";
 import { WorkersStack } from "../lib/workers-stack.js";
-import { ACCOUNT, ENV } from "../lib/config.js";
+import { ACCOUNT, ENV, WEB_ORIGINS } from "../lib/config.js";
 
 if (process.env.CDK_DEFAULT_ACCOUNT !== ACCOUNT) {
   throw new Error(
@@ -45,4 +46,29 @@ new WorkersStack(app, "MuxarisWorkers", {
   smsEnabled: process.env.SMS_ENABLED === "1",
   notifyFromEmail: process.env.NOTIFY_FROM_EMAIL || undefined,
   description: "Muxaris post-call and notifier Lambdas, queue mapping and schedules",
+});
+
+const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID ?? "";
+const cognitoClientId = process.env.COGNITO_CLIENT_ID ?? "";
+if (!cognitoUserPoolId || !cognitoClientId) {
+  throw new Error(
+    "Refusing to synth MuxarisServices: COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID must be set (they live in .env).",
+  );
+}
+new ServicesStack(app, "MuxarisServices", {
+  env: ENV,
+  network,
+  data,
+  storage,
+  imageTag: process.env.IMAGE_TAG || "latest",
+  certArn: process.env.CERT_ARN || undefined,
+  cognitoUserPoolId,
+  cognitoClientId,
+  corsOrigins: WEB_ORIGINS.join(","),
+  maxSessions: Number(process.env.MAX_SESSIONS || 15),
+  maxCallSeconds: Number(process.env.MAX_CALL_SECONDS || 1200),
+  notifyFromEmail: process.env.NOTIFY_FROM_EMAIL || "appointments@muxaris.com",
+  billingEnabled: process.env.BILLING_ENABLED === "1",
+  publicApiUrl: process.env.PUBLIC_API_URL || "https://api.muxaris.com",
+  description: "Muxaris ALB, ECS cluster, API and voice gateway services, migrate task",
 });
