@@ -218,6 +218,10 @@ describe("ServicesStack", () => {
     const gw = env(taskDef(t, "gateway"));
     expect(gw).toMatchObject({
       NODE_ENV: "production",
+      // The gateway verifies the same Cognito tokens as the API; without these it exits at boot.
+      AUTH_MODE: "cognito",
+      COGNITO_USER_POOL_ID: "ap-south-1_TEST",
+      COGNITO_CLIENT_ID: "client-test",
       VOICE_PROVIDER: "sarvam",
       BEDROCK_MODEL_ID: "global.amazon.nova-2-lite-v1:0",
       MAX_SESSIONS: "15",

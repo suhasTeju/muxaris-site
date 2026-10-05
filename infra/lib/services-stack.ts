@@ -129,6 +129,9 @@ export class ServicesStack extends Stack {
       }),
       environment: {
         ...dbEnv,
+        AUTH_MODE: "cognito",
+        COGNITO_USER_POOL_ID: props.cognitoUserPoolId,
+        COGNITO_CLIENT_ID: props.cognitoClientId,
         VOICE_PROVIDER: "sarvam",
         BEDROCK_MODEL_ID: MODEL_ID,
         MAX_SESSIONS: String(props.maxSessions),
