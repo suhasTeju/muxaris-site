@@ -3,16 +3,14 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => vi.fn());
-const replace = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api-client", () => ({ useApi: () => api }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import { PatientsView } from "./PatientsView";
 
 afterEach(() => {
   cleanup();
   api.mockReset();
-  replace.mockReset();
   vi.useRealTimers();
 });
 
@@ -28,11 +26,5 @@ describe("PatientsView", () => {
     });
     expect(input.value).toBe("rav");
     expect(api).toHaveBeenCalledWith("/v1/patients?limit=50&offset=0&q=rav");
-    expect(replace).toHaveBeenCalledWith("/app/patients?q=rav");
-  });
-
-  it("starts from the server query", () => {
-    render(<PatientsView initial={[]} initialTotal={0} initialQuery="asha" tz="Asia/Kolkata" />);
-    expect((screen.getByLabelText("Search patients") as HTMLInputElement).value).toBe("asha");
   });
 });

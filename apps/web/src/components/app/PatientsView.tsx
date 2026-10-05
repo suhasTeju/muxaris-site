@@ -12,23 +12,24 @@ import { PatientForm } from "./PatientForm";
 
 const PAGE = 50;
 
-/** Searchable patient list. The server renders the first page for the URL's `q`. */
+/**
+ * Searchable patient list. The server renders the unfiltered first page; the search term stays in
+ * component state only (never the URL), because it can be a phone number, email or name.
+ */
 export function PatientsView({
   initial,
   initialTotal,
-  initialQuery = "",
   tz,
 }: {
   initial: Patient[];
   initialTotal: number;
-  initialQuery?: string;
   tz: string;
 }) {
   const api = useApi();
   const router = useRouter();
   const [items, setItems] = useState(initial);
   const [total, setTotal] = useState(initialTotal);
-  const [q, setQ] = useState(initialQuery);
+  const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -57,16 +58,14 @@ export function PatientsView({
     }
   }
 
-  // Debounced search: keep the URL in step and refetch from the first page.
+  // Debounced search: refetch from the first page.
   useEffect(() => {
     if (first.current) {
       first.current = false;
       return;
     }
     const t = setTimeout(() => {
-      const query = q.trim();
-      router.replace(query ? `/app/patients?q=${encodeURIComponent(query)}` : "/app/patients");
-      void fetchPage(query, 0);
+      void fetchPage(q.trim(), 0);
     }, 300);
     return () => clearTimeout(t);
   }, [q]);

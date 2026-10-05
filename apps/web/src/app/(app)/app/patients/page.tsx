@@ -4,17 +4,11 @@ import { PatientsView } from "@/components/app/PatientsView";
 
 export const dynamic = "force-dynamic";
 
-export default async function PatientsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string }>;
-}) {
+export default async function PatientsPage() {
   const active = await requireActiveClinic();
-  const { q } = await searchParams;
-  const qs = q ? `&q=${encodeURIComponent(q)}` : "";
   const [{ clinic }, list] = await Promise.all([
     serverApi<{ clinic: Clinic }>(`/v1/clinics/${active.clinicId}`),
-    serverApi<{ patients: Patient[]; total: number }>(`/v1/patients?limit=50${qs}`),
+    serverApi<{ patients: Patient[]; total: number }>("/v1/patients?limit=50"),
   ]);
   return (
     <div className="max-w-5xl px-4 py-8 sm:px-8">
@@ -23,7 +17,6 @@ export default async function PatientsPage({
         key={active.clinicId}
         initial={list.patients}
         initialTotal={list.total}
-        initialQuery={q ?? ""}
         tz={clinic.timezone}
       />
     </div>

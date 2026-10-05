@@ -1,10 +1,10 @@
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
 import { HTTPException } from "hono/http-exception";
 import { CoreError } from "@muxaris/core";
 import type { AppDeps, AppEnv } from "./deps.js";
+import { requestLog } from "./request-log.js";
 import { requireUser } from "./auth/middleware.js";
 import { meRoutes } from "./routes/me.js";
 import { catalogRoutes } from "./routes/catalog.js";
@@ -37,7 +37,7 @@ const PUBLIC_BODY_MAX = 16 * 1024;
 export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>();
   const channels = deps.channels ?? { sms: false, whatsapp: false };
-  if (process.env.NODE_ENV !== "test") app.use(logger());
+  if (process.env.NODE_ENV !== "test") app.use(requestLog());
   app.use(
     "*",
     cors({
