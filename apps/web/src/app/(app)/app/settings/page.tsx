@@ -1,9 +1,11 @@
 import Link from "next/link";
 import type { AssistantProfile, Clinic, Doctor, Service, SlotRules } from "@muxaris/shared";
+import type { UsageSummary } from "@muxaris/shared";
 import { LANGUAGES, clinicNotificationSettings, clinicRecordCalls } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
 import { requireActiveClinic, serverApi } from "@/lib/api-server";
 import { NotificationSettings } from "@/components/app/NotificationSettings";
+import { PlanSettings } from "@/components/app/PlanSettings";
 import { RecordCallsToggle } from "@/components/app/RecordCallsToggle";
 
 export const dynamic = "force-dynamic";
@@ -32,12 +34,13 @@ export default async function SettingsPage() {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
   });
-  const [{ clinic, role }, doctors, services, rules, assistant] = await Promise.all([
+  const [{ clinic, role }, doctors, services, rules, assistant, usage] = await Promise.all([
     serverApi<{ clinic: Clinic; role: string }>(`/v1/clinics/${active.clinicId}`),
     serverApi<{ doctors: Doctor[] }>("/v1/doctors"),
     serverApi<{ services: Service[] }>("/v1/services"),
     serverApi<{ slotRules: SlotRules }>("/v1/slot-rules"),
     assistantReq,
+    serverApi<UsageSummary>("/v1/usage").catch(() => null),
   ]);
   const langs = clinic.languages
     .map((c) => LANGUAGES.find((l) => l.code === c)?.label ?? c)
@@ -63,8 +66,16 @@ export default async function SettingsPage() {
             <Row k="Phone" v={clinic.phone ?? "-"} />
             <Row k="Timezone" v={clinic.timezone} />
             <Row k="Languages" v={langs} />
-            <Row k="Plan" v={clinic.plan === "pilot" ? "Pilot" : "Standard"} />
           </dl>
+        </Section>
+
+        <Section title="Plan">
+          <PlanSettings
+            usage={usage}
+            isOwner={role === "owner"}
+            billing={{ enabled: false }}
+            tz={clinic.timezone}
+          />
         </Section>
 
         <Section title="Doctors">

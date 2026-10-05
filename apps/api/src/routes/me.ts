@@ -9,7 +9,7 @@ import {
   pilotEndsAt,
   CoreError,
 } from "@muxaris/core";
-import { schema } from "@muxaris/db";
+import { newId, schema } from "@muxaris/db";
 import { and, eq } from "drizzle-orm";
 import { clinicSettingsPatchBody, createClinicBody, type UsageSummary } from "@muxaris/shared";
 import type { AppEnv } from "../deps.js";
@@ -89,6 +89,15 @@ export function meRoutes(db: Db) {
         .set({ settings: next, updatedAt: new Date() })
         .where(eq(schema.clinics.id, id))
         .returning();
+      await tx.insert(schema.auditLog).values({
+        id: newId("aud"),
+        clinicId: id,
+        actorId: c.get("user").id,
+        action: "clinic.settings.edit",
+        entity: "clinic",
+        entityId: id,
+        data: { keys: Object.keys(settings) },
+      });
       return row!;
     });
     return c.json({ clinic });

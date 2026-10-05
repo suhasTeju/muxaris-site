@@ -212,7 +212,7 @@ export const PLANS: readonly Plan[] = [
     cadence: "for 30 days",
     blurb: "For the first 10 Bengaluru clinics. Try it on your real phone traffic, no card needed.",
     features: [
-      "Up to 500 calls",
+      "Up to 500 call-minutes",
       "All 5 languages",
       "Booking against your calendar",
       "Email confirmations and reminders",
@@ -267,7 +267,7 @@ export const FAQS = [
   },
   {
     q: "How is pricing structured? What about overage?",
-    a: "The Pilot is free for 30 days for the first 10 Bengaluru clinics, up to 500 calls. Standard is ₹4,999 per month and includes up to 3,000 call-minutes. If you go beyond that, we bill a per-minute rate agreed in advance and tell you before it happens. No lock-in, cancel any time.",
+    a: "The Pilot is free for 30 days for the first 10 Bengaluru clinics, up to 500 call-minutes. Standard is ₹4,999 per month and includes up to 3,000 call-minutes. If you go beyond that, we bill a per-minute rate agreed in advance and tell you before it happens. No lock-in, cancel any time.",
   },
   {
     q: "How long does set-up take?",

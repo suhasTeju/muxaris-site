@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import pg from "pg";
 import { createDb, schema, newId } from "@muxaris/db";
 import { createDevVerifier } from "@muxaris/core";
@@ -73,6 +73,18 @@ describe.skipIf(!reachable)("PATCH /clinics/:id (settings)", () => {
     const ok = await call("PATCH", `/clinics/${clinic}`, tok(subs[0]!), body);
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as J).clinic.settings.recordCalls).toBe(false);
+    const audits = await db
+      .select()
+      .from(schema.auditLog)
+      .where(
+        and(
+          eq(schema.auditLog.clinicId, clinic),
+          eq(schema.auditLog.action, "clinic.settings.edit"),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.entityId).toBe(clinic);
+    expect(audits[0]!.data).toEqual({ keys: ["recordCalls"] });
     const [row] = await db.select().from(schema.clinics).where(eq(schema.clinics.id, clinic));
     expect(row!.settings["recordCalls"]).toBe(false);
 
@@ -85,6 +97,17 @@ describe.skipIf(!reachable)("PATCH /clinics/:id (settings)", () => {
     const out = await call("PATCH", `/clinics/${clinic}`, tok(subs[2]!), body);
     expect(out.status).toBe(403);
     expect(((await out.json()) as J).error.code).toBe("forbidden");
+
+    const afterRefused = await db
+      .select()
+      .from(schema.auditLog)
+      .where(
+        and(
+          eq(schema.auditLog.clinicId, clinic),
+          eq(schema.auditLog.action, "clinic.settings.edit"),
+        ),
+      );
+    expect(afterRefused).toHaveLength(1);
 
     const [still] = await db.select().from(schema.clinics).where(eq(schema.clinics.id, clinic));
     expect(still!.settings["recordCalls"]).toBe(false);

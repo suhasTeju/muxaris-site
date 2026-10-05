@@ -45,4 +45,10 @@ describe("marketing copy guard", () => {
       expect(flat).not.toMatch(/transcripts[^.]{0,40}(stored )?encrypted/i);
     }
   });
+
+  it("pilot is described in call-minutes, not calls", () => {
+    const content = readFileSync(join(root, "lib/content.ts"), "utf8");
+    expect(content).toContain("500 call-minutes");
+    expect(content).not.toMatch(/500 calls\b/);
+  });
 });
