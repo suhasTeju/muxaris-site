@@ -40,7 +40,7 @@ US dollars at ap-south-1 list prices, before model and speech usage.
 | Secrets Manager, CloudWatch, S3, SQS, Lambda, ECR, Cognito          |                   8 |
 | **Total**                                                           |       **100 to 115** |
 
-Bedrock (Nova) tokens and Sarvam speech-to-text and text-to-speech are billed by use and are not in
+Container Insights and public IPv4 address charges add a few dollars. Bedrock (Nova) tokens and Sarvam speech-to-text and text-to-speech are billed by use and are not in
 this total. The API service can scale from one to two tasks on CPU, so a busy month can add one more
 0.5 vCPU / 1 GB task. The gateway never scales out (see the runbook).
 

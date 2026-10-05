@@ -178,6 +178,11 @@ short, on a fresh account:
     scripts/smoke.sh http://<AlbDnsName>
     scripts/request-cert.sh                       # prints the ACM validation CNAMEs and CERT_ARN=
 
+On a truly empty account set `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` to `pending` in `.env`
+before the first `scripts/bootstrap-aws.sh` (the CDK app refuses to synth without them); see the
+Runbook. `infra/scripts/cdk.sh` sources `.env` last, so set `IMAGE_TAG` and `CERT_ARN` in `.env`,
+not as a command prefix.
+
 Then add `CERT_ARN` to `.env`, redeploy `MuxarisServices`, point `api.muxaris.com` and
 `voice.muxaris.com` at the ALB at GoDaddy, run `scripts/smoke.sh https://api.muxaris.com`, and set
 the Netlify variables below.
@@ -252,7 +257,7 @@ gateway are deployed to AWS, not by Netlify: `NEXT_PUBLIC_API_URL` is `https://a
 | `scripts/e2e-voice.sh`                       | E2E voice smoke test (see below)                                                                          |
 | `scripts/gen-assets.sh`, `gen-image.sh`      | Generates landing-page imagery (Azure gpt-image)                                                          |
 | `scripts/gen-audio.sh`                       | Generates greeting and sample-call audio (Sarvam)                                                         |
-| `npm run deploy:<stack> -w @muxaris/infra`   | Deploys one stack: `auth`, `storage`, `notify`, `network`, `data`, `workers`, `services`, `observability`, `cicd` (or `all`) |
+| `npm run deploy:<stack> -w @muxaris/infra`   | Deploys one stack: `auth`, `storage`, `notify`, `network`, `data`, `workers`, `services`, `observability`, `cicd` (or `all`, which deploys only Network, Data, Workers, Services, Observability and Cicd; Auth, Storage and Notify are separate) |
 | `npm run workers:dev`                        | Runs the post-call and notifier workers locally                                                           |
 
 ### Post-call worker
