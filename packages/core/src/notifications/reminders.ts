@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
 import type { ChannelFlags } from "@muxaris/shared";
 import { queueAppointmentNotification } from "./outbox.js";
@@ -15,16 +15,17 @@ const ACTIVE = ["scheduled", "confirmed", "rescheduled"] as const;
  */
 export async function enqueueDueReminders(
   db: Db,
-  opts: { now?: Date; channels: ChannelFlags },
-): Promise<{ queued24h: number; queued2h: number }> {
+  opts: { now?: Date; channels: ChannelFlags; clinicId?: string },
+): Promise<{ queued24h: number; queued2h: number; failed: number }> {
   const now = opts.now ?? new Date();
-  const result = { queued24h: 0, queued2h: 0 };
+  const result = { queued24h: 0, queued2h: 0, failed: 0 };
   await db.transaction(async (tx) => {
     const due = await tx
       .select()
       .from(appointments)
       .where(
         and(
+          opts.clinicId ? eq(appointments.clinicId, opts.clinicId) : undefined,
           inArray(appointments.status, [...ACTIVE]),
           or(
             and(
@@ -41,24 +42,33 @@ export async function enqueueDueReminders(
           ),
         ),
       )
+      .orderBy(asc(appointments.startsAt))
       .limit(200)
       .for("update", { skipLocked: true });
     for (const apt of due) {
       const until = apt.startsAt.getTime() - now.getTime();
       const kind = until > 2 * H ? "reminder_24h" : "reminder_2h";
-      await tx
-        .update(appointments)
-        .set(kind === "reminder_24h" ? { reminder24hSentAt: now } : { reminder2hSentAt: now })
-        .where(eq(appointments.id, apt.id));
-      await queueAppointmentNotification(tx, {
-        clinicId: apt.clinicId,
-        appointmentId: apt.id,
-        kind,
-        channels: opts.channels,
-        now,
-      });
-      if (kind === "reminder_24h") result.queued24h++;
-      else result.queued2h++;
+      try {
+        // savepoint: one bad row must not roll back the rest of the sweep
+        const queued = await tx.transaction(async (sp) => {
+          await sp
+            .update(appointments)
+            .set(kind === "reminder_24h" ? { reminder24hSentAt: now } : { reminder2hSentAt: now })
+            .where(eq(appointments.id, apt.id));
+          return queueAppointmentNotification(sp, {
+            clinicId: apt.clinicId,
+            appointmentId: apt.id,
+            kind,
+            channels: opts.channels,
+            now,
+          });
+        });
+        if (!queued) continue; // clinic has reminders off: stamped, nothing queued
+        if (kind === "reminder_24h") result.queued24h++;
+        else result.queued2h++;
+      } catch {
+        result.failed++;
+      }
     }
   });
   return result;

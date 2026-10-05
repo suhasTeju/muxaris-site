@@ -43,12 +43,17 @@ async function loadContext(tx: DbLike, clinicId: string, appointmentId: string) 
     .from(appointments)
     .where(and(eq(appointments.id, appointmentId), eq(appointments.clinicId, clinicId)));
   if (!apt) throw new CoreError("not_found", "appointment not found");
-  const [[patient], [doctor], [service], [clinic]] = await Promise.all([
-    tx.select().from(patients).where(eq(patients.id, apt.patientId)),
-    tx.select({ name: doctors.name }).from(doctors).where(eq(doctors.id, apt.doctorId)),
-    tx.select({ name: services.name }).from(services).where(eq(services.id, apt.serviceId)),
-    tx.select().from(clinics).where(eq(clinics.id, clinicId)),
-  ]);
+  // sequential: a transaction client must not run concurrent queries
+  const [patient] = await tx.select().from(patients).where(eq(patients.id, apt.patientId));
+  const [doctor] = await tx
+    .select({ name: doctors.name })
+    .from(doctors)
+    .where(eq(doctors.id, apt.doctorId));
+  const [service] = await tx
+    .select({ name: services.name })
+    .from(services)
+    .where(eq(services.id, apt.serviceId));
+  const [clinic] = await tx.select().from(clinics).where(eq(clinics.id, clinicId));
   if (!patient || !clinic) throw new CoreError("not_found", "appointment context missing");
   return { apt, patient, doctorName: doctor?.name ?? "", serviceName: service?.name ?? "", clinic };
 }
@@ -108,17 +113,18 @@ export async function queueAppointmentNotification(
 /** Claims up to `limit` due rows for one delivery attempt; a crashed worker's rows return after retryAfterMs. */
 export async function claimQueuedNotifications(
   db: Db,
-  opts: { limit?: number; now?: Date; retryAfterMs?: number } = {},
+  opts: { limit?: number; now?: Date; retryAfterMs?: number; clinicId?: string } = {},
 ): Promise<NotificationRow[]> {
   const now = opts.now ?? new Date();
   const retryAt = new Date(now.getTime() + (opts.retryAfterMs ?? DEFAULT_RETRY_MS));
   return db.transaction(async (tx) => {
     const due = await tx
-      .select({ id: notifications.id })
+      .select({ id: notifications.id, attempts: notifications.attempts })
       .from(notifications)
       .where(
         and(
           eq(notifications.status, "queued"),
+          opts.clinicId ? eq(notifications.clinicId, opts.clinicId) : undefined,
           or(isNull(notifications.nextAttemptAt), lte(notifications.nextAttemptAt, now)),
         ),
       )
@@ -126,13 +132,20 @@ export async function claimQueuedNotifications(
       .limit(opts.limit ?? 20)
       .for("update", { skipLocked: true });
     if (due.length === 0) return [];
-    const ids = due.map((d) => d.id);
-    const rows = await tx
+    const exhausted = due.filter((d) => d.attempts >= MAX_ATTEMPTS).map((d) => d.id);
+    const ids = due.filter((d) => d.attempts < MAX_ATTEMPTS).map((d) => d.id);
+    if (exhausted.length > 0) {
+      await tx
+        .update(notifications)
+        .set({ status: "failed", error: "max_attempts" })
+        .where(inArray(notifications.id, exhausted));
+    }
+    if (ids.length === 0) return [];
+    return tx
       .update(notifications)
       .set({ attempts: sql`${notifications.attempts} + 1`, nextAttemptAt: retryAt })
       .where(inArray(notifications.id, ids))
       .returning();
-    return rows;
   });
 }
 
@@ -149,7 +162,7 @@ export async function markNotificationSent(
       error: null,
       sentAt: opts.now ?? new Date(),
     })
-    .where(eq(notifications.id, id));
+    .where(and(eq(notifications.id, id), eq(notifications.status, "queued")));
 }
 
 export async function markNotificationFailed(
@@ -160,7 +173,7 @@ export async function markNotificationFailed(
   await db
     .update(notifications)
     .set({ error: opts.error.slice(0, 200), ...(opts.final ? { status: "failed" } : {}) })
-    .where(eq(notifications.id, id));
+    .where(and(eq(notifications.id, id), eq(notifications.status, "queued")));
 }
 
 export async function markNotificationSkipped(
@@ -171,7 +184,7 @@ export async function markNotificationSkipped(
   await db
     .update(notifications)
     .set({ status: "skipped", error: opts.reason })
-    .where(eq(notifications.id, id));
+    .where(and(eq(notifications.id, id), eq(notifications.status, "queued")));
 }
 
 export async function listNotifications(
