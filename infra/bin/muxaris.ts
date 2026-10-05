@@ -1,5 +1,6 @@
 import { App } from "aws-cdk-lib";
 import { AuthStack } from "../lib/auth-stack.js";
+import { NotifyStack } from "../lib/notify-stack.js";
 import { StorageStack } from "../lib/storage-stack.js";
 import { ACCOUNT, ENV } from "../lib/config.js";
 
@@ -19,4 +20,8 @@ new AuthStack(app, "MuxarisAuth", {
 new StorageStack(app, "MuxarisStorage", {
   env: ENV,
   description: "Muxaris call recordings bucket and post-call queue",
+});
+new NotifyStack(app, "MuxarisNotify", {
+  env: ENV,
+  description: "Muxaris: SES domain identity for appointment email",
 });
