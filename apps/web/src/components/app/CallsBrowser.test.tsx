@@ -10,6 +10,7 @@ vi.mock("@/lib/dashboard", async (orig) => ({
   CALLS_PAGE_SIZE: 2,
 }));
 
+import { maskPhone } from "@muxaris/shared";
 import { CallsBrowser } from "./CallsBrowser";
 
 afterEach(() => {
@@ -22,7 +23,7 @@ const call = (id: string, phone: string) =>
     id,
     startedAt: "2026-10-06T04:00:00Z",
     channel: "phone",
-    callerPhone: phone,
+    callerPhoneMasked: maskPhone(phone),
     durationS: 30,
     languageDetected: "en-IN",
     outcome: "info",

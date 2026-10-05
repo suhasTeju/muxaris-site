@@ -22,6 +22,7 @@ const app = createApp({
   corsOrigins: env.corsOrigins,
   db,
   verifier,
+  channels: env.channels,
   blobs: env.storageDisabled
     ? null
     : createS3BlobStore({ bucket: env.callsBucket, region: env.awsRegion }),

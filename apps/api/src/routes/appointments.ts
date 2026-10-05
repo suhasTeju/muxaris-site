@@ -1,27 +1,30 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { and, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { schema, type Db } from "@muxaris/db";
 import {
   bookAppointment,
   cancelAppointment,
   listAppointments,
   rescheduleAppointment,
+  setAppointmentOutcome,
   localDateString,
   atLocal,
   CoreError,
 } from "@muxaris/core";
-import { appointmentBody, maskPhone, rescheduleBody } from "@muxaris/shared";
+import {
+  appointmentBody,
+  appointmentStatusBody,
+  maskPhone,
+  rescheduleBody,
+  type ChannelFlags,
+} from "@muxaris/shared";
 import type { AppEnv } from "../deps.js";
 import { requireClinic } from "../auth/middleware.js";
 import { isoOffset, v } from "../validate.js";
 
 const DAY = 86_400_000;
 const MAX_RANGE_DAYS = 62;
-const page = {
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-  offset: z.coerce.number().int().min(0).default(0),
-};
 const listQuery = z.object({
   from: isoOffset.optional(),
   to: isoOffset.optional(),
@@ -31,7 +34,6 @@ const listQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 const cancelBody = z.object({ reason: z.string().trim().min(1).max(300).optional() });
-const patientsQuery = z.object({ q: z.string().trim().min(1).max(100).optional(), ...page });
 
 /** Adds `patient: { name, phoneMasked }` (clinic-scoped join) to appointment rows. */
 async function attachPatients<T extends { patientId: string }>(
@@ -66,7 +68,7 @@ const ownerRequired = (c: Context<AppEnv>) =>
     403,
   );
 
-export function appointmentRoutes(db: Db) {
+export function appointmentRoutes(db: Db, channels: ChannelFlags) {
   const r = new Hono<AppEnv>();
   const member = requireClinic(db);
 
@@ -116,6 +118,7 @@ export function appointmentRoutes(db: Db) {
       serviceId: b.serviceId,
       startsAt: new Date(b.startsAt),
       source: "dashboard",
+      notify: channels,
       ...(b.notes ? { notes: b.notes } : {}),
       ...(b.allowOutsideRules ? { allowOutsideRules: true } : {}),
     });
@@ -153,6 +156,7 @@ export function appointmentRoutes(db: Db) {
       clinicId,
       appointmentId,
       newStartsAt: new Date(b.startsAt),
+      notify: channels,
       ...(b.allowOutsideRules ? { allowOutsideRules: true } : {}),
     });
     const [withPatient] = await attachPatients(db, clinicId, [appointment]);
@@ -163,30 +167,22 @@ export function appointmentRoutes(db: Db) {
     const appointment = await cancelAppointment(db, {
       clinicId: c.get("clinic").id,
       appointmentId: c.req.param("id"),
+      notify: channels,
       ...(c.req.valid("json").reason ? { reason: c.req.valid("json").reason! } : {}),
     });
     const [withPatient] = await attachPatients(db, c.get("clinic").id, [appointment]);
     return c.json({ appointment: withPatient });
   });
 
-  r.get("/patients", member, v("query", patientsQuery), async (c) => {
-    const { q, limit, offset } = c.req.valid("query");
-    const like = q ? `%${q.replace(/[\\%_]/g, "\\$&")}%` : null;
-    const patients = await db
-      .select()
-      .from(schema.patients)
-      .where(
-        and(
-          eq(schema.patients.clinicId, c.get("clinic").id),
-          like
-            ? or(ilike(schema.patients.name, like), ilike(schema.patients.phone, like))
-            : undefined,
-        ),
-      )
-      .orderBy(desc(schema.patients.createdAt), desc(schema.patients.id))
-      .limit(limit)
-      .offset(offset);
-    return c.json({ patients });
+  r.post("/appointments/:id/status", member, v("json", appointmentStatusBody), async (c) => {
+    const appointment = await setAppointmentOutcome(db, {
+      clinicId: c.get("clinic").id,
+      appointmentId: c.req.param("id"),
+      status: c.req.valid("json").status,
+      actorUserId: c.get("user").id,
+    });
+    const [withPatient] = await attachPatients(db, c.get("clinic").id, [appointment]);
+    return c.json({ appointment: withPatient });
   });
 
   return r;

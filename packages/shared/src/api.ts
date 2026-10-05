@@ -332,7 +332,8 @@ export interface Call {
   id: string;
   clinicId: string;
   channel: "browser" | "phone";
-  callerPhone: string | null;
+  /** Always masked; the raw number never leaves the server on call routes. */
+  callerPhoneMasked: string | null;
   patientId: string | null;
   startedByUserId: string | null;
   languageDetected: string | null;

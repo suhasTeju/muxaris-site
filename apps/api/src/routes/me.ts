@@ -8,7 +8,7 @@ import {
   CoreError,
 } from "@muxaris/core";
 import { schema } from "@muxaris/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { clinicSettingsPatchBody, createClinicBody } from "@muxaris/shared";
 import type { AppEnv } from "../deps.js";
 import { v } from "../validate.js";
@@ -70,15 +70,25 @@ export function meRoutes(db: Db) {
         { error: { code: "owner_required", message: "owner role required to change settings" } },
         403,
       );
-    const [clinic] = await db
-      .update(schema.clinics)
-      .set({
-        settings: sql`${schema.clinics.settings} || ${JSON.stringify(body.settings)}::jsonb`,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.clinics.id, id))
-      .returning();
-    if (!clinic) throw new CoreError("not_found", "clinic not found");
+    const { settings } = body;
+    const clinic = await db.transaction(async (tx) => {
+      const [cur] = await tx
+        .select({ settings: schema.clinics.settings })
+        .from(schema.clinics)
+        .where(eq(schema.clinics.id, id))
+        .for("update");
+      if (!cur) throw new CoreError("not_found", "clinic not found");
+      const prev = (cur.settings ?? {}) as Record<string, unknown>;
+      const prevN = (prev["notifications"] ?? {}) as Record<string, unknown>;
+      const next: Record<string, unknown> = { ...prev, ...settings };
+      if (settings.notifications) next["notifications"] = { ...prevN, ...settings.notifications };
+      const [row] = await tx
+        .update(schema.clinics)
+        .set({ settings: next, updatedAt: new Date() })
+        .where(eq(schema.clinics.id, id))
+        .returning();
+      return row!;
+    });
     return c.json({ clinic });
   });
 

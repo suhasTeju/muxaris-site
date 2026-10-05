@@ -84,6 +84,7 @@ d("call routes", () => {
       ids[key] = id;
     };
     await mk(a, "booked", {
+      callerPhone: "+919876500200",
       outcome: "booked",
       status: "completed",
       startedAt: new Date("2026-03-01T10:00:00Z"),
@@ -117,6 +118,10 @@ d("call routes", () => {
     const all = await list("");
     expect(all.total).toBe(6);
     expect(all.calls).toHaveLength(6);
+    const withPhone = all.calls.find((x: J) => x.id === ids.booked);
+    expect(withPhone.callerPhoneMasked).toBe("+91 •••• ••0200");
+    for (const x of all.calls) expect(x).not.toHaveProperty("callerPhone");
+    expect(JSON.stringify(all)).not.toContain("9876500200");
     const booked = await list("?outcome=booked");
     expect(booked.total).toBe(1);
     expect(booked.calls[0].id).toBe(ids.booked);
@@ -138,6 +143,9 @@ d("call routes", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as J;
     expect(body.call.id).toBe(ids.booked);
+    expect(body.call.callerPhoneMasked).toBe("+91 •••• ••0200");
+    expect(body.call).not.toHaveProperty("callerPhone");
+    expect(JSON.stringify(body)).not.toContain("9876500200");
     expect(body.turns).toEqual([]);
     expect(body.callbacks).toEqual([]);
     const x = await call("GET", `/calls/${ids.other}`, { sub: subs[0]!, clinic: a });

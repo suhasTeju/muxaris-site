@@ -1,3 +1,5 @@
+import { channelFlagsFromEnv, type ChannelFlags } from "@muxaris/shared";
+
 export interface ApiEnv {
   port: number;
   databaseUrl: string;
@@ -10,6 +12,7 @@ export interface ApiEnv {
   callsBucket: string;
   awsRegion: string;
   storageDisabled: boolean;
+  channels: ChannelFlags;
 }
 
 export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
@@ -37,6 +40,7 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): ApiEnv {
     callsBucket,
     awsRegion: src.AWS_REGION?.trim() || "ap-south-1",
     storageDisabled: src.STORAGE_DISABLED === "1" || !callsBucket,
+    channels: channelFlagsFromEnv(src),
     port: Number(src.API_PORT ?? 4000),
     databaseUrl,
     sarvamKey,

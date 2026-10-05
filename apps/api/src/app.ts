@@ -11,6 +11,8 @@ import { catalogRoutes } from "./routes/catalog.js";
 import { appointmentRoutes } from "./routes/appointments.js";
 import { callRoutes } from "./routes/calls.js";
 import { callbackRoutes } from "./routes/callbacks.js";
+import { patientRoutes } from "./routes/patients.js";
+import { notificationRoutes } from "./routes/notifications.js";
 import { statsRoutes } from "./routes/stats.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { demoRequestRoutes } from "./routes/demo-requests.js";
@@ -34,6 +36,7 @@ const PUBLIC_BODY_MAX = 16 * 1024;
 
 export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>();
+  const channels = deps.channels ?? { sms: false, whatsapp: false };
   if (process.env.NODE_ENV !== "test") app.use(logger());
   app.use(
     "*",
@@ -54,7 +57,9 @@ export function createApp(deps: AppDeps) {
   v1.use("*", requireUser(deps.db, deps.verifier));
   v1.route("/", meRoutes(deps.db));
   v1.route("/", catalogRoutes(deps.db));
-  v1.route("/", appointmentRoutes(deps.db));
+  v1.route("/", appointmentRoutes(deps.db, channels));
+  v1.route("/", patientRoutes(deps.db));
+  v1.route("/", notificationRoutes(deps.db, channels));
   v1.route("/", onboardingRoutes(deps.db));
   v1.route("/", callRoutes(deps.db, { blobs: deps.blobs ?? null }));
   v1.route("/", callbackRoutes(deps.db));

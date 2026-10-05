@@ -1,6 +1,7 @@
 import type { Db } from "@muxaris/db";
 import type { TokenVerifier } from "@muxaris/core";
 import type { BlobStore } from "@muxaris/storage";
+import type { ChannelFlags } from "@muxaris/shared";
 
 export interface AppDeps {
   version: string;
@@ -9,6 +10,8 @@ export interface AppDeps {
   verifier: TokenVerifier;
   /** null/undefined = recording storage unavailable. */
   blobs?: BlobStore | null;
+  /** Outbound notification channels enabled in this deployment (default: none). */
+  channels?: ChannelFlags;
 }
 
 export type ClinicRole = "owner" | "front_desk";

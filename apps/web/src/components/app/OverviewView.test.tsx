@@ -10,7 +10,7 @@ const call = {
   id: "c1",
   startedAt: new Date().toISOString(),
   channel: "phone",
-  callerPhone: "+919876543210",
+  callerPhoneMasked: "+91 •••• ••3210",
   durationS: 60,
   languageDetected: "en-IN",
   outcome: "booked",

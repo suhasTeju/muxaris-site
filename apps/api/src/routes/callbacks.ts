@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { listCallbacks, updateCallback } from "@muxaris/core";
+import { listCallbacks, revealCallbackPhone, updateCallback } from "@muxaris/core";
 import type { Db } from "@muxaris/db";
 import { callbackPatchBody } from "@muxaris/shared";
 import type { AppEnv } from "../deps.js";
@@ -31,6 +31,17 @@ export function callbackRoutes(db: Db) {
       ...(note !== undefined ? { note } : {}),
     });
     return c.json({ callback });
+  });
+
+  /** Audited: every reveal writes an audit_log row. The number is never logged. */
+  r.post("/callbacks/:id/reveal-phone", member, async (c) => {
+    return c.json(
+      await revealCallbackPhone(db, {
+        clinicId: c.get("clinic").id,
+        callbackId: c.req.param("id"),
+        actorUserId: c.get("user").id,
+      }),
+    );
   });
   return r;
 }

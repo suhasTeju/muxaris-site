@@ -2,7 +2,7 @@ import { EmptyState } from "./EmptyState";
 import Link from "next/link";
 import type { Call } from "@muxaris/shared";
 import { LANGUAGES } from "@muxaris/shared";
-import { formatDateTime, formatDuration, maskPhone } from "@/lib/dashboard";
+import { formatDateTime, formatDuration } from "@/lib/dashboard";
 import { CallStatusBadge, OutcomeBadge } from "./Badge";
 
 export function languageLabel(code: string | null): string {
@@ -43,11 +43,7 @@ export function CallList({
             <span className="min-w-36 flex-1 text-[15px]">
               {formatDateTime(c.startedAt, tz)}
               <span className="text-muted block text-xs">
-                {c.channel === "browser"
-                  ? "Test call"
-                  : c.callerPhone
-                    ? maskPhone(c.callerPhone)
-                    : "Phone"}
+                {c.channel === "browser" ? "Test call" : (c.callerPhoneMasked ?? "Phone")}
               </span>
             </span>
             <span className="text-muted w-16 text-sm tabular-nums">

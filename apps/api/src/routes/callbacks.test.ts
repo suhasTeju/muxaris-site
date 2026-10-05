@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { inArray } from "drizzle-orm";
 import pg from "pg";
 import { createDb, schema, newId } from "@muxaris/db";
-import { createDevVerifier } from "@muxaris/core";
+import { createCallback, createDevVerifier } from "@muxaris/core";
 import { FakeBlobStore } from "@muxaris/storage/fakes";
 import { createApp } from "../app.js";
 
@@ -140,5 +140,19 @@ d("callback routes", () => {
     expect(
       (await call("PATCH", `/callbacks/${open1}`, { sub: subs[0]!, clinic: a, body: {} })).status,
     ).toBe(400);
+  });
+
+  it("reveals a callback phone (audited) and 404s across tenants", async () => {
+    const cbRow = await createCallback(db, { clinicId: a, phone: "+919876500100", reason: "x" });
+    const r = await call("POST", `/callbacks/${cbRow.id}/reveal-phone`, {
+      sub: subs[0]!,
+      clinic: a,
+    });
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as J).phone).toBe("+919876500100");
+    expect(
+      (await call("POST", `/callbacks/${cbRow.id}/reveal-phone`, { sub: subs[1]!, clinic: b }))
+        .status,
+    ).toBe(404);
   });
 });
