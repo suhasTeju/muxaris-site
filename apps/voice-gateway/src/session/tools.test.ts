@@ -41,6 +41,7 @@ const PHONE_B = "+919876500022";
     callId: "call_x",
     language: "en-IN",
     now: () => now,
+    channels: { sms: false, whatsapp: false },
     ...over,
   });
 
@@ -276,6 +277,59 @@ const PHONE_B = "+919876500022";
     const [row] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, id));
     expect(row!.patientId).not.toBeNull();
     expect(row!.reason.startsWith("unverified:")).toBe(false);
+  });
+
+  it("book_appointment writes a confirmation outbox row and binds the patient", async () => {
+    const ctx = ctxFor();
+    // Slots are shared with the other booking tests; take whatever is still free.
+    const free = await findAvailableSlots(db, {
+      clinicId: a.clinicId,
+      date: day.date,
+      serviceId: day.service.id,
+      now,
+      forAssistant: true,
+    });
+    const slot = free[free.length - 1]!;
+    const r = await executeTool(db, ctx, "book_appointment", {
+      patient_phone: "+919876511111",
+      patient_name: "ravi",
+      doctor_id: slot.doctorId,
+      service_id: day.service.id,
+      starts_at: slot.startsAt.toISOString(),
+    });
+    expect(r.result).toMatchObject({ booked: true });
+    expect(ctx.patientId).toBeDefined();
+    const rows = await db
+      .select()
+      .from(schema.notifications)
+      .where(eq(schema.notifications.patientId, ctx.patientId!));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      template: "appointment_confirmed",
+      status: "skipped",
+      error: "no_contact",
+    });
+  });
+
+  it("request_callback creates the patient record when the number is the bound one", async () => {
+    const ctx = ctxFor({ callId: await a.newCall() });
+    await executeTool(db, ctx, "lookup_patient", { patient_phone: "+919876522222" });
+    const r = await executeTool(db, ctx, "request_callback", {
+      patient_phone: "+919876522222",
+      patient_name: "meena",
+      reason: "wants a quote",
+      priority: "normal",
+    });
+    const cbId = (r.result as { callback_id: string }).callback_id;
+    const [cb] = await db.select().from(schema.callbacks).where(eq(schema.callbacks.id, cbId));
+    expect(cb?.patientId).toBeTruthy();
+    const [p] = await db
+      .select()
+      .from(schema.patients)
+      .where(eq(schema.patients.id, cb!.patientId!));
+    expect(p?.name).toBe("Meena");
+    expect(p?.preferredLanguage).toBe(ctx.language);
+    expect(ctx.patientId).toBe(p?.id);
   });
 
   it("book_appointment title-cases a new name and never renames an existing patient", async () => {

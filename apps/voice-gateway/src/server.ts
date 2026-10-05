@@ -62,7 +62,7 @@ export type ServerEnv = Pick<
   | "cognitoUserPoolId"
   | "cognitoClientId"
 > &
-  Partial<Pick<VoiceEnv, "callsBucket" | "postCallQueueUrl" | "storageDisabled">>;
+  Partial<Pick<VoiceEnv, "callsBucket" | "postCallQueueUrl" | "storageDisabled" | "channels">>;
 
 export interface ServerDeps {
   version: string;
@@ -553,6 +553,7 @@ export function createServer(deps: ServerDeps): GatewayServer {
           channel: "browser",
           callerPhone: undefined,
           verifiedPhone: undefined,
+          channels: env.channels ?? { sms: false, whatsapp: false },
         },
       });
 

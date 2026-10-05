@@ -1,3 +1,5 @@
+import { channelFlagsFromEnv, type ChannelFlags } from "@muxaris/shared";
+
 export interface VoiceEnv {
   port: number;
   databaseUrl: string;
@@ -16,6 +18,8 @@ export interface VoiceEnv {
   postCallQueueUrl: string;
   /** STORAGE_DISABLED=1 or no bucket: nothing is recorded, uploaded or queued. */
   storageDisabled: boolean;
+  /** Platform SMS / WhatsApp switches for outbox rows written by booking tools. */
+  channels: ChannelFlags;
 }
 
 /** Positive integer from an env var; throws at boot on empty, NaN, fractional or <= 0. */
@@ -80,5 +84,6 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env): VoiceEnv {
     callsBucket,
     postCallQueueUrl: src.POST_CALL_QUEUE_URL?.trim() ?? "",
     storageDisabled: src.STORAGE_DISABLED?.trim() === "1" || !callsBucket,
+    channels: channelFlagsFromEnv(src),
   };
 }

@@ -8,6 +8,7 @@ import {
   indianPhone,
   LANGUAGES,
   LANGUAGE_CODES,
+  type ChannelFlags,
   type ClientEvent,
   type GatewayEvent,
   type LanguageCode,
@@ -53,6 +54,8 @@ export interface SessionContext {
   callerPhone?: string | undefined;
   /** Number first claimed by the caller in this call (managed by executeTool). */
   claimedPhone?: string | undefined;
+  /** Platform channel flags for outbox rows written by booking tools. */
+  channels: ChannelFlags;
 }
 
 export type EndReason = Extract<GatewayEvent, { type: "ended" }>["reason"];
@@ -318,6 +321,7 @@ export class VoiceSession {
       verifiedPhone: this.verifiedPhone,
       identityUnverifiable: unverifiable,
       claimedPhone: deps.ctx.claimedPhone,
+      channels: deps.ctx.channels,
     };
   }
 
@@ -505,6 +509,7 @@ export class VoiceSession {
         durationS,
         ...(this.detectedLanguage ? { languageDetected: this.detectedLanguage } : {}),
         metrics: this.metrics(),
+        ...(this.tctx.patientId ? { patientId: this.tctx.patientId } : {}),
         ...(this.recorder ? { recorderStartedAt: new Date(this.recorder.startedAtMs) } : {}),
       });
     } catch (e) {

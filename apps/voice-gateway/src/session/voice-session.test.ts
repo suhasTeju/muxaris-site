@@ -78,6 +78,7 @@ afterAll(async () => {
         maxDurationS: opts.maxDurationS ?? 600,
         secondsRemaining: opts.secondsRemaining ?? 3600,
         recordCalls: opts.recordCalls ?? false,
+        channels: { sms: false, whatsapp: false },
         ...(opts.callerPhone ? { callerPhone: opts.callerPhone } : {}),
         ...(opts.channel === "unset" ? {} : { channel: opts.channel ?? "browser" }),
       },

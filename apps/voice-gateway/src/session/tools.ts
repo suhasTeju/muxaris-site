@@ -8,12 +8,14 @@ import {
   listUpcomingForPatient,
   localDateString,
   rescheduleAppointment,
+  upsertPatientByPhone,
 } from "@muxaris/core";
 import { schema, type Db } from "@muxaris/db";
 import { and, eq } from "drizzle-orm";
 import {
   indianPhone,
   toolInputSchemas,
+  type ChannelFlags,
   type GatewayEvent,
   type LanguageCode,
   type ToolName,
@@ -49,6 +51,10 @@ export interface ToolContext {
   identityUnverifiable?: boolean | undefined;
   /** Phone number the caller first claimed in this call; set by executeTool. */
   claimedPhone?: string | undefined;
+  /** Platform channel flags for outbox rows written by booking tools. */
+  channels: ChannelFlags;
+  /** Patient bound to this call (set once a tool identifies one); persisted on the call row. */
+  patientId?: string | undefined;
 }
 
 export interface ToolOutcome {
@@ -325,8 +331,10 @@ async function run(db: Db, ctx: ToolContext, name: ToolName, input: unknown): Pr
         startsAt,
         source: "ai_call",
         createdByCallId: ctx.callId,
+        notify: ctx.channels,
         ...(a.notes ? { notes: a.notes } : {}),
       });
+      ctx.patientId = apt.patientId;
       const view = appointmentView(ctx, apt);
       return {
         result: { booked: true, ...view },
@@ -349,6 +357,7 @@ async function run(db: Db, ctx: ToolContext, name: ToolName, input: unknown): Pr
         appointmentId: a.appointment_id,
         newStartsAt: new Date(a.new_starts_at),
         source: "ai_call",
+        notify: ctx.channels,
       });
       return { result: { rescheduled: true, ...appointmentView(ctx, apt) } };
     }
@@ -361,6 +370,7 @@ async function run(db: Db, ctx: ToolContext, name: ToolName, input: unknown): Pr
         clinicId,
         appointmentId: a.appointment_id,
         ...(a.reason ? { reason: a.reason } : {}),
+        notify: ctx.channels,
       });
       return { result: { cancelled: true, appointment_id: apt.id } };
     }
@@ -371,6 +381,7 @@ async function run(db: Db, ctx: ToolContext, name: ToolName, input: unknown): Pr
       if (refused) return refused;
       const patient = await findPatientByPhone(db, clinicId, normalizePhone(a.patient_phone));
       if (!patient) return { result: { found: false } };
+      ctx.patientId = patient.id;
       const upcoming = await listUpcomingForPatient(db, clinicId, patient.id, ctx.now());
       return {
         result: {
@@ -395,7 +406,16 @@ async function run(db: Db, ctx: ToolContext, name: ToolName, input: unknown): Pr
         bound !== undefined &&
         normalizePhone(bound) === stated;
       const unverified = !linkable;
-      const patient = linkable ? await findPatientByPhone(db, clinicId, stated) : null;
+      // Auto-create the record on a verified-enough number so staff see who to call back.
+      const patient = linkable
+        ? ((await findPatientByPhone(db, clinicId, stated)) ??
+          (await upsertPatientByPhone(db, clinicId, {
+            phone: stated,
+            ...(a.patient_name ? { name: titleCaseName(a.patient_name) } : {}),
+            preferredLanguage: ctx.language,
+          })))
+        : null;
+      if (patient) ctx.patientId = patient.id;
       const base = a.patient_name ? `${a.patient_name}: ${a.reason}` : a.reason;
       const reason = unverified ? `unverified: ${base}` : base;
       const cb = await createCallback(db, {
