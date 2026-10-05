@@ -1,8 +1,10 @@
 import { App } from "aws-cdk-lib";
 import { AuthStack } from "../lib/auth-stack.js";
 import { DataStack } from "../lib/data-stack.js";
+import { CicdStack } from "../lib/cicd-stack.js";
 import { NetworkStack } from "../lib/network-stack.js";
 import { NotifyStack } from "../lib/notify-stack.js";
+import { ObservabilityStack } from "../lib/observability-stack.js";
 import { StorageStack } from "../lib/storage-stack.js";
 import { ServicesStack } from "../lib/services-stack.js";
 import { WorkersStack } from "../lib/workers-stack.js";
@@ -38,7 +40,7 @@ const data = new DataStack(app, "MuxarisData", {
   network,
   description: "Muxaris Postgres, secrets and container registries",
 });
-new WorkersStack(app, "MuxarisWorkers", {
+const workers = new WorkersStack(app, "MuxarisWorkers", {
   env: ENV,
   network,
   storage,
@@ -55,7 +57,7 @@ if (!cognitoUserPoolId || !cognitoClientId) {
     "Refusing to synth MuxarisServices: COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID must be set (they live in .env).",
   );
 }
-new ServicesStack(app, "MuxarisServices", {
+const services = new ServicesStack(app, "MuxarisServices", {
   env: ENV,
   network,
   data,
@@ -71,4 +73,19 @@ new ServicesStack(app, "MuxarisServices", {
   billingEnabled: process.env.BILLING_ENABLED === "1",
   publicApiUrl: process.env.PUBLIC_API_URL || "https://api.muxaris.com",
   description: "Muxaris ALB, ECS cluster, API and voice gateway services, migrate task",
+});
+new ObservabilityStack(app, "MuxarisObservability", {
+  env: ENV,
+  data,
+  workers,
+  services,
+  alarmEmail: process.env.ALARM_EMAIL || undefined,
+  description: "Muxaris alarms (SNS), gateway metric filters and the dashboard",
+});
+new CicdStack(app, "MuxarisCicd", {
+  env: ENV,
+  data,
+  services,
+  githubRepo: "suhasTeju/muxaris-site",
+  description: "Muxaris GitHub OIDC provider and deploy role",
 });

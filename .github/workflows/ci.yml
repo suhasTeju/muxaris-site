@@ -1,0 +1,36 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main, "feat/**"]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: muxaris, POSTGRES_PASSWORD: muxaris, POSTGRES_DB: muxaris }
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U muxaris" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://muxaris:muxaris@localhost:5433/muxaris
+      CDK_DEFAULT_ACCOUNT: "005533348545"
+      CDK_DEFAULT_REGION: ap-south-1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npm run build:packages
+      - run: npm run migrate -w @muxaris/db
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npx prettier --check .
+      - run: npm test
+      - name: DB-backed tests really ran
+        run: |
+          npx vitest run packages/db/src/plans.test.ts --reporter=json --outputFile=/tmp/plans.json
+          node -e "const r=JSON.parse(require('fs').readFileSync('/tmp/plans.json','utf8'));if(!(r.numSkippedTests===0&&r.numPassedTests>0)){console.error('DB tests skipped or none passed',r.numSkippedTests,r.numPassedTests);process.exit(1)}"

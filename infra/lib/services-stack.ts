@@ -41,6 +41,10 @@ export class ServicesStack extends Stack {
   readonly apiService: ecs.FargateService;
   readonly gatewayService: ecs.FargateService;
   readonly migrateTaskDef: ecs.FargateTaskDefinition;
+  readonly gatewayLogGroup: logs.ILogGroup;
+  readonly migrateLogGroup: logs.ILogGroup;
+  readonly gatewayTargetGroup: elbv2.ApplicationTargetGroup;
+  readonly apiTargetGroup: elbv2.ApplicationTargetGroup;
 
   constructor(scope: Construct, id: string, props: ServicesStackProps) {
     super(scope, id, props);
@@ -58,6 +62,8 @@ export class ServicesStack extends Stack {
         retention: logs.RetentionDays.ONE_MONTH,
         removalPolicy: RemovalPolicy.DESTROY,
       });
+    this.gatewayLogGroup = logGroup("voice-gateway");
+    this.migrateLogGroup = logGroup("migrate");
     const taskDef = (tid: string, cpu: number, mem: number) =>
       new ecs.FargateTaskDefinition(this, tid, {
         cpu,
@@ -114,7 +120,7 @@ export class ServicesStack extends Stack {
       stopTimeout: Duration.seconds(90),
       portMappings: [{ containerPort: 4100 }],
       logging: ecs.LogDrivers.awsLogs({
-        logGroup: logGroup("voice-gateway"),
+        logGroup: this.gatewayLogGroup,
         streamPrefix: "gateway",
       }),
       environment: {
@@ -151,7 +157,7 @@ export class ServicesStack extends Stack {
     this.migrateTaskDef.addContainer("migrate", {
       image: ecs.ContainerImage.fromEcrRepository(apiRepo, props.imageTag),
       command: ["node", "packages/db/dist/migrate.js"],
-      logging: ecs.LogDrivers.awsLogs({ logGroup: logGroup("migrate"), streamPrefix: "migrate" }),
+      logging: ecs.LogDrivers.awsLogs({ logGroup: this.migrateLogGroup, streamPrefix: "migrate" }),
       environment: { ...dbEnv },
     });
     dbSecret.grantRead(this.migrateTaskDef.taskRole);
@@ -194,21 +200,25 @@ export class ServicesStack extends Stack {
       securityGroup: albSg,
       idleTimeout: Duration.seconds(3600),
     });
-    const tg = (tid: string, svc: ecs.FargateService) =>
+    const tg = (tid: string, svc: ecs.FargateService, deregistrationDelay: Duration) =>
       new elbv2.ApplicationTargetGroup(this, tid, {
         vpc,
         protocol: elbv2.ApplicationProtocol.HTTP,
         targetType: elbv2.TargetType.IP,
         targets: [svc],
-        deregistrationDelay: Duration.seconds(30),
+        deregistrationDelay,
         healthCheck: {
           path: "/healthz",
           interval: Duration.seconds(30),
           healthyThresholdCount: 2,
         },
       });
-    const apiTg = tg("ApiTg", this.apiService);
-    const gatewayTg = tg("GatewayTg", this.gatewayService);
+    // The gateway's delay matches its 90 s stopTimeout so the ALB does not close live
+    // WebSockets before the container has finished its calls.
+    const apiTg = tg("ApiTg", this.apiService, Duration.seconds(30));
+    const gatewayTg = tg("GatewayTg", this.gatewayService, Duration.seconds(90));
+    this.apiTargetGroup = apiTg;
+    this.gatewayTargetGroup = gatewayTg;
 
     const routed = (l: elbv2.ApplicationListener) => {
       l.addTargetGroups("VoiceHost", {

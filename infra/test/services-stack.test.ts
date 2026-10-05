@@ -106,10 +106,18 @@ describe("ServicesStack", () => {
       TargetType: "ip",
       HealthCheckIntervalSeconds: 30,
       HealthyThresholdCount: 2,
-      TargetGroupAttributes: Match.arrayWith([
-        { Key: "deregistration_delay.timeout_seconds", Value: "30" },
-      ]),
     });
+    const delays = Object.values(t.findResources("AWS::ElasticLoadBalancingV2::TargetGroup")).map(
+      (r) =>
+        ((r as Res).Properties.TargetGroupAttributes as { Key: string; Value: string }[]).find(
+          (a) => a.Key === "deregistration_delay.timeout_seconds",
+        )?.Value,
+    );
+    // gateway 90 (matches its stopTimeout so live WebSockets are not cut), api 30
+    expect(delays.sort()).toEqual(["30", "90"]);
+    const byId = t.findResources("AWS::ElasticLoadBalancingV2::TargetGroup");
+    const gw = Object.entries(byId).find(([id]) => id.startsWith("GatewayTg"));
+    expect(JSON.stringify(gw?.[1])).toContain('"Value":"90"');
   });
 
   it("two Fargate services in public subnets with public IPs", () => {
