@@ -53,6 +53,18 @@ describe("NotificationsTable", () => {
     );
   });
 
+  it("shows no retry for superseded rows", () => {
+    render(
+      <NotificationsTable
+        items={[{ ...base, status: "skipped", error: "superseded" }]}
+        tz="Asia/Kolkata"
+        onChanged={() => undefined}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /retry/i })).toBeNull();
+    expect(screen.getByText(/Replaced by a later message/)).toBeTruthy();
+  });
+
   it("shows no retry for sent rows and expands the message body", () => {
     render(
       <NotificationsTable

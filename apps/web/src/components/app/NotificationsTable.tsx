@@ -24,7 +24,8 @@ function Row({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const retryable = n.status === "failed" || n.status === "skipped";
+  // Superseded rows were replaced by a later message; the API refuses to retry them.
+  const retryable = (n.status === "failed" || n.status === "skipped") && n.error !== "superseded";
 
   async function retry() {
     setBusy(true);
