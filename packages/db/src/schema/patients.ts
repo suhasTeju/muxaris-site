@@ -12,8 +12,10 @@ export const patients = pgTable(
     preferredLanguage: text("preferred_language").notNull().default("en-IN"),
     dob: date("dob"),
     notes: text("notes"),
+    email: text("email"),
     consentAt: timestamp("consent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("patients_clinic_phone_idx").on(t.clinicId, t.phone)],
 );

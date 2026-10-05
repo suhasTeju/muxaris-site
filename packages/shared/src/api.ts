@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { BULBUL_V3_SPEAKERS, LANGUAGE_CODES } from "./languages.js";
+import {
+  NOTIFICATION_STATUSES,
+  type NotificationChannel,
+  type NotificationKind,
+  type NotificationStatus,
+} from "./notifications.js";
 import { CITIES, ROLES, SPECIALTIES } from "./clinic.js";
 
 // Request-body schemas. Dates are shape-checked here; the API adds calendar checks.
@@ -108,12 +114,34 @@ export const assistantProfileBody = z.object({
   knowledge: z.string().max(8000).nullish(),
 });
 
+// trim first: z.email() validates before a trailing .trim() would run.
+const email = z.string().trim().max(254).pipe(z.email());
 export const patientBody = z.object({
   phone: indianPhone,
   name: name().nullish(),
+  email: email.nullish(),
   preferredLanguage: z.enum(LANGUAGE_CODES).optional(),
   dob: dateStr.nullish(),
   notes: text().nullish(),
+});
+export const patientPatchBody = patientBody
+  .omit({ phone: true })
+  .partial()
+  .strict()
+  .refine((b) => Object.keys(b).length > 0, "Provide at least one field");
+export type PatientPatchBody = z.infer<typeof patientPatchBody>;
+export const patientsQuery = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export const appointmentStatusBody = z.object({ status: z.enum(["completed", "no_show"]) });
+export const notificationsQuery = z.object({
+  status: z.enum(NOTIFICATION_STATUSES).optional(),
+  appointmentId: z.string().min(1).max(64).optional(),
+  patientId: z.string().min(1).max(64).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 export const appointmentBody = z.object({
@@ -153,12 +181,30 @@ export type RescheduleBody = z.infer<typeof rescheduleBody>;
 type Iso = string;
 
 export const clinicSettingsPatchBody = z.object({
-  settings: z.object({ recordCalls: z.boolean() }).partial(),
+  settings: z
+    .object({
+      recordCalls: z.boolean(),
+      notifications: z
+        .object({ confirmations: z.boolean(), reminders: z.boolean() })
+        .partial()
+        .strict(),
+    })
+    .partial()
+    .strict(),
 });
 export type ClinicSettingsPatchBody = z.infer<typeof clinicSettingsPatchBody>;
 
 export interface ClinicSettings {
   recordCalls: boolean;
+  notifications: { confirmations: boolean; reminders: boolean };
+}
+
+/** Both default to on; one definition for api, web, core. */
+export function clinicNotificationSettings(
+  settings: Record<string, unknown> | null | undefined,
+): ClinicSettings["notifications"] {
+  const n = (settings?.["notifications"] ?? {}) as Record<string, unknown>;
+  return { confirmations: n["confirmations"] !== false, reminders: n["reminders"] !== false };
 }
 
 /** Recording is on unless a clinic has explicitly turned it off. One definition for api, web, gateway. */
@@ -231,16 +277,37 @@ export interface SlotRules {
   allowSameDay: boolean;
   maxPerSlot: number;
 }
+/** Patient as the API returns it: the raw phone never leaves the server. */
 export interface Patient {
   id: string;
   clinicId: string;
-  phone: string;
+  phoneMasked: string;
   name: string | null;
+  email: string | null;
   preferredLanguage: string;
   dob: string | null;
   notes: string | null;
   consentAt: Iso | null;
   createdAt: Iso;
+  updatedAt: Iso;
+}
+export interface Notification {
+  id: string;
+  clinicId: string;
+  patientId: string | null;
+  appointmentId: string | null;
+  channel: NotificationChannel;
+  template: NotificationKind;
+  language: string;
+  toMasked: string;
+  status: NotificationStatus;
+  error: string | null;
+  providerId: string | null;
+  attempts: number;
+  nextAttemptAt: Iso | null;
+  payload: { subject?: string; body?: string };
+  createdAt: Iso;
+  sentAt: Iso | null;
 }
 export interface Appointment {
   id: string;
@@ -301,6 +368,13 @@ export interface Call {
     purged?: boolean;
   } | null;
   analysedAt: Iso | null;
+}
+
+export interface PatientDetail {
+  patient: Patient;
+  /** Newest first, all statuses. */
+  appointments: Appointment[];
+  calls: Pick<Call, "id" | "startedAt" | "endedAt" | "durationS" | "outcome" | "summary">[];
 }
 export interface Callback {
   id: string;

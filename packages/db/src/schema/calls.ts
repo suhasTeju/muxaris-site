@@ -127,6 +127,8 @@ export const callbacks = pgTable(
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     doneAt: timestamp("done_at", { withTimezone: true }),
+    /** Set by the 90-day callback purge: phone is masked in place, reason and note cleared. */
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
   },
   (t) => [index("callbacks_clinic_idx").on(t.clinicId), index("callbacks_call_idx").on(t.callId)],
 );
