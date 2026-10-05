@@ -13,7 +13,7 @@ function build() {
   const net = new NetworkStack(app, "N", { env: ENV });
   const storage = new StorageStack(app, "S", { env: ENV });
   const data = new DataStack(app, "D", { env: ENV, network: net });
-  const services = new ServicesStack(app, "V", {
+  new ServicesStack(app, "V", {
     env: ENV,
     network: net,
     data,
@@ -30,7 +30,6 @@ function build() {
   const stack = new CicdStack(app, "C", {
     env: ENV,
     data,
-    services,
     githubRepo: "suhasTeju/muxaris-site",
   });
   return Template.fromStack(stack);
@@ -83,11 +82,34 @@ describe("CicdStack", () => {
     expect(withAction(t, "sts:AssumeRole")[0]?.Resource).toBe(
       "arn:aws:iam::005533348545:role/cdk-hnb659fds-*-005533348545-ap-south-1",
     );
-    const run = statements(t).find((s) => [s.Action].flat().includes("ecs:RunTask"));
-    expect(run?.Action).toEqual(expect.arrayContaining(["ecs:RunTask", "ecs:DescribeTasks"]));
-    expect(JSON.stringify(withAction(t, "iam:PassRole"))).toContain("Migrate");
+    const run = withAction(t, "ecs:RunTask")[0];
+    expect(run?.Resource).toBe(
+      "arn:aws:ecs:ap-south-1:005533348545:task-definition/muxaris-migrate:*",
+    );
+    expect(run?.Condition).toEqual({
+      ArnEquals: { "ecs:cluster": "arn:aws:ecs:ap-south-1:005533348545:cluster/muxaris" },
+    });
+    expect(withAction(t, "ecs:DescribeTasks")[0]?.Resource).toBe(
+      "arn:aws:ecs:ap-south-1:005533348545:task/muxaris/*",
+    );
+    expect(withAction(t, "iam:PassRole")[0]?.Resource).toEqual([
+      "arn:aws:iam::005533348545:role/muxaris-migrate-task",
+      "arn:aws:iam::005533348545:role/muxaris-migrate-exec",
+    ]);
+    expect(
+      JSON.stringify(statements(t).filter((s) => [s.Action].flat().includes("logs:GetLogEvents"))),
+    ).toContain("log-group:/muxaris/migrate");
     expect(statements(t).some((s) => [s.Action].flat().includes("logs:GetLogEvents"))).toBe(true);
     expect(withAction(t, "cloudformation:DescribeStacks")[0]?.Resource).toBe("*");
+  });
+
+  it("imports nothing from the Services stack (no revision-specific task definition Ref)", () => {
+    const json = JSON.stringify(t.toJSON());
+    expect(json).not.toContain("MigrateTask");
+    // The only cross-stack imports are the ECR repo ARNs from the Data stack ("D:" in this app).
+    const imports = [...json.matchAll(/"Fn::ImportValue":"([^"]+)"/g)].map((m) => m[1]);
+    expect(imports.length).toBeGreaterThan(0);
+    expect(imports.every((i) => i?.startsWith("D:"))).toBe(true);
   });
 
   it("output", () => {

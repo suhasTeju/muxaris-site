@@ -54,7 +54,11 @@ export class ServicesStack extends Stack {
     const publicSubnets = { subnetType: ec2.SubnetType.PUBLIC };
     const publicApiUrl = props.publicApiUrl ?? "https://api.muxaris.com";
 
-    this.cluster = new ecs.Cluster(this, "Cluster", { vpc, containerInsights: true });
+    this.cluster = new ecs.Cluster(this, "Cluster", {
+      vpc,
+      clusterName: "muxaris",
+      containerInsights: true,
+    });
 
     const logGroup = (name: string) =>
       new logs.LogGroup(this, `Logs-${name}`, {
@@ -153,7 +157,26 @@ export class ServicesStack extends Stack {
     appSecret.grantRead(gwTd.taskRole);
 
     // Migrate (run on demand with ecs run-task, never a service)
-    this.migrateTaskDef = taskDef("MigrateTask", 256, 512);
+    // Fixed names: the deploy role (CicdStack) is scoped to them, so no task-definition revision
+    // or role ARN has to cross stacks.
+    const ecsTasks = new iam.ServicePrincipal("ecs-tasks.amazonaws.com");
+    this.migrateTaskDef = new ecs.FargateTaskDefinition(this, "MigrateTask", {
+      family: "muxaris-migrate",
+      cpu: 256,
+      memoryLimitMiB: 512,
+      runtimePlatform: {
+        cpuArchitecture: ecs.CpuArchitecture.ARM64,
+        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+      },
+      taskRole: new iam.Role(this, "MigrateTaskRole", {
+        roleName: "muxaris-migrate-task",
+        assumedBy: ecsTasks,
+      }),
+      executionRole: new iam.Role(this, "MigrateExecRole", {
+        roleName: "muxaris-migrate-exec",
+        assumedBy: ecsTasks,
+      }),
+    });
     this.migrateTaskDef.addContainer("migrate", {
       image: ecs.ContainerImage.fromEcrRepository(apiRepo, props.imageTag),
       command: ["node", "packages/db/dist/migrate.js"],

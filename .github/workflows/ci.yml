@@ -33,4 +33,4 @@ jobs:
       - name: DB-backed tests really ran
         run: |
           npx vitest run packages/db/src/plans.test.ts --reporter=json --outputFile=/tmp/plans.json
-          node -e "const r=JSON.parse(require('fs').readFileSync('/tmp/plans.json','utf8'));if(!(r.numSkippedTests===0&&r.numPassedTests>0)){console.error('DB tests skipped or none passed',r.numSkippedTests,r.numPassedTests);process.exit(1)}"
+          node -e "const r=JSON.parse(require('fs').readFileSync('/tmp/plans.json','utf8'));if(!(r.numPendingTests===0&&r.numTodoTests===0&&r.numFailedTests===0&&r.numPassedTests>0)){console.error('DB tests skipped, failed or none passed',r.numPendingTests,r.numTodoTests,r.numFailedTests,r.numPassedTests);process.exit(1)}"

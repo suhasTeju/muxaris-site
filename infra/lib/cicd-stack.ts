@@ -3,11 +3,9 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import type { Construct } from "constructs";
 import { ACCOUNT, REGION } from "./config.js";
 import type { DataStack } from "./data-stack.js";
-import type { ServicesStack } from "./services-stack.js";
 
 export interface CicdStackProps extends StackProps {
   data: DataStack;
-  services: ServicesStack;
   /** `owner/name` of the GitHub repository whose main branch may deploy. */
   githubRepo: string;
 }
@@ -20,7 +18,7 @@ export class CicdStack extends Stack {
 
   constructor(scope: Construct, id: string, props: CicdStackProps) {
     super(scope, id, props);
-    const { data, services } = props;
+    const { data } = props;
 
     const provider = new iam.OpenIdConnectProvider(this, "GithubOidc", {
       url: `https://${ISSUER}`,
@@ -43,36 +41,43 @@ export class CicdStack extends Stack {
     data.gatewayRepo.grantPullPush(role);
 
     // CDK deploys through the bootstrap roles (default qualifier hnb659fds).
+    // CDK deploys through the bootstrap roles (default qualifier hnb659fds).
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ["sts:AssumeRole"],
         resources: [`arn:aws:iam::${ACCOUNT}:role/cdk-hnb659fds-*-${ACCOUNT}-${REGION}`],
       }),
     );
+    // Everything below is scoped by stable names (family, cluster, role and log group names set in
+    // ServicesStack), so nothing revision-specific is imported across stacks.
+    const clusterArn = `arn:aws:ecs:${REGION}:${ACCOUNT}:cluster/muxaris`;
     role.addToPolicy(
       new iam.PolicyStatement({
-        actions: ["ecs:RunTask", "ecs:DescribeTasks"],
-        resources: [
-          services.migrateTaskDef.taskDefinitionArn,
-          `arn:aws:ecs:${REGION}:${ACCOUNT}:task/${services.cluster.clusterName}/*`,
-        ],
+        actions: ["ecs:RunTask"],
+        resources: [`arn:aws:ecs:${REGION}:${ACCOUNT}:task-definition/muxaris-migrate:*`],
+        conditions: { ArnEquals: { "ecs:cluster": clusterArn } },
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["ecs:DescribeTasks"],
+        resources: [`arn:aws:ecs:${REGION}:${ACCOUNT}:task/muxaris/*`],
       }),
     );
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ["iam:PassRole"],
-        resources: [
-          services.migrateTaskDef.taskRole.roleArn,
-          services.migrateTaskDef.obtainExecutionRole().roleArn,
-        ],
+        resources: ["muxaris-migrate-task", "muxaris-migrate-exec"].map(
+          (n) => `arn:aws:iam::${ACCOUNT}:role/${n}`,
+        ),
       }),
     );
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ["logs:GetLogEvents", "logs:FilterLogEvents"],
         resources: [
-          services.migrateLogGroup.logGroupArn,
-          `${services.migrateLogGroup.logGroupArn}:*`,
+          `arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/muxaris/migrate`,
+          `arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/muxaris/migrate:*`,
         ],
       }),
     );

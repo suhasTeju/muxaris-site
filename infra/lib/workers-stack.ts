@@ -141,6 +141,8 @@ export class WorkersStack extends Stack {
     schedule("RemindersSchedule", Duration.minutes(15), this.remindersFn);
     schedule("SweepSchedule", Duration.minutes(15), this.sweepFn);
 
+    // Metric source only: the actionable alarm (with the SNS action) lives in ObservabilityStack,
+    // because adding the action here would make Workers and Observability depend on each other.
     this.dlqAlarm = new cloudwatch.Alarm(this, "PostCallDlqAlarm", {
       metric: postCallDlq.metricApproximateNumberOfMessagesVisible({
         period: Duration.minutes(5),

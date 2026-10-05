@@ -85,7 +85,6 @@ new ObservabilityStack(app, "MuxarisObservability", {
 new CicdStack(app, "MuxarisCicd", {
   env: ENV,
   data,
-  services,
   githubRepo: "suhasTeju/muxaris-site",
   description: "Muxaris GitHub OIDC provider and deploy role",
 });

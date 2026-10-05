@@ -189,6 +189,13 @@ describe("ServicesStack", () => {
     ]);
   });
 
+  it("stable names for the migrate task, its roles and the cluster", () => {
+    expect(taskDef(t, "migrate").Properties.Family).toBe("muxaris-migrate");
+    t.hasResourceProperties("AWS::ECS::Cluster", { ClusterName: "muxaris" });
+    t.hasResourceProperties("AWS::IAM::Role", { RoleName: "muxaris-migrate-task" });
+    t.hasResourceProperties("AWS::IAM::Role", { RoleName: "muxaris-migrate-exec" });
+  });
+
   it("environment, without secrets", () => {
     const api = env(taskDef(t, "api"));
     expect(api).toMatchObject({
