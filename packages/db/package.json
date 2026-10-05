@@ -22,6 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1146.0",
     "@muxaris/shared": "*",
     "drizzle-orm": "^0.45.3",
     "nanoid": "^5",

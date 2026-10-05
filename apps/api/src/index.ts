@@ -1,9 +1,12 @@
 import { serve } from "@hono/node-server";
-import { createDb } from "@muxaris/db";
+import { applySecretsToEnv, createDb } from "@muxaris/db";
 import { createCognitoVerifier, createDevVerifier, createRazorpayClient } from "@muxaris/core";
 import { createS3BlobStore } from "@muxaris/storage";
 import { createApp } from "./app.js";
 import { loadEnv } from "./env.js";
+
+const { applied } = await applySecretsToEnv();
+if (applied.length) console.log("secrets applied", { keys: applied });
 
 const env = loadEnv();
 if (env.provider === "mock")

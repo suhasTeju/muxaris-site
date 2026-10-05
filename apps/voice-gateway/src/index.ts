@@ -1,9 +1,12 @@
-import { createDb } from "@muxaris/db";
+import { applySecretsToEnv, createDb } from "@muxaris/db";
 import { loadEnv } from "./env.js";
 import { createServer } from "./server.js";
 
 const POOL_END_TIMEOUT_MS = 5_000;
 const HARD_EXIT_MS = 20_000;
+
+const { applied } = await applySecretsToEnv();
+if (applied.length) console.log("secrets applied", { keys: applied });
 
 const env = loadEnv();
 if (env.provider === "mock")

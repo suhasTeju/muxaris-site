@@ -1,4 +1,4 @@
-import { createDb } from "@muxaris/db";
+import { applySecretsToEnv, createDb } from "@muxaris/db";
 import { purgeExpiredCallbacks, purgeExpiredCalls, sweepStaleCalls } from "@muxaris/core";
 import { postCallMessageSchema } from "@muxaris/shared";
 import { createNovaAnalyser } from "./analyse.js";
@@ -6,25 +6,31 @@ import { loadEnv } from "./env.js";
 import { processMessage, type HandlerDeps } from "./handler.js";
 import { jsonLog } from "./log.js";
 
-let deps: HandlerDeps | null = null;
-function getDeps(): HandlerDeps {
-  if (!deps) {
+let deps: Promise<HandlerDeps> | null = null;
+async function getDeps(): Promise<HandlerDeps> {
+  deps ??= (async () => {
+    await applySecretsToEnv();
     const env = loadEnv();
     const { db } = createDb(env.databaseUrl);
-    deps = {
+    return {
       db,
       analyser: createNovaAnalyser({ modelId: env.modelId, region: env.awsRegion }),
       log: jsonLog,
       modelId: env.modelId,
     };
+  })();
+  try {
+    return await deps;
+  } catch (e) {
+    deps = null; // allow a retry on the next invocation
+    throw e;
   }
-  return deps;
 }
 
 export const handler = async (event: {
   Records: Array<{ body: string; messageId: string }>;
 }): Promise<{ batchItemFailures: Array<{ itemIdentifier: string }> }> => {
-  const d = getDeps();
+  const d = await getDeps();
   const batchItemFailures: Array<{ itemIdentifier: string }> = [];
   for (const rec of event.Records) {
     let parsed;
@@ -43,7 +49,7 @@ export const handler = async (event: {
 
 /** For a Phase 5 EventBridge schedule: stale-call sweep plus the 90-day retention purge. */
 export const sweepHandler = async () => {
-  const { db } = getDeps();
+  const { db } = await getDeps();
   const swept = await sweepStaleCalls(db);
   const { purged } = await purgeExpiredCalls(db);
   const { purged: callbacksPurged } = await purgeExpiredCallbacks(db);
