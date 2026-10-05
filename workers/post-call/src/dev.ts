@@ -34,7 +34,12 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => (stoppin
 async function sweep(): Promise<void> {
   try {
     const r = await sweepStaleCalls(db);
-    log("info", "sweep", { abandoned: r.abandoned, recordingsFailed: r.recordingsFailed });
+    log("info", "sweep", {
+      abandoned: r.abandoned,
+      recordingsFailed: r.recordingsFailed,
+      usageRecorded: r.usageRecorded,
+      errors: r.errors,
+    });
   } catch (e) {
     log("error", "sweep failed", { err: e instanceof Error ? e.name : "unknown" });
   }

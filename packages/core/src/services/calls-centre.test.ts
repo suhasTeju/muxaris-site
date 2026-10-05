@@ -599,6 +599,39 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
     }
   });
 
+  it("sweep skips a row whose ledger write fails and still processes the rest", async () => {
+    const good = await makeTestClinic(db, "cc-sweep-good");
+    const bad = await makeTestClinic(db, "cc-sweep-bad");
+    try {
+      const now = new Date();
+      const startedAt = new Date(now.getTime() - 40 * 60_000);
+      // An invalid timezone makes the month key throw after the abandon update, inside the
+      // row's transaction, so this row rolls back and must not stop the sweep.
+      await db
+        .update(schema.clinics)
+        .set({ timezone: "Not/AZone" })
+        .where(eq(schema.clinics.id, bad.clinic.id));
+      const poisoned = await createCall(db, { clinicId: bad.clinic.id, channel: "phone" });
+      const healthy = await createCall(db, { clinicId: good.clinic.id, channel: "phone" });
+      for (const id of [poisoned.id, healthy.id])
+        await db.update(schema.calls).set({ startedAt }).where(eq(schema.calls.id, id));
+      const r = await sweepStaleCalls(db, { now, inProgressOlderThanMin: 30 });
+      expect(r.errors).toBeGreaterThanOrEqual(1);
+      expect((await getCall(db, good.clinic.id, healthy.id)).call.status).toBe("abandoned");
+      expect(await ledgerFor(good.clinic.id, good.clinic.timezone, startedAt)).toMatchObject({
+        calls: 1,
+      });
+      const [stuck] = await db
+        .select({ status: schema.calls.status, usageRecordedAt: schema.calls.usageRecordedAt })
+        .from(schema.calls)
+        .where(eq(schema.calls.id, poisoned.id));
+      expect(stuck).toMatchObject({ status: "in_progress", usageRecordedAt: null });
+    } finally {
+      await good.cleanup();
+      await bad.cleanup();
+    }
+  });
+
   it("purgeExpiredCalls wipes calls older than 90 days and leaves recent ones", async () => {
     const t = await makeTestClinic(db, "cc-purge");
     try {
