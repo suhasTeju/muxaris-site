@@ -34,4 +34,33 @@ describe("operational scripts", () => {
     const src = readFileSync(join(scriptsDir, "smoke.sh"), "utf8");
     expect(src).toContain("refusing to send a bearer token over http");
   });
+
+  it("bootstrap --secrets merges into the existing secret and lists the telephony keys", () => {
+    const src = readFileSync(join(scriptsDir, "bootstrap-aws.sh"), "utf8");
+    expect(src).toContain("get-secret-value --secret-id muxaris/app");
+    expect(src).toContain(".[0] + .[1]");
+    expect(src).toContain("TWILIO_AUTH_TOKEN");
+    expect(src).toContain("TELEPHONY_STREAM_SECRET");
+    // values go through a file, not the command line
+    expect(src).toContain('--secret-string "file://$TMP"');
+  });
+
+  it("push-images skips an existing tag instead of failing, and never retags", () => {
+    const src = readFileSync(join(scriptsDir, "push-images.sh"), "utf8");
+    expect(src).toContain("already in ECR");
+    expect(src).toContain("continue");
+    expect(src).not.toContain("ERROR: $repo:$TAG already exists");
+    expect(src).not.toMatch(/--force|put-image/);
+  });
+
+  it("migrate.sh reads the MuxarisMigrate stack outputs", () => {
+    const src = readFileSync(join(scriptsDir, "migrate.sh"), "utf8");
+    expect(src).toContain('STACK="MuxarisMigrate"');
+  });
+
+  it("cdk.sh always rebuilds the packages", () => {
+    const src = readFileSync(join(scriptsDir, "../infra/scripts/cdk.sh"), "utf8");
+    expect(src).toContain("npm run build:packages");
+    expect(src).not.toContain("packages/core/dist");
+  });
 });

@@ -6,7 +6,7 @@ source "$ROOT/scripts/lib/aws-guard.sh"
 
 CLUSTER="muxaris"
 FAMILY="muxaris-migrate"
-STACK="MuxarisServices"
+STACK="MuxarisMigrate"
 
 out() {
   aws cloudformation describe-stacks --stack-name "$STACK" \

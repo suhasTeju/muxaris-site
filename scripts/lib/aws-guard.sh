@@ -4,9 +4,10 @@
 # Safe to source from an interactive shell: it never sets shell options, and uses
 # `return 1` when sourced (`exit 1` only when executed directly).
 _muxaris_guard() {
-  # Force the secondary profile unless credentials are already ambient (CI assumed a role via
-  # OIDC, or keys are exported). The account check below stays mandatory either way.
-  if [[ -z "${AWS_PROFILE:-}" && -z "${AWS_ACCESS_KEY_ID:-}" && -z "${AWS_WEB_IDENTITY_TOKEN_FILE:-}" ]]; then
+  # Always force the secondary profile (an ambient AWS_PROFILE is never trusted, so the primary
+  # profile is never used), unless CI credentials are present (OIDC role or exported keys). The
+  # account check below stays mandatory either way.
+  if [[ -z "${AWS_ACCESS_KEY_ID:-}" && -z "${AWS_WEB_IDENTITY_TOKEN_FILE:-}" ]]; then
     export AWS_PROFILE="aws-secondary-account"
   fi
   export AWS_REGION="ap-south-1"

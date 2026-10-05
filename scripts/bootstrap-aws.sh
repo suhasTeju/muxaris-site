@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/bootstrap-aws.sh — one-time (idempotent) setup of the secondary account.
 # Usage: scripts/bootstrap-aws.sh            # bootstrap CDK + deploy MuxarisAuth, print env lines
-#        scripts/bootstrap-aws.sh --secrets  # upsert muxaris/app from .env (prints key names only)
+#        scripts/bootstrap-aws.sh --secrets  # merge keys from .env into muxaris/app (prints key names only)
 #        scripts/bootstrap-aws.sh --outputs  # print stack outputs as KEY=value lines
 set -euo pipefail
 command -v jq >/dev/null || { echo "jq required"; exit 1; }
@@ -31,18 +31,28 @@ if [[ "${1:-}" == "--outputs" ]]; then
 fi
 
 if [[ "${1:-}" == "--secrets" ]]; then
-  APP_JSON="$(jq -cn \
-    --arg SARVAM_TTS_API_KEY "${SARVAM_TTS_API_KEY:-}" --arg RAZORPAY_KEY_ID "${RAZORPAY_KEY_ID:-}" \
-    --arg RAZORPAY_KEY_SECRET "${RAZORPAY_KEY_SECRET:-}" \
-    --arg RAZORPAY_WEBHOOK_SECRET "${RAZORPAY_WEBHOOK_SECRET:-}" \
-    --arg RAZORPAY_PLAN_ID_STANDARD "${RAZORPAY_PLAN_ID_STANDARD:-}" \
-    --arg WHATSAPP_TOKEN "${WHATSAPP_TOKEN:-}" --arg WHATSAPP_PHONE_ID "${WHATSAPP_PHONE_ID:-}" \
-    '$ARGS.named | with_entries(select(.value != ""))')"
+  # Values are read from the environment (exported by sourcing .env), never from argv.
+  APP_JSON="$(jq -cn '[
+      "SARVAM_TTS_API_KEY", "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET",
+      "RAZORPAY_PLAN_ID_STANDARD", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "TWILIO_AUTH_TOKEN",
+      "TELEPHONY_STREAM_SECRET"
+    ] | map({key: ., value: (env[.] // "")}) | from_entries
+    | with_entries(select(.value != ""))')"
   KEYS="$(jq -r 'keys | join(", ")' <<<"$APP_JSON")"
   if [[ "$APP_JSON" == "{}" ]]; then echo "no app secret keys set in .env; nothing written"; exit 0; fi
+  # Merge into the existing JSON so keys not in .env (set earlier, or by hand) survive. A
+  # non-JSON current value (the generated placeholder) counts as {}. Secret values travel through
+  # a 0600 temp file, never the command line.
+  TMP="$(mktemp)"
+  trap 'rm -f "$TMP"' EXIT
+  chmod 600 "$TMP"
+  CURRENT="$(aws secretsmanager get-secret-value --secret-id muxaris/app --query SecretString \
+    --output text 2>/dev/null || true)"
+  if jq -e 'type == "object"' >/dev/null 2>&1 <<<"$CURRENT"; then BASE="$CURRENT"; else BASE="{}"; fi
+  jq -cs '.[0] + .[1]' <(printf '%s' "$BASE") <(printf '%s' "$APP_JSON") >"$TMP"
   # The Data stack creates muxaris/app; fall back to create-secret if it does not exist yet.
-  if ! aws secretsmanager put-secret-value --secret-id muxaris/app --secret-string "$APP_JSON" >/dev/null 2>&1; then
-    aws secretsmanager create-secret --name muxaris/app --secret-string "$APP_JSON" >/dev/null
+  if ! aws secretsmanager put-secret-value --secret-id muxaris/app --secret-string "file://$TMP" >/dev/null 2>&1; then
+    aws secretsmanager create-secret --name muxaris/app --secret-string "file://$TMP" >/dev/null
   fi
   echo "muxaris/app updated with keys: $KEYS"
   exit 0
