@@ -9,3 +9,4 @@ export * from "./services/demo.js";
 export * from "./auth/verifier.js";
 export * from "./services/usage.js";
 export * from "./notifications/index.js";
+export * from "./services/analytics.js";
