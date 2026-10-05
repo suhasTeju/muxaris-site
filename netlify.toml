@@ -10,6 +10,9 @@
 # Required env vars (set in the Netlify UI; see README "Deploy (Netlify)"):
 #   NEXT_PUBLIC_COGNITO_USER_POOL_ID, NEXT_PUBLIC_COGNITO_CLIENT_ID, NEXT_PUBLIC_COGNITO_DOMAIN,
 #   NEXT_PUBLIC_API_URL, NEXT_PUBLIC_VOICE_WS_URL (wss), NEXT_PUBLIC_GOOGLE_ENABLED
+# The two URLs the site needs from the AWS deploy (docs/RUNBOOK.md):
+#   NEXT_PUBLIC_API_URL=https://api.muxaris.com
+#   NEXT_PUBLIC_VOICE_WS_URL=wss://voice.muxaris.com
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

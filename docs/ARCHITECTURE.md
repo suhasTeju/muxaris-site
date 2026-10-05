@@ -29,6 +29,70 @@ speech for caller turns, the first audio chunk sent for assistant turns, the sta
 tools. `metrics.recorderT0Ms` is the recording's origin relative to the call start, so the
 dashboard seeks with `turn - call.startedAt - recorderT0Ms`.
 
+## Deployed topology
+
+One AWS account (`005533348545`), one region (`ap-south-1`), nine CDK stacks. The web app is on
+Netlify; DNS is at GoDaddy. See [AWS-SERVICES.md](AWS-SERVICES.md) for the service inventory and
+[RUNBOOK.md](RUNBOOK.md) for operations.
+
+```
+ browser / Twilio
+      |  https://api.muxaris.com   wss://voice.muxaris.com
+      v
+ ALB (public subnets, idle timeout 3600 s, 443 once CERT_ARN is set; 80 redirects)
+   |- Host voice.muxaris.com, or path /v1/session*, /v1/telephony/*  -> gateway target group :4100
+   '- everything else                                                  -> API target group :4000
+ Fargate ARM64, public subnets with public IPs (no NAT on this path)
+   |- api service     0.5 vCPU / 1 GB, 1 to 2 tasks (CPU 70%), stopTimeout 30 s
+   '- gateway service 0.5 vCPU / 1 GB, exactly 1 task, stopTimeout 90 s
+ Lambdas (private subnets, egress through one NAT): post-call, sweep, deliver, reminders
+ RDS Postgres 16 (isolated subnets, no internet route); S3; SQS + DLQ; Secrets Manager
+```
+
+- **Network.** VPC `10.42.0.0/16` over two AZs with public, private-with-egress and isolated
+  subnets and one NAT gateway. Security groups: the ALB admits 80 and 443 from anywhere; the
+  services admit 4000 and 4100 from the ALB only; RDS admits 5432 from the services and the Lambdas
+  only. Both services run in public subnets with public IPs so that they reach Sarvam, Bedrock, S3
+  and Secrets Manager without a second NAT.
+- **ALB and health checks.** Target groups are IP targets with `/healthz` health checks every 30 s.
+  The gateway's deregistration delay is 90 s to match its `stopTimeout`. The gateway rules are
+  priority 10 (host `voice.muxaris.com`) and 20 (the two path patterns); the API is the default.
+  Until a certificate is attached the ALB serves HTTP only.
+- **Deploys.** Both services use the ECS circuit breaker with rollback. The API runs 100% to 200%
+  healthy; the gateway runs 0% to 100%, so a deploy never has two gateways and has a short gap.
+- **Secrets.** Task definitions and Lambda environments hold only ARNs: `DB_SECRET_ARN`
+  (`muxaris/db`, RDS-generated) and `APP_SECRET_ARN` (`muxaris/app`, JSON). At start, each process
+  runs `applySecretsToEnv`, which builds `DATABASE_URL` from the first and copies every non-empty
+  key of the second that is not already set into `process.env` (key names only are logged). The
+  API, gateway, migrate task and all four Lambdas have read access to those two secrets and nothing
+  else in Secrets Manager. `DATABASE_SSL=verify` is set everywhere.
+- **Database encryption.** The instance has `storageEncrypted: true` and connections use TLS with
+  the chain verified against the embedded RDS global CA bundle (`DATABASE_SSL=verify`;
+  `DATABASE_SSL_CA` overrides it; refresh with `scripts/update-rds-ca.sh`). `no-verify` exists for
+  debugging only.
+- **Log groups** (one month): `/muxaris/api`, `/muxaris/voice-gateway`, `/muxaris/migrate`, and
+  `/aws/lambda/...` for each function. The gateway writes JSON lines.
+- **Metrics.** Namespace `Muxaris`, from metric filters on `/muxaris/voice-gateway`: `SttMs`,
+  `LlmFirstTokenMs`, `TtsFirstAudioMs` (the values on the `turn` line), and the counts
+  `CallsStarted` (`session accepted`), `CallsSettled` (`call settled`), `QuotaRejected`
+  (`quota exhausted`), `BusyRejected` (`busy`) and `ProviderErrors` (`provider error` or
+  `llm error`). Alarms (ALB 5xx, gateway CPU, Lambda errors, RDS CPU and free storage, DLQ depth)
+  all go to the SNS topic `muxaris-alarms`; the `muxaris` dashboard graphs everything above.
+- **Migrations** run as the one-off Fargate task `muxaris-migrate` (the API image with
+  `node packages/db/dist/migrate.js`), started by `scripts/migrate.sh` locally and by the deploy
+  workflow in CI.
+- **Known limits.**
+  - One gateway task: the per-process concurrency counters (`MAX_SESSIONS`, plan concurrency)
+    cannot be shared, so the gateway does not scale out. See the runbook for what a shared store
+    needs. A deploy also drops calls still running after the 90 s `stopTimeout`.
+  - The Lambdas reach the internet (Bedrock, Secrets Manager, SES) through the single NAT gateway,
+    in one AZ.
+  - Indian SMS needs TRAI DLT registration, so SMS is implemented but off; email is the live
+    channel.
+  - Browser calls are capped at `MAX_CALL_SECONDS`, 1200 s (20 minutes).
+  - Sarvam Starter allows 20 concurrent STT sockets and 60 REST requests per minute.
+  - Phone calls need a Twilio number and KYC ([TELEPHONY.md](TELEPHONY.md)).
+
 ## Notifications
 
 - **Outbox.** A booking, reschedule or cancellation writes `notifications` rows inside the same
@@ -102,31 +166,47 @@ dashboard seeks with `turn - call.startedAt - recorderT0Ms`.
   the event name, and updates `subscriptions` and the clinic plan in one transaction.
 - **Audit actions.** `clinic.settings.edit`, `clinic.subscription.start`, `clinic.plan.change`.
 
-## Phase 5 IAM
+## IAM (deployed)
 
-- **Gateway:** `s3:PutObject` on the calls bucket and `sqs:SendMessage` on the post-call queue.
-- **API:** `s3:GetObject` (to presign recording URLs) and `s3:ListBucket`, so that a missing
-  object returns 404 instead of 403.
-- **Worker:** `sqs:ReceiveMessage`, `sqs:DeleteMessage` and `sqs:ChangeMessageVisibility` on the
-  queue, and `bedrock:InvokeModel` on both the `apac.amazon.nova-pro-v1:0` inference profile and
-  the underlying foundation-model ARNs in each region the profile routes to.
-- **Notifier Lambda:** `ses:SendEmail` and `ses:SendRawEmail` on the `muxaris.com` SES identity,
-  and `sns:Publish` only when `SMS_ENABLED` is set. EventBridge schedules: `deliverHandler`
-  `rate(1 minute)`, `remindersHandler` `rate(15 minutes)`, and the post-call `sweepHandler`
-  `rate(15 minutes)`.
-- **API (billing):** the task needs the Razorpay secrets from Secrets Manager (`muxaris/razorpay`).
-  The `/webhooks/razorpay` path must be reachable publicly on the ALB.
-- **Concurrency counters:** the per-process concurrency counters need a shared store once more
-  than one API or gateway task runs.
-- The event-source mapping must set `ReportBatchItemFailures` (the handler returns
-  `batchItemFailures`). Add a CloudWatch alarm on the dead-letter queue depth.
+What the stacks grant, per process. Every role is created by CDK; the deploy role is described last.
+
+- **Gateway task:** `s3:PutObject` on the calls bucket objects, `sqs:SendMessage` on the post-call
+  queue, `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` on the Nova 2 Lite
+  inference profile and foundation model, and read on the two secrets.
+- **API task:** `s3:GetObject` (to presign recording URLs) and `s3:ListBucket` on the calls bucket
+  (so that a missing object returns 404 instead of 403), and read on the two secrets. The billing
+  values (`RAZORPAY_*`) come from `muxaris/app`; `/webhooks/razorpay` is reachable publicly through
+  the ALB.
+- **Post-call and sweep Lambdas:** `bedrock:InvokeModel` on the `apac.amazon.nova-pro-v1:0`
+  inference profile and the underlying `amazon.nova-pro-v1:0` foundation-model ARN (any region the
+  profile routes to), and read on the two secrets. The post-call function also consumes the queue
+  (`sqs:ReceiveMessage`, `DeleteMessage`, `ChangeMessageVisibility`, `GetQueueAttributes`).
+- **Notifier Lambdas (deliver, reminders):** `ses:SendEmail` and `ses:SendRawEmail` on the
+  `muxaris.com` SES identity, `sns:Publish` only when the stack is deployed with `SMS_ENABLED=1`,
+  and read on the two secrets.
+- **Migrate task:** its own task and execution roles (`muxaris-migrate-task`,
+  `muxaris-migrate-exec`) with read on the two secrets.
+- **EventBridge schedules:** `deliverHandler` every minute, `remindersHandler` every 15 minutes,
+  `sweepHandler` (stale-call sweep and retention purge) every 15 minutes.
+- **Queue wiring:** the SQS event source sets `ReportBatchItemFailures` (batch size 5, window 5 s),
+  and the queue's dead-letter queue is alarmed.
+- **Deploy role `MuxarisGithubDeploy`:** assumed through GitHub OIDC for `main` of the repository
+  only (no stored keys). It can push and pull the two ECR repositories, assume the CDK bootstrap
+  roles, run the `muxaris-migrate` task on the `muxaris` cluster (with `iam:PassRole` for its two
+  roles), read the migrate log group, and describe CloudFormation stacks.
+- **Concurrency counters:** still per process; they need a shared store before more than one
+  gateway task can run (see the runbook).
 
 ## Operations notes
 
-- The stale-call sweep and the retention purge only run where the worker runs. In Phase 5 add an
-  EventBridge schedule that invokes `sweepHandler` (it runs both).
-- A deploy aborts in-flight recording uploads after about 10 s, so set the ECS task
-  `stopTimeout` above the longest expected upload time.
+- The stale-call sweep and the retention purge run in the `sweepHandler` Lambda on an EventBridge
+  schedule every 15 minutes (the local worker still runs them every minute). Closed: the earlier
+  carry-over that they only ran where the worker ran.
+- The gateway task has `stopTimeout` 90 s and the ALB deregistration delay matches it, so a deploy
+  gives in-flight recording uploads and calls time to finish. Closed: the earlier carry-over to set
+  `stopTimeout`. A call still running after 90 s is cut by a deploy.
+- The post-call SQS mapping reports batch item failures, so one bad message no longer retries the
+  whole batch. Closed.
 - Drizzle applies all pending migrations in a single transaction. On a fresh database a later
   migration must not use the `'abandoned'` call status in the same run as migration 0003, which
   adds it (Postgres cannot use a new enum value in the transaction that created it).

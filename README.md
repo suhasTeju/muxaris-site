@@ -11,17 +11,16 @@ This is an npm-workspaces monorepo.
 | Path                   | What it is                                                              |
 | ---------------------- | ----------------------------------------------------------------------- |
 | `apps/web`             | Next.js app: marketing site, Cognito auth, onboarding, dashboard        |
-| `apps/api`             | Hono REST API (Cognito-authenticated routes)  |
+| `apps/api`             | Hono REST API (Cognito-authenticated routes)                            |
 | `apps/voice-gateway`   | WebSocket voice session engine: Sarvam STT/TTS, Bedrock, recorder       |
 | `workers/post-call`    | Call summary, outcome and sentiment, stale-call sweep and 90-day purge (local SQS runner and Lambda handler) |
-| `workers/notifier`     | Lambda: dispatches notifications from a queue (planned)                           |
-| `workers/reminders`    | Lambda (cron): finds appointments due for reminders (planned)                     |
+| `workers/notifier`     | Lambda handlers: deliver queued notifications and queue reminders (also a local runner) |
 | `packages/db`          | Drizzle schema, migrations, demo seed, typed client                     |
 | `packages/core`        | Domain services: scheduling, auth helpers      |
 | `packages/storage`     | S3 blob store (presigned URLs) and SQS queue clients, with test fakes   |
 | `packages/shared`      | Zod schemas, API types, tool definitions, constants                     |
 | `packages/voice-sdk`   | Browser client: mic capture, playback, barge-in, events, React hook                 |
-| `infra`                | AWS CDK app. Auth stack (Cognito) and Storage stack (S3, SQS); the rest lands in Phase 5 |
+| `infra`                | AWS CDK app: Auth, Storage, Notify, Network, Data, Workers, Services, Observability, Cicd stacks |
 
 ## Local setup
 
@@ -148,7 +147,67 @@ at most `MAX_SESSIONS` concurrent calls, kept under Sarvam's limit of 20 sockets
 
 ## AWS
 
-Only the `aws-secondary-account` profile is ever used; see `scripts/lib/aws-guard.sh`. Infra scripts run CDK through `infra/scripts/cdk.sh`, which applies the guard. Setup: `scripts/bootstrap-aws.sh`.
+Only the `aws-secondary-account` profile is ever used (account `005533348545`, region `ap-south-1`);
+every AWS-touching script sources `scripts/lib/aws-guard.sh`, which aborts on any other account, and
+CDK runs through `infra/scripts/cdk.sh`, which applies the guard. Never use the primary profile.
+
+### Deployed topology
+
+An internet-facing ALB routes `voice.muxaris.com` and the paths `/v1/session*` and `/v1/telephony/*`
+to the voice gateway, and everything else to the API. Both run on ECS Fargate (ARM64) in the public
+subnets; the gateway is exactly one task. RDS Postgres 16 sits in isolated subnets. Four Lambdas
+(post-call, stale-call sweep, notification delivery, reminders) run in private subnets behind one NAT
+gateway, driven by SQS (with a dead-letter queue) and EventBridge. Call recordings go to S3, models
+are Amazon Nova on Bedrock, email goes through SES, and secrets (`muxaris/db`, `muxaris/app`) are
+read from Secrets Manager at process start. Alarms go to SNS and a CloudWatch dashboard shows
+latency and call counts. The web app stays on Netlify and DNS stays at GoDaddy. Details:
+[Architecture](docs/ARCHITECTURE.md), [AWS services and cost](docs/AWS-SERVICES.md).
+
+### Deploy quick-start
+
+Full steps, including secrets, DNS and the certificate, are in the [Runbook](docs/RUNBOOK.md). In
+short, on a fresh account:
+
+    scripts/bootstrap-aws.sh                      # CDK bootstrap + Cognito; put the printed ids in .env
+    npm run deploy:network -w @muxaris/infra && npm run deploy:data -w @muxaris/infra
+    scripts/bootstrap-aws.sh --secrets            # Sarvam etc. from .env into muxaris/app
+    scripts/bootstrap-aws.sh --outputs            # DB_SECRET_ARN, APP_SECRET_ARN into .env; set IMAGE_TAG
+    scripts/push-images.sh <git short sha>
+    npm run deploy:workers -w @muxaris/infra      # then deploy:services, deploy:observability, deploy:cicd
+    scripts/migrate.sh
+    scripts/smoke.sh http://<AlbDnsName>
+    scripts/request-cert.sh                       # prints the ACM validation CNAMEs and CERT_ARN=
+
+Then add `CERT_ARN` to `.env`, redeploy `MuxarisServices`, point `api.muxaris.com` and
+`voice.muxaris.com` at the ALB at GoDaddy, run `scripts/smoke.sh https://api.muxaris.com`, and set
+the Netlify variables below.
+
+After that, every push to `main` runs `.github/workflows/deploy-aws.yml` (images, CDK deploy,
+migrations, smoke test) through GitHub OIDC with no stored AWS keys. It reads these repository
+variables (Settings, Secrets and variables, Actions, Variables):
+
+| Variable               | Value                                                     |
+| ---------------------- | --------------------------------------------------------- |
+| `AWS_DEPLOY_ROLE_ARN`  | output `DeployRoleArn` of the `MuxarisCicd` stack         |
+| `COGNITO_USER_POOL_ID` | Cognito user pool id                                      |
+| `COGNITO_CLIENT_ID`    | Cognito app client id                                     |
+| `CERT_ARN`             | ACM certificate ARN; unset means the ALB serves HTTP only |
+| `NOTIFY_FROM_EMAIL`    | SES sender address                                        |
+| `ALARM_EMAIL`          | alarm notification recipient                              |
+| `BILLING_ENABLED`      | `1` to enable billing, anything else for off              |
+
+The workflow has not yet run on a real push to `main`.
+
+### Known limits
+
+- Sarvam Starter allows 20 concurrent STT sockets and 60 requests per minute; the gateway caps
+  itself at `MAX_SESSIONS` (15) per instance.
+- The gateway is one task with per-process concurrency counters, so it does not scale out, and a
+  deploy has a short gap with no gateway.
+- Lambdas reach the internet through a single NAT gateway.
+- Indian SMS needs TRAI DLT registration, so email is the live notification channel.
+- Browser calls are capped at 20 minutes (`MAX_CALL_SECONDS`, 1200 s).
+- Phone calls need a Twilio number and KYC; see [Telephony](docs/TELEPHONY.md).
 
 ## Deploy (Netlify)
 
@@ -171,24 +230,34 @@ redeploy after changing them):
 | `NEXT_PUBLIC_GOOGLE_ENABLED`       | `1` to show Google sign-in, otherwise unset               |
 
 If the Cognito variables are unset, every `/app` request redirects to sign-in. The API and voice
-gateway are not deployed by this config; infra for them arrives in Phase 5.
+gateway are deployed to AWS, not by Netlify: `NEXT_PUBLIC_API_URL` is `https://api.muxaris.com` and
+`NEXT_PUBLIC_VOICE_WS_URL` is `wss://voice.muxaris.com` once the ALB is behind those names.
 
 ## Scripts
 
-- `scripts/bootstrap-aws.sh`: deploys the Auth stack and prints the Cognito ids
-- `scripts/push-images.sh [tag]`: builds both arm64 images and pushes `:tag` to ECR (immutable tags); prints `IMAGE_TAG=`
-- `scripts/migrate.sh`: runs the `muxaris-migrate` Fargate task, prints the last 50 log lines, fails on a non-zero exit code
-- `scripts/smoke.sh <base-url>`: post-deploy checks through the ALB (`SMOKE_TOKEN` is only used over https)
-- `scripts/request-cert.sh`: requests the ACM certificate and prints the DNS validation CNAMEs and `CERT_ARN=`
-- `scripts/bootstrap-aws.sh --secrets`: upserts the `muxaris/app` secret from `.env`; `--outputs` prints stack outputs as `KEY=value`
-- `scripts/gen-assets.sh`: generates landing-page imagery (Azure gpt-image)
-- `scripts/gen-audio.sh`: generates greeting and sample-call audio (Sarvam)
-- `scripts/e2e-voice.sh`: E2E voice smoke test (see below)
-- `npm run workers:dev`: runs the post-call worker (also started by `scripts/dev.sh` when `POST_CALL_QUEUE_URL` is set)
+| Script                                       | What it does                                                                                              |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `scripts/dev.sh` (`npm run dev`)             | Local stack: Postgres, migrations, seed, then web, API, gateway and workers                               |
+| `scripts/bootstrap-aws.sh`                   | CDK bootstrap and the Auth stack; prints the Cognito ids                                                  |
+| `scripts/bootstrap-aws.sh --secrets`         | Upserts the `muxaris/app` secret from `.env` (prints key names only)                                      |
+| `scripts/bootstrap-aws.sh --outputs`         | Prints stack outputs as `KEY=value` lines                                                                 |
+| `scripts/build-images.sh [tag]`              | Builds both service images for linux/arm64 locally                                                        |
+| `scripts/push-images.sh [tag]`               | Builds and pushes both images to ECR (immutable tags); prints `IMAGE_TAG=`                                |
+| `scripts/migrate.sh`                         | Runs the `muxaris-migrate` Fargate task, prints the last 50 log lines, fails on a non-zero exit code      |
+| `scripts/smoke.sh <base-url>`                | Post-deploy checks through the ALB (`SMOKE_TOKEN` is only used over https)                                |
+| `scripts/request-cert.sh`                    | Requests the ACM certificate; prints the DNS validation CNAMEs and `CERT_ARN=`                            |
+| `scripts/create-demo-user.sh <email>`        | Creates or resets a confirmed Cognito user for local sign-in                                              |
+| `scripts/update-rds-ca.sh`                   | Regenerates `packages/db/src/rds-ca.ts` from the public RDS CA bundle (no AWS access)                     |
+| `scripts/test-fresh-db.sh`                   | Checks that all migrations apply to a fresh database                                                      |
+| `scripts/e2e-voice.sh`                       | E2E voice smoke test (see below)                                                                          |
+| `scripts/gen-assets.sh`, `gen-image.sh`      | Generates landing-page imagery (Azure gpt-image)                                                          |
+| `scripts/gen-audio.sh`                       | Generates greeting and sample-call audio (Sarvam)                                                         |
+| `npm run deploy:<stack> -w @muxaris/infra`   | Deploys one stack: `auth`, `storage`, `notify`, `network`, `data`, `workers`, `services`, `observability`, `cicd` (or `all`) |
+| `npm run workers:dev`                        | Runs the post-call and notifier workers locally                                                           |
 
 ### Post-call worker
 
-`workers/post-call` consumes the `call.completed` messages the voice gateway sends to SQS. For each call it reads the turns from Postgres, asks Amazon Nova Pro on Bedrock (`apac.amazon.nova-pro-v1:0`) for a summary of at most 60 words, sentiment, entities and an outcome refinement, writes them back through core services (a staff or booking outcome is never overwritten) and creates a callback row when the caller asked for one and a phone number is known. It also runs the stale-call sweep and the 90-day retention purge every minute. Env keys: `POST_CALL_QUEUE_URL` (required to start), `POST_CALL_MODEL_ID`, `AWS_REGION`, `DATABASE_URL`. `src/lambda.ts` exports the SQS and schedule handlers for Phase 5.
+`workers/post-call` consumes the `call.completed` messages the voice gateway sends to SQS. For each call it reads the turns from Postgres, asks Amazon Nova Pro on Bedrock (`apac.amazon.nova-pro-v1:0`) for a summary of at most 60 words, sentiment, entities and an outcome refinement, writes them back through core services (a staff or booking outcome is never overwritten) and creates a callback row when the caller asked for one and a phone number is known. It also runs the stale-call sweep and the 90-day retention purge every minute. Env keys: `POST_CALL_QUEUE_URL` (required to start), `POST_CALL_MODEL_ID`, `AWS_REGION`, `DATABASE_URL`. `src/lambda.ts` exports the SQS and schedule handlers that run on AWS Lambda.
 
 ### Phase 2: call recordings and summaries
 
@@ -224,7 +293,10 @@ the speech-end to first-reply-audio latency, and exits 0 on success. Output (`e2
 ## Docs
 
 - [Spike results (Sarvam, Bedrock)](docs/SPIKES.md)
-- [Architecture and call pipeline](docs/ARCHITECTURE.md)
+- [Architecture, call pipeline and deployed topology](docs/ARCHITECTURE.md)
+- [AWS services, cost and alternatives](docs/AWS-SERVICES.md)
+- [Runbook: deploy, rotate, roll back, alarms](docs/RUNBOOK.md)
+- [Telephony (Twilio)](docs/TELEPHONY.md)
 - [Brand and assets](docs/BRAND.md)
 - [Platform design spec](docs/superpowers/specs/2026-10-04-muxaris-platform-design.md)
 - [Phase 0 plan](docs/superpowers/plans/2026-10-04-phase-0-foundation.md)
