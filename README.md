@@ -71,7 +71,9 @@ is unreachable, the db suite is skipped with a warning instead of failing. `buil
 
 Bookings write confirmation rows to an outbox, and the notifier worker delivers them and queues
 reminders 20 to 24 hours and 1 to 2 hours before an appointment. Email goes to patients with an
-email on file; without one the row is `skipped` ("No email on file"). Locally, open the
+email on file; without one the row is `skipped` ("No email on file"). The 2-hour reminder is only
+sent for bookings made at least 30 minutes earlier, so a booking made for an hour from now does
+not get a confirmation and a reminder back to back. Locally, open the
 Notifications page in the web app to see every message and its status. The console provider
 (`NOTIFY_PROVIDER` unset or `console`) logs counts only, never recipients.
 

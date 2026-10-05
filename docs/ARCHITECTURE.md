@@ -34,8 +34,9 @@ dashboard seeks with `turn - call.startedAt - recorderT0Ms`.
 - **Outbox.** A booking, reschedule or cancellation writes `notifications` rows inside the same
   transaction, with the subject and body already rendered. The channel is chosen email, then
   WhatsApp, then SMS, according to the channel flags and what the patient has on file. When nothing
-  is usable the row is written as `skipped` with error `no_contact` (other skip reasons are
-  `channel_disabled` and `clinic_disabled`).
+  is usable the row is written as `skipped` with error `no_contact` (the only skip reason written
+  at outbox time). `channel_disabled` is a delivery-time skip, written by the notifier when a channel
+  flag was turned off after the row was queued.
 - **Claim loop.** The notifier (`workers/notifier`) claims due rows with
   `FOR UPDATE SKIP LOCKED`, increments `attempts` and sends. A failure sets `next_attempt_at` five
   minutes ahead; after 5 attempts the row is `failed`. Staff can retry a failed row from the
@@ -47,7 +48,9 @@ dashboard seeks with `turn - call.startedAt - recorderT0Ms`.
   hours before the appointment. The stamps are written in the same transaction as the outbox row,
   so a reminder is never queued twice; rescheduling clears the stamps and re-arms both.
 - **Clinic switches.** Owners can turn confirmations and reminders off per clinic in Settings;
-  those rows are written as `skipped` with `clinic_disabled`.
+  when a switch is off no row is written at all.
+  Reminder stamps are still set, so the appointment is not re-examined when the switch is turned
+  back on.
 - **Retention.** The post-call sweep purges the contact number of closed callbacks 90 days after
   they close.
 - **Audited reveals.** Phone numbers are masked in every response. Staff reveal a patient or
