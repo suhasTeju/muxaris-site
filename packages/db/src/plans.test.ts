@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import pg from "pg";
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { createDb } from "./client.js";
 import { schema } from "./index.js";
 
@@ -41,8 +41,8 @@ if (!ok) console.warn("WARNING: Postgres unreachable, skipping plans migration t
         "email_confirmations",
         "reminders",
       ]);
-      const [sub] = await db.select().from(schema.subscriptions).limit(1);
-      expect(sub ?? null).toBeNull(); // table exists and is empty on a fresh database
+      // the table exists (a shared dev database may hold subscription rows)
+      await expect(db.select({ n: count() }).from(schema.subscriptions)).resolves.toHaveLength(1);
     } finally {
       await pool.end();
     }

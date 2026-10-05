@@ -27,6 +27,7 @@ const CORE_STATUS = {
   validation: 400,
   slot_unavailable: 409,
   clinic_limit: 409,
+  provider: 502,
 } as const;
 
 const tooLarge = (c: Context) =>

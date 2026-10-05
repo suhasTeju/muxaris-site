@@ -1,5 +1,11 @@
 export type CoreErrorCode =
-  "not_found" | "conflict" | "forbidden" | "validation" | "slot_unavailable" | "clinic_limit";
+  | "not_found"
+  | "conflict"
+  | "forbidden"
+  | "validation"
+  | "slot_unavailable"
+  | "clinic_limit"
+  | "provider";
 
 /** Why a requested start time is not bookable (CoreError code `slot_unavailable`). */
 export type SlotUnavailableReason =
