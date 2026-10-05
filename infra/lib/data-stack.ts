@@ -1,6 +1,7 @@
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
@@ -39,10 +40,12 @@ export class DataStack extends Stack {
       deletionProtection: true,
       removalPolicy: RemovalPolicy.RETAIN,
       cloudwatchLogsExports: ["postgresql"],
+      cloudwatchLogsRetention: logs.RetentionDays.ONE_MONTH,
       enablePerformanceInsights: false,
     });
     // fromGeneratedSecret always attaches a secret.
     this.dbSecret = this.db.secret as secretsmanager.ISecret;
+    this.db.secret?.applyRemovalPolicy(RemovalPolicy.RETAIN);
     // Values are written by scripts/bootstrap-aws.sh --secrets, never by CDK.
     this.appSecret = new secretsmanager.Secret(this, "AppSecret", {
       secretName: "muxaris/app",

@@ -4,6 +4,7 @@
     "noEmit": true,
     "lib": ["ES2023"],
     "types": ["node"],
+    // aws-cdk-lib typings are not compatible with exactOptionalPropertyTypes.
     "exactOptionalPropertyTypes": false
   },
   "include": ["bin", "lib", "test"]

@@ -12,6 +12,7 @@
     "deploy:notify": "bash scripts/cdk.sh deploy MuxarisNotify --require-approval never",
     "deploy:network": "bash scripts/cdk.sh deploy MuxarisNetwork --require-approval never",
     "deploy:data": "bash scripts/cdk.sh deploy MuxarisData --require-approval never",
+    "deploy:workers": "bash scripts/cdk.sh deploy MuxarisWorkers --require-approval never",
     "cdk": "bash scripts/cdk.sh"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "aws-cdk": "^2.1000",
+    "esbuild": "^0.25.12",
     "tsx": "^4",
     "typescript": "^5.9",
     "vitest": "^3"

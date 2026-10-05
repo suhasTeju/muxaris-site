@@ -1,4 +1,5 @@
 import {
+  ChangeMessageVisibilityCommand,
   DeleteMessageCommand,
   ReceiveMessageCommand,
   SendMessageCommand,
@@ -9,6 +10,8 @@ export interface JobQueue<T> {
   send(msg: T): Promise<void>;
   receive(opts: { max: number; waitSeconds: number }): Promise<Array<{ handle: string; body: T }>>;
   delete(handle: string): Promise<void>;
+  /** Reset the message's visibility timeout to `seconds` from now. */
+  extendVisibility(handle: string, seconds: number): Promise<void>;
 }
 
 export function createSqsQueue<T>(opts: {
@@ -48,6 +51,15 @@ export function createSqsQueue<T>(opts: {
     },
     async delete(handle) {
       await client.send(new DeleteMessageCommand({ QueueUrl: opts.url, ReceiptHandle: handle }));
+    },
+    async extendVisibility(handle, seconds) {
+      await client.send(
+        new ChangeMessageVisibilityCommand({
+          QueueUrl: opts.url,
+          ReceiptHandle: handle,
+          VisibilityTimeout: seconds,
+        }),
+      );
     },
   };
 }

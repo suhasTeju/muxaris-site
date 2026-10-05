@@ -39,6 +39,7 @@ export class FakeQueue<T> implements JobQueue<T> {
   sent: T[] = [];
   pending: T[] = [];
   deleted: string[] = [];
+  extended: Array<{ handle: string; seconds: number }> = [];
   inflight = new Map<string, T>();
   private n = 0;
 
@@ -65,6 +66,10 @@ export class FakeQueue<T> implements JobQueue<T> {
   async delete(handle: string): Promise<void> {
     this.inflight.delete(handle);
     this.deleted.push(handle);
+  }
+
+  async extendVisibility(handle: string, seconds: number): Promise<void> {
+    this.extended.push({ handle, seconds });
   }
 
   /** Put all in-flight messages back on the pending list (visibility timeout expiry). */

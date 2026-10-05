@@ -7,6 +7,7 @@ import { PROJECT, WEB_ORIGINS } from "./config.js";
 export class StorageStack extends Stack {
   readonly callsBucket: s3.Bucket;
   readonly postCallQueue: sqs.Queue;
+  readonly postCallDlq: sqs.Queue;
 
   constructor(scope: Construct, id: string, props: StackProps) {
     super(scope, id, props);
@@ -34,7 +35,7 @@ export class StorageStack extends Stack {
       ],
     });
 
-    const dlq = new sqs.Queue(this, "PostCallDlq", {
+    this.postCallDlq = new sqs.Queue(this, "PostCallDlq", {
       queueName: `${PROJECT}-post-call-dlq`,
       retentionPeriod: Duration.days(14),
     });
@@ -42,7 +43,7 @@ export class StorageStack extends Stack {
       queueName: `${PROJECT}-post-call`,
       visibilityTimeout: Duration.minutes(6),
       retentionPeriod: Duration.days(4),
-      deadLetterQueue: { queue: dlq, maxReceiveCount: 5 },
+      deadLetterQueue: { queue: this.postCallDlq, maxReceiveCount: 5 },
     });
 
     new CfnOutput(this, "CallsBucketName", { value: this.callsBucket.bucketName });
