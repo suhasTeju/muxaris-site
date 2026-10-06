@@ -29,8 +29,9 @@ export function AuthShell({
               role="alert"
               className="border-line bg-paper text-muted rounded-lg border p-4 text-sm"
             >
-              Auth not configured. Set <code>NEXT_PUBLIC_COGNITO_USER_POOL_ID</code> and{" "}
-              <code>NEXT_PUBLIC_COGNITO_CLIENT_ID</code>, then restart the dev server.
+              Sign-in is not configured for this deployment. Set{" "}
+              <code>NEXT_PUBLIC_COGNITO_USER_POOL_ID</code> and{" "}
+              <code>NEXT_PUBLIC_COGNITO_CLIENT_ID</code> where the site is built, then rebuild.
             </p>
           )}
         </div>
