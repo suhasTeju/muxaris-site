@@ -15,7 +15,9 @@ code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$BASE/v1/me")" || 
 echo "ok   /v1/me without token -> 401"
 
 # The upgrade request is rejected on the evil origin; a 403 proves the gateway answered via the path rule.
-code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+# --http1.1: over https curl negotiates HTTP/2 and drops the Upgrade headers, so the gateway would see a
+# plain GET and answer 404.
+code="$(curl -s --http1.1 -o /dev/null -w '%{http_code}' --max-time 15 \
   -H "Origin: https://evil.example" -H "Connection: Upgrade" -H "Upgrade: websocket" \
   -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: $(openssl rand -base64 16)" \
   "$BASE/v1/session")" || code=000
