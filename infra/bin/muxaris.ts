@@ -97,7 +97,10 @@ new ObservabilityStack(app, "MuxarisObservability", {
 const cicd = new CicdStack(app, "MuxarisCicd", {
   env: ENV,
   data,
-  githubRepo: "suhasTeju/muxaris-site",
+  // OIDC subject prefix. Repositories created after 2026-07-15 use GitHub's immutable subject
+  // format "OWNER@OWNER-ID/REPO@REPO-ID" (older ones use "OWNER/REPO"); read it with
+  // `gh api repos/suhasTeju/muxaris-site/actions/oidc/customization/sub` (sub_claim_prefix).
+  githubRepo: "suhasTeju@60204441/muxaris-site@1336095316",
   description: "Muxaris GitHub OIDC provider and deploy role",
 });
 refuse(cicd, problems.cicd);

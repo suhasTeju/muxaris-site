@@ -30,7 +30,7 @@ function build() {
   const stack = new CicdStack(app, "C", {
     env: ENV,
     data,
-    githubRepo: "suhasTeju/muxaris-site",
+    githubRepo: "suhasTeju@60204441/muxaris-site@1336095316",
   });
   return Template.fromStack(stack);
 }
@@ -65,7 +65,7 @@ describe("CicdStack", () => {
               StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
               StringLike: {
                 "token.actions.githubusercontent.com:sub":
-                  "repo:suhasTeju/muxaris-site:ref:refs/heads/main",
+                  "repo:suhasTeju@60204441/muxaris-site@1336095316:ref:refs/heads/main",
               },
             },
           }),
