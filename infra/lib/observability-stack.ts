@@ -107,8 +107,20 @@ export class ObservabilityStack extends Stack {
       threshold: 5,
       description: "ALB itself returned 5xx (a service has no healthy targets)",
     });
+    // Built from the ALB and target-group names, not through `tg.metrics`: that resolves the load
+    // balancer via the target group's listener, which changes from Http to Https once CERT_ARN is
+    // set and then breaks the cross-stack export the deployed Observability stack still imports.
     const unhealthy = (tg: elbv2.ApplicationTargetGroup) =>
-      tg.metrics.unhealthyHostCount({ period: Duration.minutes(1), statistic: "Maximum" });
+      new cloudwatch.Metric({
+        namespace: "AWS/ApplicationELB",
+        metricName: "UnHealthyHostCount",
+        dimensionsMap: {
+          LoadBalancer: services.alb.loadBalancerFullName,
+          TargetGroup: tg.targetGroupFullName,
+        },
+        period: Duration.minutes(1),
+        statistic: "Maximum",
+      });
     const apiUnhealthy = unhealthy(services.apiTargetGroup);
     const gatewayUnhealthy = unhealthy(services.gatewayTargetGroup);
     alarm("ApiUnhealthyHostsAlarm", apiUnhealthy, {

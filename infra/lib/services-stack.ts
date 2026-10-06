@@ -243,7 +243,7 @@ export class ServicesStack extends Stack {
         defaultTargetGroups: [apiTg],
       });
       routed(https);
-      this.alb.addListener("Http", {
+      const redirect = this.alb.addListener("Http", {
         port: 80,
         open: false,
         defaultAction: elbv2.ListenerAction.redirect({
@@ -252,6 +252,10 @@ export class ServicesStack extends Stack {
           permanent: true,
         }),
       });
+      // Transitional: the first HTTP-only deploy exported this listener for the Observability stack
+      // (target-group metrics resolved through it). Keeping the export lets Services switch to HTTPS
+      // before Observability stops importing it; remove once that Observability deploy is done.
+      this.exportValue(redirect.listenerArn);
     } else {
       const http = this.alb.addListener("Http", {
         port: 80,
