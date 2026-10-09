@@ -9,10 +9,9 @@ import {
   WEEKDAY_NAMES,
   defaultWeekHours,
   validateWeekHours,
-  weekHoursPayload,
   type WeekHours,
 } from "@/lib/onboarding";
-import { saveErrorText, weekFromHours } from "./format";
+import { hoursForSave, saveErrorText, weekFromHours } from "./format";
 import { ToggleChips } from "./settings-ui";
 
 /** Colour the design gives a newly added doctor's avatar. */
@@ -145,7 +144,7 @@ export function DoctorDrawer({
       }
       setCurrent(saved);
       if (week !== savedWeek) {
-        const workingHours = weekHoursPayload(draft.week);
+        const workingHours = hoursForSave(saved.workingHours, draft.week);
         await api(`/v1/doctors/${encodeURIComponent(saved.id)}/hours`, {
           method: "PUT",
           body: { hours: workingHours },
@@ -264,7 +263,7 @@ export function DoctorDrawer({
         </div>
         {split ? (
           <span className="text-muted text-[12px]">
-            Some days have a break between shifts. Changing the hours here saves one shift per day.
+            Some days have a break between shifts. A day you change here saves as one shift.
           </span>
         ) : null}
         {Object.keys(hourErrors).length ? (

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api";
 import {
   formatPhone,
+  hoursForSave,
   hoursSummary,
   languageName,
   rupee,
@@ -42,6 +43,48 @@ describe("settings format helpers", () => {
     expect(week[1]).toEqual({ open: true, start: "09:00", end: "23:59" });
     expect(week[0]!.open).toBe(false);
     expect(hoursSummary([h(1, "09:00", "13:00"), h(1, "16:00", "20:00")])).toBe("1 day a week");
+  });
+
+  it("saves an edited week without touching the days that were left alone", () => {
+    const rows = [
+      h(1, "09:00", "13:00"),
+      h(1, "16:00", "20:00"),
+      h(2, "18:00", "24:00"),
+      h(3, "18:00", "24:00"),
+      h(5),
+    ];
+    const { week } = weekFromHours(rows);
+    // Unchanged: split shifts and 24:00 closes are re-sent exactly as stored.
+    expect(hoursForSave(rows, week)).toEqual(rows);
+    const edited = week.map((d, i) =>
+      i === 3
+        ? { ...d, start: "17:00" }
+        : i === 5
+          ? { ...d, open: false }
+          : i === 6
+            ? { open: true, start: "09:00", end: "13:00" }
+            : d,
+    );
+    expect(hoursForSave(rows, edited)).toEqual([
+      h(1, "09:00", "13:00"),
+      h(1, "16:00", "20:00"),
+      h(2, "18:00", "24:00"),
+      // A changed day that still shows 23:59 for a stored 24:00 close keeps 24:00.
+      h(3, "17:00", "24:00"),
+      h(6, "09:00", "13:00"),
+    ]);
+    // A changed split day saves as one shift.
+    const flat = week.map((d, i) => (i === 1 ? { ...d, start: "08:00" } : d));
+    expect(hoursForSave(rows, flat).filter((r) => r.weekday === 1)).toEqual([
+      h(1, "08:00", "20:00"),
+    ]);
+    // A new doctor has no stored rows: every open day is sent.
+    expect(hoursForSave([], week)).toEqual([
+      h(1, "09:00", "20:00"),
+      h(2, "18:00", "23:59"),
+      h(3, "18:00", "23:59"),
+      h(5),
+    ]);
   });
 
   it("turns API errors into short save messages", () => {

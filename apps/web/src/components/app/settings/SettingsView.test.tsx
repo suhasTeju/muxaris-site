@@ -356,6 +356,37 @@ describe("SettingsView", () => {
     expect(within(section("Doctors")).getAllByText(/Dr\. Kavya N/)).toHaveLength(1);
   });
 
+  it("doctor drawer: closing one day keeps the other days' split shifts and 24:00 closes", async () => {
+    const hours = [
+      { weekday: 1, startTime: "09:00", endTime: "13:00" },
+      { weekday: 1, startTime: "16:00", endTime: "20:00" },
+      { weekday: 2, startTime: "18:00", endTime: "24:00" },
+      { weekday: 6, startTime: "10:00", endTime: "14:00" },
+    ];
+    api.mockResolvedValue({ ok: true });
+    render(
+      <SettingsView
+        clinic={clinic}
+        role="owner"
+        doctors={[{ ...doctors[0]!, workingHours: hours }]}
+        services={services}
+        slotRules={slotRules}
+        assistant={assistantProfile}
+        usage={usageFor("standard")}
+        billing={{ enabled: true }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit Dr. Meera Rao" }));
+    const drawer = screen.getByRole("dialog", { name: "Edit doctor" });
+    fireEvent.click(within(drawer).getByRole("checkbox", { name: "Saturday" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save doctor" }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect(api).toHaveBeenCalledWith("/v1/doctors/d1/hours", {
+      method: "PUT",
+      body: { hours: hours.slice(0, 3) },
+    });
+  });
+
   it("doctor drawer: a failed save keeps the drawer open with the error", async () => {
     api.mockRejectedValue(new ApiError(403, "forbidden", "owner role required"));
     renderView();

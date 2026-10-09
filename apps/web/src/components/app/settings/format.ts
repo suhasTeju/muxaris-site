@@ -60,6 +60,26 @@ export function weekFromHours(
   return { week, split };
 }
 
+type HourRow = { weekday: number; startTime: string; endTime: string };
+
+/**
+ * The hours PUT body for an edited week. A day left as it was keeps its stored rows, so split
+ * shifts and a 24:00 close survive an edit to another day. A changed day saves one range, and the
+ * 23:59 the time input shows for a stored 24:00 close is written back as 24:00.
+ */
+export function hoursForSave(rows: HourRow[] | undefined, week: WeekHours): HourRow[] {
+  const before = weekFromHours(rows).week;
+  return week.flatMap((d, weekday) => {
+    const stored = (rows ?? []).filter((r) => r.weekday === weekday);
+    const b = before[weekday]!;
+    const same = d.open === b.open && (!d.open || (d.start === b.start && d.end === b.end));
+    if (same) return stored.map((r) => ({ weekday, startTime: r.startTime, endTime: r.endTime }));
+    if (!d.open) return [];
+    const midnight = d.end === "23:59" && stored.some((r) => r.endTime === "24:00");
+    return [{ weekday, startTime: d.start, endTime: midnight ? "24:00" : d.end }];
+  });
+}
+
 /** "Mon–Sat 10:00–20:00" when the open days run together with the same hours, else "5 days a week". */
 export function hoursSummary(
   rows: Array<{ weekday: number; startTime: string; endTime: string }> | undefined,
