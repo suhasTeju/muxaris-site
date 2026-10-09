@@ -4,19 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Pencil } from "lucide-react";
-import {
-  NOTIFICATION_KIND_LABEL,
-  type Doctor,
-  type Notification,
-  type PatientDetail,
-  type Service,
-} from "@muxaris/shared";
+import type { Doctor, Notification, PatientDetail, Service } from "@muxaris/shared";
 import { BackLink, Badge, Button, Card, useToast } from "@/components/ui";
-import { CHANNEL_LABEL, formatDateTime, formatTime, languageLabel } from "@/lib/dashboard";
+import { formatDateTime, languageLabel } from "@/lib/dashboard";
 import { PatientForm } from "./PatientForm";
+import { MessageRow } from "./patients/MessageRow";
 import { RevealPhone } from "./RevealPhone";
 import { StatusBadge } from "./core/StatusBadge";
-import { formatDayShort, initials, keyDob } from "./core/format";
+import { initials, keyDob } from "./core/format";
 
 const ROW =
   "border-line-soft grid items-center gap-[12px] border-t px-[18px] py-[11px] text-[14px]";
@@ -84,6 +79,7 @@ export function PatientDetailView({
   const { toast } = useToast();
   const { patient, appointments, calls } = detail;
   const [editing, setEditing] = useState(initialEditing);
+  const [messages, setMessages] = useState(notifications);
   const doctor = new Map(doctors.map((d) => [d.id, d.name]));
   const service = new Map(services.map((s) => [s.id, s.name]));
 
@@ -195,22 +191,19 @@ export function PatientDetailView({
           <Section
             id="pd-messages"
             title="Messages"
-            empty={notifications.length ? null : "No messages yet."}
+            empty={messages.length ? null : "No messages yet."}
           >
-            {notifications.map((n) => (
-              <li
+            {messages.map((n) => (
+              <MessageRow
                 key={n.id}
-                className={`${ROW} ${ROW_STACK} grid-cols-[150px_minmax(0,1fr)_auto] max-sm:grid-cols-[minmax(0,1fr)_auto]`}
-              >
-                <span className={WHEN_STACK}>
-                  {formatDayShort(n.createdAt, tz)}, {formatTime(n.createdAt, tz)}
-                </span>
-                <span className="min-w-0">
-                  {NOTIFICATION_KIND_LABEL[n.template]}{" "}
-                  <span className="text-muted">· {CHANNEL_LABEL[n.channel]}</span>
-                </span>
-                <StatusBadge kind="notif" value={n.status} />
-              </li>
+                n={n}
+                tz={tz}
+                rowClass={`${ROW} ${ROW_STACK} grid-cols-[150px_minmax(0,1fr)_auto] max-sm:grid-cols-[minmax(0,1fr)]`}
+                whenClass={WHEN_STACK}
+                onChanged={(next) =>
+                  setMessages((prev) => prev.map((x) => (x.id === next.id ? next : x)))
+                }
+              />
             ))}
           </Section>
         </div>

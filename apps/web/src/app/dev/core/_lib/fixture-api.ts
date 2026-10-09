@@ -287,6 +287,18 @@ export function createFixtureApi(opts: FixtureOptions = {}): ApiFetcher {
     }
 
     if (head === "notifications") {
+      if (id && sub === "retry" && method === "POST") {
+        const n = notifications.find((x) => x.id === id);
+        if (!n) throw new ApiError(404, "not_found", "Notification not found");
+        return {
+          notification: {
+            ...n,
+            status: "queued",
+            error: null,
+            nextAttemptAt: new Date().toISOString(),
+          },
+        };
+      }
       const pid = q.get("patientId");
       return { notifications: notifications.filter((n) => !pid || n.patientId === pid) };
     }
