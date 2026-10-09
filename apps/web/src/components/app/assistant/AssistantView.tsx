@@ -247,7 +247,7 @@ export function AssistantView({
                   value={text}
                   disabled={!isOwner}
                   onChange={(e) => up({ greeting: { ...d.greeting, [lang]: e.target.value } })}
-                  className="py-[11px] text-[16px]"
+                  className="py-[11px] text-[16px] leading-[1.55]"
                 />
               </Field>
               <div className="flex flex-wrap items-center gap-[10px]">
