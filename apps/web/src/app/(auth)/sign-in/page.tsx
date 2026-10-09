@@ -14,10 +14,7 @@ export default function SignInPage() {
       footer={
         <>
           New to Muxaris?{" "}
-          <Link
-            href="/sign-up"
-            className="text-accent-deep focus-visible:ring-accent-soft rounded outline-none hover:underline focus-visible:ring-4"
-          >
+          <Link href="/sign-up" className="font-semibold">
             Create an account
           </Link>
         </>

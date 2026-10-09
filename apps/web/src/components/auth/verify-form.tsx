@@ -3,11 +3,27 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { confirmSignUp, resendSignUpCode } from "aws-amplify/auth";
+import { Input } from "@/components/ui";
 import { authErrorMessage, safeNext } from "@/lib/auth-errors";
 import { verifyEmail } from "@/lib/client-store";
-import { Field, FormError, FormNotice, PrimaryButton } from "./auth-shell";
+import {
+  AuthField,
+  AuthMessage,
+  CODE_INPUT_CLASS,
+  ResendButton,
+  SubmitButton,
+  useBadField,
+} from "./auth-ui";
 
-export function VerifyForm() {
+/** The Amplify calls the verify form makes; previews pass stubs. */
+export interface VerifyAuth {
+  confirmSignUp: typeof confirmSignUp;
+  resendSignUpCode: typeof resendSignUpCode;
+}
+
+const AMPLIFY: VerifyAuth = { confirmSignUp, resendSignUpCode };
+
+export function VerifyForm({ auth = AMPLIFY }: { auth?: VerifyAuth }) {
   const router = useRouter();
   const next = safeNext(useSearchParams().get("next"));
   const [email, setEmail] = useState(() => verifyEmail.get() ?? "");
@@ -16,19 +32,22 @@ export function VerifyForm() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const bad = useBadField();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    bad.reset();
     setNotice(null);
     setBusy(true);
     try {
-      await confirmSignUp({ username: email.trim(), confirmationCode: code.trim() });
+      await auth.confirmSignUp({ username: email.trim(), confirmationCode: code.trim() });
       verifyEmail.clear();
       router.push(
         `/sign-in?verified=1${next === "/app" ? "" : `&next=${encodeURIComponent(next)}`}`,
       );
     } catch (err) {
+      bad.flag(err);
       setError(authErrorMessage(err));
     } finally {
       setBusy(false);
@@ -41,7 +60,7 @@ export function VerifyForm() {
     setError(null);
     setNotice(null);
     try {
-      await resendSignUpCode({ username: email.trim() });
+      await auth.resendSignUpCode({ username: email.trim() });
       setNotice("We sent a new code. It can take a minute to arrive.");
     } catch (err) {
       setError(authErrorMessage(err));
@@ -51,36 +70,46 @@ export function VerifyForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <Field
-        label="Email"
-        type="email"
-        autoComplete="email"
-        required
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <Field
-        label="Confirmation code"
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        required
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-      />
-      <FormError message={error} />
-      <FormNotice message={notice} />
-      <PrimaryButton type="submit" busy={busy}>
-        Confirm email
-      </PrimaryButton>
-      <button
-        type="button"
-        onClick={resend}
-        disabled={!email || resending}
-        className="text-accent-deep focus-visible:ring-accent-soft w-full rounded text-sm outline-none hover:underline focus-visible:ring-4 disabled:opacity-50"
-      >
-        {resending ? "Sending…" : "Send a new code"}
-      </button>
-    </form>
+    <>
+      {notice ? <AuthMessage tone="info">{notice}</AuthMessage> : null}
+      {error ? <AuthMessage tone="error">{error}</AuthMessage> : null}
+      <form onSubmit={onSubmit} className="flex flex-col gap-[18px]">
+        <AuthField label="Email">
+          <Input
+            size={48}
+            soft
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            invalid={bad.is("email")}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              bad.edited("email");
+            }}
+          />
+        </AuthField>
+        <AuthField label="Confirmation code">
+          <Input
+            size={48}
+            soft
+            mono
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="••••••"
+            required
+            value={code}
+            invalid={bad.is("code")}
+            onChange={(e) => {
+              setCode(e.target.value);
+              bad.edited("code");
+            }}
+            className={CODE_INPUT_CLASS}
+          />
+        </AuthField>
+        <SubmitButton busy={busy}>Confirm email</SubmitButton>
+        <ResendButton busy={resending} disabled={!email} onClick={() => void resend()} />
+      </form>
+    </>
   );
 }

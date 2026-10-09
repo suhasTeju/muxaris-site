@@ -11,17 +11,36 @@ import {
 import { ApiError, buildRequest } from "@/lib/api";
 import { getAccessToken } from "@/lib/api-client";
 import { DEFAULT_SPEAKER, fillGreeting } from "@/lib/onboarding";
-import {
-  Btn,
-  ErrorNote,
-  Field,
-  SelectField,
-  StepShell,
-  TextField,
-  errMsg,
-  inputCls,
-  type Call,
-} from "./ui";
+import { Play, Plus, Square, WandSparkles } from "lucide-react";
+import { Button, Input, Select, Textarea, cn } from "@/components/ui";
+import { Field, StepFooter, StepShell, StepSubheading, TextField, errMsg, type Call } from "./ui";
+
+/** Fetches the spoken greeting as audio. The wizard's previews inject their own. */
+export type VoicePreview = (
+  clinicId: string,
+  body: { text: string; language: LanguageCode; speaker: BulbulV3Speaker },
+) => Promise<Blob>;
+
+export const fetchGreetingAudio: VoicePreview = async (clinicId, body) => {
+  const req = buildRequest(
+    "/v1/assistant/preview",
+    { method: "POST", clinicId, body },
+    { token: await getAccessToken() },
+  );
+  const res = await fetch(req.url, req.init);
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      "preview_failed",
+      res.status === 503
+        ? "Voice preview is not available right now."
+        : res.status === 429
+          ? "Too many previews. Try again later."
+          : "Could not play the preview. Please try again.",
+    );
+  }
+  return res.blob();
+};
 
 interface Faq {
   q: string;
@@ -35,6 +54,7 @@ export function StepAssistant({
   languages,
   onBack,
   onContinue,
+  voicePreview = fetchGreetingAudio,
 }: {
   call: Call;
   clinicId: string;
@@ -42,6 +62,7 @@ export function StepAssistant({
   languages: LanguageCode[];
   onBack: () => Promise<void>;
   onContinue: () => Promise<void>;
+  voicePreview?: VoicePreview;
 }) {
   const langs = LANGUAGES.filter((l) => languages.includes(l.code));
   const [name, setName] = useState("Muxaris");
@@ -50,13 +71,16 @@ export function StepAssistant({
   );
   const [voices, setVoices] = useState<Partial<Record<LanguageCode, BulbulV3Speaker>>>({});
   const [handoff, setHandoff] = useState("");
-  const [faq, setFaq] = useState<Faq[]>([]);
+  // The design starts with one empty question; blank rows are dropped on save.
+  const [faq, setFaq] = useState<Faq[]>([{ q: "", a: "" }]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [previewing, setPreviewing] = useState<LanguageCode | null>(null);
-  const [previewErr, setPreviewErr] = useState<string | null>(null);
+  const [previewErr, setPreviewErr] = useState<Partial<Record<LanguageCode, string>>>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Bumped on every start and stop, so a late response never plays over a newer action.
+  const previewSeq = useRef(0);
 
   useEffect(() => {
     let live = true;
@@ -91,45 +115,51 @@ export function StepAssistant({
     if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     urlRef.current = null;
   };
-  useEffect(() => dropAudio, []);
+  useEffect(
+    () => () => {
+      previewSeq.current++;
+      dropAudio();
+    },
+    [],
+  );
 
   const voiceOf = (code: LanguageCode) => voices[code] ?? DEFAULT_SPEAKER;
 
+  const setErrFor = (code: LanguageCode, msg: string | undefined) =>
+    setPreviewErr((m) => ({ ...m, [code]: msg }));
+
+  function stopPreview() {
+    previewSeq.current++;
+    dropAudio();
+    setPreviewing(null);
+  }
+
+  /** Plays the greeting in its voice; a second click while it loads or plays stops it. */
   async function preview(code: LanguageCode) {
+    if (previewing === code) return stopPreview();
     const text = (greeting[code] ?? "").trim().slice(0, 300);
     if (!text) {
-      setPreviewErr("Write a greeting first.");
+      setErrFor(code, "Write a greeting first.");
       return;
     }
-    setPreviewErr(null);
+    setErrFor(code, undefined);
+    dropAudio();
+    const seq = ++previewSeq.current;
     setPreviewing(code);
     try {
-      const req = buildRequest(
-        "/v1/assistant/preview",
-        { method: "POST", clinicId, body: { text, language: code, speaker: voiceOf(code) } },
-        { token: await getAccessToken() },
-      );
-      const res = await fetch(req.url, req.init);
-      if (!res.ok) {
-        throw new ApiError(
-          res.status,
-          "preview_failed",
-          res.status === 503
-            ? "Voice preview is not available right now."
-            : res.status === 429
-              ? "Too many previews. Try again later."
-              : "Could not play the preview. Please try again.",
-        );
-      }
-      const url = URL.createObjectURL(await res.blob());
-      dropAudio();
+      const blob = await voicePreview(clinicId, { text, language: code, speaker: voiceOf(code) });
+      if (seq !== previewSeq.current) return;
+      const url = URL.createObjectURL(blob);
       urlRef.current = url;
       const audio = new Audio(url);
       audioRef.current = audio;
+      audio.onended = () => {
+        if (seq === previewSeq.current) setPreviewing(null);
+      };
       await audio.play();
     } catch (e) {
-      setPreviewErr(e instanceof ApiError ? e.message : "Could not play the preview.");
-    } finally {
+      if (seq !== previewSeq.current) return;
+      setErrFor(code, e instanceof ApiError ? e.message : "Could not play the preview.");
       setPreviewing(null);
     }
   }
@@ -178,86 +208,106 @@ export function StepAssistant({
       <StepShell
         title="Meet your assistant"
         lead="How it introduces itself, and how it sounds in each language."
-        footer={
-          <>
-            <Btn variant="ghost" onClick={() => void onBack()}>
-              Back
-            </Btn>
-            <Btn type="submit" busy={busy}>
-              Continue
-            </Btn>
-          </>
-        }
+        error={error}
+        gap="gap-[22px]"
+        footer={<StepFooter onBack={() => void onBack()} busy={busy} />}
       >
-        <TextField
-          label="Assistant name"
-          value={name}
-          error={errors.name}
-          maxLength={60}
-          onChange={(e) => setName(e.target.value)}
-        />
+        <div className="flex flex-wrap items-end gap-[14px]">
+          <TextField
+            label="Assistant name"
+            className="min-w-[220px] flex-1"
+            value={name}
+            error={errors.name}
+            maxLength={60}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Button
+            variant="secondary"
+            size={44}
+            icon={WandSparkles}
+            iconSize={14}
+            onClick={() =>
+              setGreeting(
+                Object.fromEntries(langs.map((l) => [l.code, fillGreeting(l.code, clinicName)])),
+              )
+            }
+            className="rounded-10 px-[14px] text-[14px]"
+          >
+            Generate from template
+          </Button>
+        </div>
 
-        <div className="space-y-5">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-ink text-sm font-medium">Greeting and voice</p>
-            <Btn
-              variant="secondary"
-              onClick={() =>
-                setGreeting(
-                  Object.fromEntries(langs.map((l) => [l.code, fillGreeting(l.code, clinicName)])),
-                )
-              }
-            >
-              Generate from template
-            </Btn>
-          </div>
-          {langs.map((l) => (
-            <div key={l.code} className="border-line space-y-3 rounded-xl border p-4">
-              <Field label={`${l.label} greeting`} error={errors[`greeting-${l.code}`]}>
-                {(a) => (
-                  <textarea
-                    {...a}
-                    rows={3}
-                    maxLength={300}
-                    value={greeting[l.code] ?? ""}
-                    onChange={(e) => setGreeting({ ...greeting, [l.code]: e.target.value })}
-                    className={inputCls}
-                  />
+        <div className="flex flex-col gap-[12px]">
+          {langs.map((l) => {
+            const playing = previewing === l.code;
+            const err = previewErr[l.code];
+            return (
+              <div
+                key={l.code}
+                className={cn(
+                  "bg-subtle flex flex-col gap-[10px] rounded-16 border p-[16px] transition-[border-color] duration-200",
+                  playing ? "border-teal-border" : "border-line",
                 )}
-              </Field>
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="min-w-40 flex-1">
-                  <SelectField
-                    label={`${l.label} voice`}
-                    value={voiceOf(l.code)}
-                    onChange={(e) =>
-                      setVoices({ ...voices, [l.code]: e.target.value as BulbulV3Speaker })
-                    }
-                    options={BULBUL_V3_SPEAKERS.map((s) => ({
-                      value: s,
-                      label: s[0]!.toUpperCase() + s.slice(1),
-                    }))}
-                  />
+              >
+                <Field label={`${l.label} greeting`} error={errors[`greeting-${l.code}`]}>
+                  {(a) => (
+                    <Textarea
+                      {...a}
+                      size="lg"
+                      rows={2}
+                      maxLength={300}
+                      value={greeting[l.code] ?? ""}
+                      onChange={(e) => setGreeting({ ...greeting, [l.code]: e.target.value })}
+                      className="text-[15px] leading-[1.5]"
+                    />
+                  )}
+                </Field>
+                <div className="flex flex-wrap items-center gap-[10px]">
+                  <label className="text-muted flex items-center gap-[8px] text-[13px]">
+                    {l.label} voice
+                    <Select
+                      size={34}
+                      value={voiceOf(l.code)}
+                      onChange={(e) =>
+                        setVoices({ ...voices, [l.code]: e.target.value as BulbulV3Speaker })
+                      }
+                      className="text-ink w-auto rounded-9"
+                    >
+                      {BULBUL_V3_SPEAKERS.map((v) => (
+                        <option key={v} value={v}>
+                          {v[0]!.toUpperCase() + v.slice(1)}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                  <Button
+                    size={34}
+                    icon={playing ? Square : Play}
+                    iconSize={12}
+                    aria-pressed={playing}
+                    onClick={() => void preview(l.code)}
+                    className={cn(
+                      "gap-[8px] font-medium shadow-none",
+                      playing && "bg-teal hover:bg-teal",
+                    )}
+                  >
+                    Preview
+                  </Button>
+                  {playing ? <VoiceBars /> : null}
+                  {err ? (
+                    <span role="alert" className="text-rose text-[12.5px]">
+                      {err}
+                    </span>
+                  ) : null}
                 </div>
-                <Btn
-                  variant="secondary"
-                  busy={previewing === l.code}
-                  onClick={() => void preview(l.code)}
-                >
-                  Preview
-                </Btn>
               </div>
-            </div>
-          ))}
-          {previewErr ? (
-            <p role="alert" className="text-danger text-sm">
-              {previewErr}
-            </p>
-          ) : null}
+            );
+          })}
         </div>
 
         <TextField
           label="Handoff phone number (optional)"
+          className="max-w-[360px]"
           type="tel"
           inputMode="tel"
           value={handoff}
@@ -266,50 +316,82 @@ export function StepAssistant({
           onChange={(e) => setHandoff(e.target.value)}
         />
 
-        <div className="space-y-3">
-          <p className="text-ink text-sm font-medium">Common questions (optional)</p>
+        <div className="border-line flex flex-col gap-[12px] border-t pt-[22px]">
+          <StepSubheading>Common questions (optional)</StepSubheading>
           {faq.map((f, i) => (
-            <div key={i} className="border-line space-y-3 rounded-xl border p-4">
-              <TextField
-                label="Question"
-                value={f.q}
-                maxLength={200}
-                onChange={(e) =>
-                  setFaq(faq.map((x, j) => (j === i ? { ...x, q: e.target.value } : x)))
-                }
-              />
-              <Field label="Answer">
-                {(a) => (
-                  <textarea
-                    {...a}
-                    rows={2}
-                    maxLength={1000}
-                    value={f.a}
-                    onChange={(e) =>
-                      setFaq(faq.map((x, j) => (j === i ? { ...x, a: e.target.value } : x)))
-                    }
-                    className={inputCls}
-                  />
-                )}
-              </Field>
-              <Btn variant="ghost" onClick={() => setFaq(faq.filter((_, j) => j !== i))}>
-                Remove
-              </Btn>
+            <div
+              key={i}
+              className="border-line bg-subtle grid grid-cols-[minmax(0,1fr)_auto] items-start gap-[10px] rounded-14 border p-[14px]"
+            >
+              <div className="flex flex-col gap-[8px]">
+                <Input
+                  size={40}
+                  aria-label="Question"
+                  placeholder="Question"
+                  maxLength={200}
+                  value={f.q}
+                  onChange={(e) =>
+                    setFaq(faq.map((x, j) => (j === i ? { ...x, q: e.target.value } : x)))
+                  }
+                  className="px-[12px] text-[14.5px] font-medium"
+                />
+                <Textarea
+                  size="md"
+                  rows={2}
+                  aria-label="Answer"
+                  placeholder="Answer"
+                  maxLength={1000}
+                  value={f.a}
+                  onChange={(e) =>
+                    setFaq(faq.map((x, j) => (j === i ? { ...x, a: e.target.value } : x)))
+                  }
+                  className="px-[12px] py-[9px] leading-[1.5]"
+                />
+              </div>
+              <Button
+                variant="danger-ghost"
+                size={32}
+                onClick={() => setFaq(faq.filter((_, j) => j !== i))}
+                className="rounded-9"
+              >
+                Remove<span className="sr-only"> question {i + 1}</span>
+              </Button>
             </div>
           ))}
           {errors.faq ? (
-            <p role="alert" className="text-danger text-sm">
+            <span role="alert" className="text-rose text-[12.5px]">
               {errors.faq}
-            </p>
+            </span>
           ) : null}
           {faq.length < 30 ? (
-            <Btn variant="secondary" onClick={() => setFaq([...faq, { q: "", a: "" }])}>
+            <Button
+              variant="secondary"
+              size={38}
+              icon={Plus}
+              iconSize={14}
+              onClick={() => setFaq([...faq, { q: "", a: "" }])}
+              className="self-start"
+            >
               Add a question
-            </Btn>
+            </Button>
           ) : null}
         </div>
-        <ErrorNote message={error} />
       </StepShell>
     </form>
+  );
+}
+
+/** Four teal bars bouncing while a preview loads and plays (mxBar35, 0.15s apart). */
+function VoiceBars() {
+  return (
+    <span aria-hidden="true" className="flex h-[16px] items-center gap-[2px]">
+      {[0, 0.15, 0.3, 0.45].map((delay) => (
+        <span
+          key={delay}
+          className="bg-teal h-[16px] w-[3px] animate-[mxBar35_.9s_ease-in-out_infinite] rounded-[2px]"
+          style={{ animationDelay: `${delay}s` }}
+        />
+      ))}
+    </span>
   );
 }

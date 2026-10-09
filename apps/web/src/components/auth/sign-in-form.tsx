@@ -3,13 +3,25 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { signIn, signOut } from "aws-amplify/auth";
+import { signIn, signOut, signInWithRedirect } from "aws-amplify/auth";
+import { Input } from "@/components/ui";
 import { authErrorMessage, authErrorName, safeNext, signInStepMessage } from "@/lib/auth-errors";
+import { googleEnabled } from "@/lib/amplify";
 import { verifyEmail } from "@/lib/client-store";
-import { Field, FormError, FormNotice, PrimaryButton } from "./auth-shell";
+import { AuthField, AuthMessage, SubmitButton, useBadField } from "./auth-ui";
 import { GoogleButton } from "./google-button";
 
-export function SignInForm() {
+/** The Amplify calls the sign-in form makes; previews pass stubs. */
+export interface SignInAuth {
+  signIn: typeof signIn;
+  signOut: typeof signOut;
+  signInWithRedirect: (input: { provider: "Google" }) => Promise<void>;
+  googleEnabled: boolean;
+}
+
+const AMPLIFY: SignInAuth = { signIn, signOut, signInWithRedirect, googleEnabled };
+
+export function SignInForm({ auth = AMPLIFY }: { auth?: SignInAuth }) {
   const router = useRouter();
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
@@ -17,6 +29,7 @@ export function SignInForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const bad = useBadField();
   // The API rejected the session (or the user asked to sign out): clear any stale Amplify session
   // before the form shows, otherwise UserAlreadyAuthenticated would bounce back to /app forever.
   const reason = params.get("reason");
@@ -26,10 +39,11 @@ export function SignInForm() {
   useEffect(() => {
     if (!clearing || started.current) return;
     started.current = true;
-    signOut()
+    auth
+      .signOut()
       .catch(() => undefined)
       .finally(() => setCleared(true));
-  }, [clearing]);
+  }, [clearing, auth]);
   const notice =
     reason === "session"
       ? "Your session expired. Please sign in again."
@@ -51,9 +65,10 @@ export function SignInForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    bad.reset();
     setBusy(true);
     try {
-      const res = await signIn({ username: email.trim(), password });
+      const res = await auth.signIn({ username: email.trim(), password });
       if (res.nextStep.signInStep === "CONFIRM_SIGN_UP") return toVerify();
       if (res.isSignedIn) return done();
       setError(signInStepMessage(res.nextStep.signInStep));
@@ -61,6 +76,7 @@ export function SignInForm() {
       const name = authErrorName(err);
       if (name === "UserNotConfirmedException") return toVerify();
       if (name === "UserAlreadyAuthenticatedException") return done();
+      bad.flag(err);
       setError(authErrorMessage(err));
     } finally {
       setBusy(false);
@@ -69,44 +85,62 @@ export function SignInForm() {
 
   if (!cleared) {
     return (
-      <p role="status" className="text-muted text-sm">
+      <p role="status" className="text-ink-2 m-0 text-[15px]">
         One moment…
       </p>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <FormNotice message={notice} />
-      <GoogleButton next={next} onError={(err) => setError(authErrorMessage(err))} />
-      <Field
-        label="Email"
-        type="email"
-        autoComplete="email"
-        required
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <Field
-        label="Password"
-        type="password"
-        autoComplete="current-password"
-        required
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <div className="text-right text-sm">
-        <Link
-          href="/forgot-password"
-          className="text-accent-deep focus-visible:ring-accent-soft rounded outline-none hover:underline focus-visible:ring-4"
+    <>
+      {notice ? <AuthMessage tone="info">{notice}</AuthMessage> : null}
+      {error ? <AuthMessage tone="error">{error}</AuthMessage> : null}
+      <form onSubmit={onSubmit} className="flex flex-col gap-[18px]">
+        <GoogleButton
+          next={next}
+          enabled={auth.googleEnabled}
+          redirect={auth.signInWithRedirect}
+          onError={(err) => setError(authErrorMessage(err))}
+        />
+        <AuthField label="Email">
+          <Input
+            size={48}
+            soft
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            invalid={bad.is("email")}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              bad.edited("email");
+            }}
+          />
+        </AuthField>
+        <AuthField
+          label="Password"
+          action={
+            <Link href="/forgot-password" className="text-[13.5px] font-medium">
+              Forgot password?
+            </Link>
+          }
         >
-          Forgot password?
-        </Link>
-      </div>
-      <FormError message={error} />
-      <PrimaryButton type="submit" busy={busy}>
-        Sign in
-      </PrimaryButton>
-    </form>
+          <Input
+            size={48}
+            soft
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            invalid={bad.is("password")}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              bad.edited("password");
+            }}
+          />
+        </AuthField>
+        <SubmitButton busy={busy}>Sign in</SubmitButton>
+      </form>
+    </>
   );
 }

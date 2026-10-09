@@ -5,20 +5,23 @@ import { useRouter } from "next/navigation";
 import { LANGUAGE_CODES, type LanguageCode } from "@muxaris/shared";
 import type { ApiInit } from "@/lib/api";
 import { useApi } from "@/lib/api-client";
+import { Button } from "@/components/ui";
 import {
+  WIZARD_STEPS,
   nextStep,
   prevStep,
   resumeStep,
   writeActiveClinicCookie,
   type OnboardingStep,
 } from "@/lib/onboarding";
+import { WizardLayout, WizardLoading } from "./Frame";
 import { Progress } from "./Progress";
-import { StepAssistant } from "./StepAssistant";
+import { StepAssistant, type VoicePreview } from "./StepAssistant";
 import { StepBasics, SUNRISE_BASICS, type ClinicInfo } from "./StepBasics";
 import { StepDoctors } from "./StepDoctors";
 import { StepReview } from "./StepReview";
 import { StepServices } from "./StepServices";
-import { ErrorNote, errMsg } from "./ui";
+import { NavErrorContext, StepError, errMsg } from "./ui";
 
 interface ClinicRow {
   id: string;
@@ -40,24 +43,37 @@ const toInfo = (c: ClinicRow): ClinicInfo => ({
   ),
 });
 
+type Api = ReturnType<typeof useApi>;
+
+const stepIndex = (s: OnboardingStep) => WIZARD_STEPS.indexOf(s);
+
 export function Wizard({
   initialClinic,
   cookieStale,
+  api: injectedApi,
+  voicePreview,
 }: {
   initialClinic: { id: string; name: string } | null;
   cookieStale: boolean;
+  /** The API client; defaults to the signed-in user's. Previews pass a fixture handler. */
+  api?: Api;
+  /** The greeting audio fetcher; defaults to POST /v1/assistant/preview. */
+  voicePreview?: VoicePreview;
 }) {
   const router = useRouter();
-  const api = useApi();
+  const signedInApi = useApi();
+  const api = injectedApi ?? signedInApi;
   const [clinic, setClinic] = useState<ClinicInfo | null>(
     initialClinic ? { ...initialClinic, languages: [] } : null,
   );
   const [step, setStep] = useState<OnboardingStep | null>(initialClinic ? null : "basics");
+  // Furthest step reached, so the rail can jump back and forth between reached steps.
+  const [maxStep, setMaxStep] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const clinicId = clinic?.id;
   const resumed = useRef(false);
   const navBusy = useRef(false);
-  const root = useRef<HTMLDivElement | null>(null);
+  const root = useRef<HTMLElement | null>(null);
   const firstStep = useRef(true);
   const [navError, setNavError] = useState<string | null>(null);
   const [demoFailed, setDemoFailed] = useState(false);
@@ -90,7 +106,10 @@ export function Wizard({
         setClinic(toInfo(detail.clinic));
         const s = resumeStep(saved.step, true);
         if (s === "done") router.replace("/app");
-        else setStep(s);
+        else {
+          setStep(s);
+          setMaxStep(stepIndex(s));
+        }
       } catch (e) {
         setLoadError(errMsg(e));
       }
@@ -111,6 +130,7 @@ export function Wizard({
     await callFor(id)("/v1/onboarding/step", { method: "PUT", body: { step: to } });
     setNavError(null); // a stale Back/Edit error must not outlive a later success
     setStep(to);
+    setMaxStep((m) => Math.max(m, stepIndex(to)));
     window.scrollTo?.({ top: 0 });
   }
   const advance = (from: OnboardingStep) => () => go(nextStep(from));
@@ -171,77 +191,72 @@ export function Wizard({
 
   if (loadError) {
     return (
-      <div className="space-y-4">
-        <ErrorNote message={loadError} />
-        <button
-          type="button"
+      <WizardLayout rail={<Progress step={null} />}>
+        <StepError>{loadError}</StepError>
+        <Button
+          variant="secondary"
+          size={44}
           onClick={() => router.refresh()}
-          className="border-line bg-surface min-h-11 rounded-lg border px-5 font-medium outline-none focus-visible:ring-4 focus-visible:ring-accent-soft"
+          className="self-start"
         >
           Try again
-        </button>
-      </div>
+        </Button>
+      </WizardLayout>
     );
   }
-  if (step === null) {
-    return (
-      <p role="status" className="text-muted">
-        Loading your setup…
-      </p>
-    );
-  }
+  if (step === null) return <WizardLoading />;
 
   const langs: LanguageCode[] = clinic?.languages.length ? clinic.languages : ["en-IN"];
 
   return (
-    <div ref={root}>
-      <Progress step={step} />
-      {navError ? (
-        <div className="mb-4">
-          <ErrorNote message={navError} />
-        </div>
-      ) : null}
-      {step === "basics" ? (
-        <StepBasics
-          clinic={clinic}
-          call={call}
-          onCreated={onCreated}
-          onContinue={advance("basics")}
-          onDemo={onDemo}
-          demoFailed={demoFailed}
-          onRetryDemo={() => loadDemo(clinic!.id)}
-        />
-      ) : null}
-      {step === "doctors" && clinic ? (
-        <StepDoctors
-          call={call}
-          clinicLanguages={langs}
-          onBack={back("doctors")}
-          onContinue={advance("doctors")}
-        />
-      ) : null}
-      {step === "services" && clinic ? (
-        <StepServices call={call} onBack={back("services")} onContinue={advance("services")} />
-      ) : null}
-      {step === "assistant" && clinic ? (
-        <StepAssistant
-          call={call}
-          clinicId={clinic.id}
-          clinicName={clinic.name}
-          languages={langs}
-          onBack={back("assistant")}
-          onContinue={advance("assistant")}
-        />
-      ) : null}
-      {step === "review" && clinic ? (
-        <StepReview
-          call={call}
-          clinicName={clinic.name}
-          onEdit={(s) => nav(() => go(s))()}
-          onBack={back("review")}
-          onFinish={onFinish}
-        />
-      ) : null}
-    </div>
+    <WizardLayout
+      mainRef={root}
+      rail={<Progress step={step} maxStep={maxStep} onGo={(s) => nav(() => go(s))()} />}
+    >
+      <NavErrorContext.Provider value={navError}>
+        {step === "basics" ? (
+          <StepBasics
+            clinic={clinic}
+            call={call}
+            onCreated={onCreated}
+            onContinue={advance("basics")}
+            onDemo={onDemo}
+            demoFailed={demoFailed}
+            onRetryDemo={() => loadDemo(clinic!.id)}
+          />
+        ) : null}
+        {step === "doctors" && clinic ? (
+          <StepDoctors
+            call={call}
+            clinicLanguages={langs}
+            onBack={back("doctors")}
+            onContinue={advance("doctors")}
+          />
+        ) : null}
+        {step === "services" && clinic ? (
+          <StepServices call={call} onBack={back("services")} onContinue={advance("services")} />
+        ) : null}
+        {step === "assistant" && clinic ? (
+          <StepAssistant
+            call={call}
+            clinicId={clinic.id}
+            clinicName={clinic.name}
+            languages={langs}
+            onBack={back("assistant")}
+            onContinue={advance("assistant")}
+            {...(voicePreview ? { voicePreview } : {})}
+          />
+        ) : null}
+        {step === "review" && clinic ? (
+          <StepReview
+            call={call}
+            clinicName={clinic.name}
+            onEdit={(s) => nav(() => go(s))()}
+            onBack={back("review")}
+            onFinish={onFinish}
+          />
+        ) : null}
+      </NavErrorContext.Provider>
+    </WizardLayout>
   );
 }

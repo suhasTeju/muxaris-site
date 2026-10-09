@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AudioLines, ListChecks, Stethoscope, type LucideIcon } from "lucide-react";
+import { Button } from "@/components/ui";
 import { STEP_LABELS, type OnboardingStep } from "@/lib/onboarding";
-import { Btn, ErrorNote, StepShell, errMsg, type Call } from "./ui";
+import { StepFooter, StepShell, errMsg, type Call } from "./ui";
 
 interface Summary {
   doctors: Array<{ name: string }>;
@@ -59,60 +61,75 @@ export function StepReview({
     }
   }
 
-  const block = (title: string, step: OnboardingStep, body: React.ReactNode) => (
-    <div className="border-line rounded-xl border p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-display text-xl">{title}</h2>
-        <Btn variant="ghost" onClick={() => void onEdit(step)}>
+  const block = (title: string, icon: LucideIcon, step: OnboardingStep, items: string[]) => {
+    const Icon = icon;
+    return (
+      <div className="border-line bg-subtle grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-[16px] rounded-16 border p-[18px]">
+        <span className="bg-surface border-line text-teal-ink grid size-[44px] place-items-center rounded-12 border">
+          <Icon size={18} aria-hidden="true" />
+        </span>
+        <div className="flex min-w-0 flex-col gap-[6px]">
+          <h2 className="m-0 text-[15.5px] font-semibold">{title}</h2>
+          <ul className="m-0 flex list-none flex-wrap gap-[6px] p-0">
+            {items.map((it, i) => (
+              <li
+                key={i}
+                className="bg-surface border-line text-ink-2 rounded-8 border px-[10px] py-[4px] text-[13.5px]"
+              >
+                {it}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <Button variant="secondary" size={34} onClick={() => void onEdit(step)}>
           Edit<span className="sr-only"> {STEP_LABELS[step].toLowerCase()}</span>
-        </Btn>
+        </Button>
       </div>
-      <div className="text-muted mt-1 text-sm">{body}</div>
-    </div>
-  );
+    );
+  };
 
   return (
     <StepShell
       title="Ready to go"
-      lead={`Here is what ${clinicName} is set up with.`}
+      lead={`Here is what ${clinicName.trim() || "your clinic"} is set up with.`}
+      error={error}
+      gap="gap-[12px]"
       footer={
-        <>
-          <Btn variant="ghost" onClick={() => void onBack()}>
-            Back
-          </Btn>
-          <Btn busy={busy} disabled={!sum} onClick={() => void finish()}>
-            Finish
-          </Btn>
-        </>
+        <StepFooter
+          onBack={() => void onBack()}
+          busy={busy}
+          disabled={!sum}
+          label="Finish"
+          onNext={() => void finish()}
+        />
       }
     >
       {sum ? (
         <>
           {block(
             "Doctors",
+            Stethoscope,
             "doctors",
-            sum.doctors.length ? sum.doctors.map((d) => d.name).join(", ") : "None yet",
+            sum.doctors.length ? sum.doctors.map((d) => d.name) : ["None yet"],
           )}
           {block(
             "Services",
+            ListChecks,
             "services",
             sum.services.length
-              ? sum.services
-                  .map(
-                    (s) =>
-                      `${s.name} (${s.durationMin} min${s.priceInr != null ? `, ₹${s.priceInr}` : ""})`,
-                  )
-                  .join(" · ")
-              : "None yet",
+              ? sum.services.map(
+                  (s) =>
+                    `${s.name} (${s.durationMin} min${s.priceInr != null ? `, ₹${s.priceInr.toLocaleString("en-IN")}` : ""})`,
+                )
+              : ["None yet"],
           )}
-          {block("Assistant", "assistant", sum.assistantName ?? "Not configured yet")}
+          {block("Assistant", AudioLines, "assistant", [sum.assistantName ?? "Not configured yet"])}
         </>
       ) : (
-        <p className="text-muted text-sm" role="status">
+        <p className="text-muted m-0 text-[14px]" role="status">
           Loading your setup…
         </p>
       )}
-      <ErrorNote message={error} />
     </StepShell>
   );
 }
