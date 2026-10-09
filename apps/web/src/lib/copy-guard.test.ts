@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { FAQS } from "./content";
 
 const root = join(__dirname, "..");
 const files = [
@@ -30,29 +31,29 @@ describe("marketing copy guard", () => {
     expect(privacy).toContain("Amazon Simple Email Service");
   });
 
-  it("privacy page states the shipped recording behaviour", () => {
-    const flat = readFileSync(join(root, "app/privacy/page.tsx"), "utf8").replace(/\s+/g, " ");
-    expect(flat).toMatch(/recordings are stored encrypted in AWS Mumbai/i);
-    expect(flat).toMatch(
-      /recordings, transcripts and call summaries are deleted 90 days after the call/i,
-    );
-    expect(flat).toMatch(/turn recording off in Settings/i);
-    expect(flat).toMatch(/transcribed but no audio is kept/i);
-  });
-
-  it("the FAQ keeps the design's storage and retention answer", () => {
-    const flat = readFileSync(join(root, "lib/content.ts"), "utf8").replace(/\s+/g, " ");
-    expect(flat).toMatch(/AWS Mumbai/);
-    expect(flat).toMatch(/deleted 90 days after the call/i);
-  });
-
-  it("never promises the old call-centre release or encrypted transcripts", () => {
+  it("privacy page and content state the shipped recording behaviour", () => {
     for (const f of ["lib/content.ts", "app/privacy/page.tsx"]) {
-      const flat = readFileSync(join(root, f), "utf8").replace(/\s+/g, " ");
-      expect(flat).not.toMatch(/arrive with the call-centre release/);
+      const text = readFileSync(join(root, f), "utf8");
+      expect(text).not.toMatch(/arrive with the call-centre release/);
+      const flat = text.replace(/\s+/g, " ");
+      expect(flat).toMatch(/recordings are stored encrypted in AWS Mumbai/i);
+      expect(flat).toMatch(
+        /recordings, transcripts and call summaries are deleted 90 days after the call/i,
+      );
+      expect(flat).toMatch(/turn recording off in Settings/i);
+      expect(flat).toMatch(/transcribed but no audio is kept/i);
       // Only recordings are encrypted; never claim the transcripts are.
       expect(flat).not.toMatch(/transcripts[^.]{0,40}(stored )?encrypted/i);
     }
+  });
+
+  it("FAQ and privacy page both say the conversation model may run outside India", () => {
+    const bedrock =
+      /conversation model runs on Amazon Bedrock and may be processed in other AWS regions/i;
+    const storage = FAQS.find((f) => /where is our data stored/i.test(f.q))!;
+    expect(storage.a).toMatch(bedrock);
+    const privacy = readFileSync(join(root, "app/privacy/page.tsx"), "utf8").replace(/\s+/g, " ");
+    expect(privacy).toMatch(bedrock);
   });
 
   it("pilot is described in call-minutes, not calls", () => {

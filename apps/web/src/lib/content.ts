@@ -266,7 +266,7 @@ export const FAQS = [
   },
   {
     q: "Where is our data stored?",
-    a: "In India, in AWS Mumbai. Recordings, transcripts and summaries are deleted 90 days after the call. Every call opens with a notice that an AI assistant is answering and the call may be recorded.",
+    a: "In India, in AWS Mumbai. The conversation model runs on Amazon Bedrock and may be processed in other AWS regions. Call recordings are stored encrypted in AWS Mumbai, and recordings, transcripts and call summaries are deleted 90 days after the call. Clinics can turn recording off in Settings; calls are then transcribed but no audio is kept. Every call opens with a notice that an AI assistant is answering and the call may be recorded.",
   },
   {
     q: "How does booking work with our calendar?",

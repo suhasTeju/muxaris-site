@@ -76,7 +76,7 @@ export function Nav() {
           <div
             id="mobile-menu"
             className={cn(
-              "rounded-18 animate-[mxIn8_.2s_ease_both] absolute inset-x-0 top-[68px] p-[10px] lg:hidden",
+              "rounded-18 animate-[mxIn8_.2s_ease_both] motion-reduce:animate-none absolute inset-x-0 top-[68px] p-[10px] lg:hidden",
               GLASS,
               "bg-[rgba(255,255,255,0.94)]",
             )}

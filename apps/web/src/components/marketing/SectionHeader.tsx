@@ -8,12 +8,12 @@ export const SECTION_Y = "py-[80px] lg:py-[128px]";
 export const CONTAINER = "mx-auto w-full max-w-[1200px]";
 /** In-page anchor targets sit 90px below the floating nav, as the design's scroll offset does. */
 export const ANCHOR = "scroll-mt-[90px] outline-none";
-/** Section headline: clamp(36px, 4vw, 54px), 1.02, -0.04em, 600. */
+/** Section headline: clamp(36px, 4vw, 54px), 1.02, -0.04em, 600; 32px on phones. */
 export const H2 =
-  "m-0 text-[clamp(36px,4vw,54px)] leading-[1.02] font-semibold tracking-[-0.04em] text-balance";
-/** Page headline on pricing and FAQ: clamp(46px, 5.4vw, 76px). */
+  "m-0 text-[32px] sm:text-[clamp(36px,4vw,54px)] leading-[1.02] font-semibold tracking-[-0.04em] text-balance";
+/** Page headline on pricing and FAQ: clamp(46px, 5.4vw, 76px); 40px on phones. */
 export const PAGE_H1 =
-  "m-0 text-[clamp(46px,5.4vw,76px)] leading-none font-semibold tracking-[-0.048em]";
+  "m-0 text-[40px] sm:text-[clamp(46px,5.4vw,76px)] leading-none font-semibold tracking-[-0.048em]";
 
 /** Mono teal eyebrow with a 6px dot ("The problem", "Live demo", …). */
 export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {

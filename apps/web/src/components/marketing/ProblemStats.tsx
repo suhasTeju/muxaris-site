@@ -10,11 +10,11 @@ export function ProblemStats() {
             {PROBLEM.title}
           </SectionHeader>
         </div>
-        <ol className="m-0 grid list-none gap-[16px] p-0 md:grid-cols-3">
+        <ol className="m-0 grid list-none gap-[16px] p-0 lg:grid-cols-3">
           {PROBLEM.moments.map((m, i) => (
             <li
               key={m.when}
-              className="border-line bg-surface shadow-rest flex flex-col justify-between gap-[32px] rounded-[24px] border p-[28px] md:min-h-[220px] md:gap-[56px] lg:min-h-[260px]"
+              className="border-line bg-surface shadow-rest flex flex-col justify-between gap-[32px] rounded-[24px] border p-[28px] lg:min-h-[260px] lg:gap-[56px]"
             >
               <span className="text-teal-ink font-mono text-[13px]">
                 {String(i + 1).padStart(2, "0")}

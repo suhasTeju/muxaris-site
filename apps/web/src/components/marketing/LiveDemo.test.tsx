@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { Profiler } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TRANSCRIPT } from "@/lib/content";
-import { LiveDemo } from "./LiveDemo";
+import { LiveDemo, milestoneAt } from "./LiveDemo";
 
 let reduced = false;
 const paused = new WeakMap<HTMLMediaElement, boolean>();
@@ -95,5 +96,45 @@ describe("LiveDemo", () => {
     expect(lines()).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "Pause audio" }));
     expect(screen.getByRole("button", { name: "Play audio" })).toBeTruthy();
+  });
+
+  it("moves the progress bar every tick but re-renders only when a line or stage appears", () => {
+    vi.useFakeTimers();
+    let commits = 0;
+    render(
+      <Profiler id="demo" onRender={() => commits++}>
+        <LiveDemo loop={false} />
+      </Profiler>,
+    );
+    const audio = document.querySelector("audio")!;
+    fireEvent.click(screen.getByRole("button", { name: "Play audio" }));
+    Object.defineProperty(audio, "currentTime", { configurable: true, writable: true, value: 5 });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    const bar = document.querySelector<HTMLElement>("[aria-hidden='true'] > div.bg-teal")!;
+    expect(bar.style.width).toBe("24.5%");
+    expect(lines()).toHaveLength(2);
+    const settled = commits;
+    for (const at of [5.5, 6, 7, 8, 9]) {
+      audio.currentTime = at;
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+    }
+    expect(bar.style.width).toBe("44.1%");
+    expect(commits).toBe(settled);
+    audio.currentTime = 11;
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(lines()).toHaveLength(3);
+    expect(commits).toBe(settled + 1);
+  });
+
+  it("knows the script's milestones", () => {
+    expect([0, 4.2, 4.3, 12, 13.6, 17.9, 18, 25].map(milestoneAt)).toEqual([
+      0, 0, 4.3, 10.8, 13.6, 13.6, 18, 18,
+    ]);
   });
 });

@@ -95,7 +95,7 @@ export function LegalDoc({
             "[&_a]:text-teal-ink [&_a]:underline [&_a]:underline-offset-2",
           ].join(" ")}
         >
-          <h1 className="text-ink m-0 mb-[14px] text-[44px] leading-none font-semibold tracking-[-0.045em] sm:text-[60px]">
+          <h1 className="text-ink m-0 mb-[14px] text-[40px] leading-none font-semibold tracking-[-0.045em] sm:text-[60px]">
             {title}
           </h1>
           <p className="text-muted !mb-[40px] font-mono text-[13px]">Last updated {updated}</p>

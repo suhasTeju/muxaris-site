@@ -1,7 +1,14 @@
 "use client";
 
 import { CalendarCheck, CalendarClock, Pause, Play } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Button, buttonClass } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
 import { DEMO_LOOP_END, DEMO_STAGES, SAMPLE_CALL_DURATION, TRANSCRIPT } from "@/lib/content";
@@ -28,6 +35,19 @@ function stamp(at: number) {
 
 type Mode = "silent" | "playing" | "paused";
 
+/** Every moment the script changes what is on screen: a transcript line or a stage. */
+const MILESTONES = [
+  ...new Set([...TRANSCRIPT.map((l) => l.at), ...DEMO_STAGES.map((s) => s.at)]),
+].sort((a, b) => a - b);
+/** The last milestone reached at time t; the section re-renders only when this changes. */
+export function milestoneAt(t: number): number {
+  return MILESTONES.reduce((acc, m) => (t >= m ? m : acc), 0);
+}
+/** Progress bar width: the clock against the clip's length, or full for the finished call. */
+function barWidth(t: number, full: boolean) {
+  return `${(full ? 100 : Math.min(100, (t / SAMPLE_CALL_DURATION) * 100)).toFixed(1)}%`;
+}
+
 /**
  * The scripted sample call. While the clip plays the clock follows the audio; otherwise, once
  * the section is in view, the same script replays silently and loops. Reduced motion shows the
@@ -47,7 +67,12 @@ export function LiveDemo({
 }) {
   const root = useRef<HTMLElement>(null);
   const audio = useRef<HTMLAudioElement>(null);
-  const [t, setT] = useState(initialTime);
+  const bar = useRef<HTMLDivElement>(null);
+  // The clock lives in a ref and paints the bar through the DOM every tick; state holds only the
+  // last milestone, so the section re-renders when a line or a stage appears, not ten times a second.
+  const time = useRef(initialTime);
+  const [reached, setReached] = useState(() => milestoneAt(initialTime));
+  const lastMilestone = useRef(reached);
   const [mode, setMode] = useState<Mode>("silent");
   const [visible, setVisible] = useState(false);
   const reduced = useSyncExternalStore(
@@ -66,26 +91,36 @@ export function LiveDemo({
     return () => io.disconnect();
   }, []);
 
+  // Reduced motion: the finished call, unless the clip is playing (then the bar follows it).
+  const full = reduced && mode === "silent";
+  const moveTo = useCallback(
+    (next: number) => {
+      time.current = next;
+      if (bar.current) bar.current.style.width = barWidth(next, full);
+      const m = milestoneAt(next);
+      if (m !== lastMilestone.current) {
+        lastMilestone.current = m;
+        setReached(m);
+      }
+    },
+    [full],
+  );
+  useLayoutEffect(() => {
+    if (bar.current) bar.current.style.width = barWidth(time.current, full);
+  }, [full]);
+
   const ticking = mode === "playing" || (mode === "silent" && visible && loop && !reduced);
   useEffect(() => {
     if (!ticking) return;
     const id = window.setInterval(() => {
       const a = audio.current;
-      if (a && !a.paused) {
-        setT(a.currentTime);
-      } else {
-        setT((prev) => (prev + TICK_MS / 1000 > DEMO_LOOP_END ? 0 : prev + TICK_MS / 1000));
-      }
+      const step = time.current + TICK_MS / 1000;
+      moveTo(a && !a.paused ? a.currentTime : step > DEMO_LOOP_END ? 0 : step);
     }, TICK_MS);
     return () => window.clearInterval(id);
-  }, [ticking]);
+  }, [ticking, moveTo]);
 
-  // Reduced motion: the finished call, unless the clip is playing (then the bar follows it).
-  const shown = reduced ? SAMPLE_CALL_DURATION : t;
-  const progress = Math.min(
-    100,
-    ((reduced && mode !== "silent" ? t : shown) / SAMPLE_CALL_DURATION) * 100,
-  );
+  const shown = reduced ? SAMPLE_CALL_DURATION : reached;
   const booked = shown >= BOOKED_AT;
   const lastStage = DEMO_STAGES.reduce((acc, s, i) => (shown >= s.at ? i : acc), 0);
 
@@ -98,7 +133,7 @@ export function LiveDemo({
     }
     if (mode === "silent") {
       a.currentTime = 0;
-      setT(0);
+      moveTo(0);
     }
     setMode("playing");
     void a.play().catch(() => setMode("silent"));
@@ -193,8 +228,8 @@ export function LiveDemo({
           </div>
           <div aria-hidden="true" className="bg-line h-[2px]">
             <div
-              className="bg-teal h-[2px] transition-[width] duration-100 ease-linear motion-reduce:transition-none"
-              style={{ width: `${progress.toFixed(1)}%` }}
+              ref={bar}
+              className="bg-teal h-[2px] w-0 transition-[width] duration-100 ease-linear motion-reduce:transition-none"
             />
           </div>
           <ol

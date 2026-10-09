@@ -29,6 +29,8 @@ describe("Nav", () => {
     expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(button.getAttribute("aria-label")).toBe("Close menu");
     const menu = document.getElementById("mobile-menu")!;
+    // The panel's entrance animation is skipped under reduced motion.
+    expect(menu.closest("[class*='animate-']")?.className).toContain("motion-reduce:animate-none");
     expect(
       within(menu)
         .getAllByRole("link")
