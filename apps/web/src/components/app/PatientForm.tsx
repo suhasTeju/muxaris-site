@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { LANGUAGES, type Patient } from "@muxaris/shared";
-import { useApi } from "@/lib/api-client";
-import { fieldClass, ghostBtn, primaryBtn } from "./Modal";
+import { useId, useState } from "react";
+import { LANGUAGES, indianPhone, type Patient } from "@muxaris/shared";
+import { Button, Field, Input, Modal, Select, Textarea, cn } from "@/components/ui";
+import { useCoreApi } from "./core/api";
 
 type Initial = Pick<Patient, "name" | "email" | "preferredLanguage" | "dob" | "notes">;
 type Props =
@@ -16,14 +16,25 @@ type Props =
       onCancel: () => void;
     };
 
-/** Create or edit a patient. Edit sends only the fields that changed; cleared text becomes null. */
+export const PHONE_ERROR = "Enter a 10-digit Indian mobile number, for example 98765 43210.";
+
+/** Inputs sit inside 500-weight #2c3646 labels in the design and inherit both. */
+const control = "font-medium text-ink-2";
+
+/**
+ * Create or edit a patient. Create is the design's "Add patient" dialog (two-column grid, footer
+ * buttons); edit is the single column that replaces the details on the patient card. Edit sends
+ * only the fields that changed; cleared text becomes null.
+ */
 export function PatientForm(props: Props) {
-  const api = useApi();
+  const api = useCoreApi();
+  const formId = useId();
   const initial: Initial =
     props.mode === "edit"
       ? props.initial
       : { name: null, email: null, preferredLanguage: "en-IN", dob: null, notes: null };
   const [phone, setPhone] = useState("");
+  const [phoneBad, setPhoneBad] = useState(false);
   const [name, setName] = useState(initial.name ?? "");
   const [email, setEmail] = useState(initial.email ?? "");
   const [language, setLanguage] = useState(initial.preferredLanguage);
@@ -34,6 +45,10 @@ export function PatientForm(props: Props) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (props.mode === "create" && !indianPhone.safeParse(phone).success) {
+      setPhoneBad(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -73,102 +88,125 @@ export function PatientForm(props: Props) {
     }
   }
 
-  const label = "flex flex-col gap-1 text-sm";
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
-      {props.mode === "create" ? (
-        <div className={label}>
-          <label htmlFor="pf-phone" className="text-muted">
-            Phone
-          </label>
-          <input
-            id="pf-phone"
-            className={fieldClass}
+  const create = props.mode === "create";
+  const alert = error ? (
+    <p role="alert" className={cn("text-rose m-0 text-[13px]", create && "col-span-full")}>
+      {error}
+    </p>
+  ) : null;
+  const fields = (
+    <>
+      {create ? (
+        <Field label="Phone" error={phoneBad ? PHONE_ERROR : undefined}>
+          <Input
+            type="tel"
             inputMode="tel"
+            autoComplete="off"
+            placeholder="+91 98765 43210"
             required
+            className={control}
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              setPhoneBad(false);
+            }}
           />
-        </div>
+        </Field>
       ) : null}
-      <div className={label}>
-        <label htmlFor="pf-name" className="text-muted">
-          Name
-        </label>
-        <input
-          id="pf-name"
-          className={fieldClass}
+      <Field label="Name">
+        <Input
+          className={control}
           maxLength={120}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-      </div>
-      <div className={label}>
-        <label htmlFor="pf-email" className="text-muted">
-          Email
-        </label>
-        <input
-          id="pf-email"
+      </Field>
+      <Field label="Email">
+        <Input
           type="email"
-          className={fieldClass}
+          className={control}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-      </div>
-      <div className={label}>
-        <label htmlFor="pf-language" className="text-muted">
-          Language
-        </label>
-        <select
-          id="pf-language"
-          className={fieldClass}
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-        >
+      </Field>
+      <Field label="Language">
+        <Select className={control} value={language} onChange={(e) => setLanguage(e.target.value)}>
           {LANGUAGES.map((l) => (
             <option key={l.code} value={l.code}>
               {l.label}
             </option>
           ))}
-        </select>
-      </div>
-      <div className={label}>
-        <label htmlFor="pf-dob" className="text-muted">
-          Date of birth
-        </label>
-        <input
-          id="pf-dob"
+        </Select>
+      </Field>
+      <Field label="Date of birth">
+        <Input
           type="date"
-          className={fieldClass}
+          className={control}
           value={dob}
           onChange={(e) => setDob(e.target.value)}
         />
-      </div>
-      <div className={label}>
-        <label htmlFor="pf-notes" className="text-muted">
-          Notes
-        </label>
-        <textarea
-          id="pf-notes"
-          className={`${fieldClass} py-2`}
+      </Field>
+      <Field label="Notes" className={create ? "col-span-full" : undefined}>
+        <Textarea
+          className={control}
           rows={3}
           maxLength={1000}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
-      </div>
-      {error ? (
-        <p role="alert" className="text-danger text-sm">
-          {error}
-        </p>
-      ) : null}
-      <div className="flex justify-end gap-3">
-        <button type="button" className={ghostBtn} onClick={props.onCancel}>
+      </Field>
+    </>
+  );
+
+  if (create) {
+    return (
+      <Modal
+        title="Add patient"
+        width={520}
+        onClose={props.onCancel}
+        // The design's header is 20/22/12 and the body starts 6px lower.
+        className="[&>div:first-child]:pb-[12px] [&>div:nth-child(2)]:pt-[6px]"
+        footer={
+          <>
+            <Button variant="secondary" size={40} onClick={props.onCancel}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form={formId}
+              size={40}
+              className="px-[18px] shadow-none"
+              disabled={busy}
+            >
+              {busy ? "Saving…" : "Save"}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id={formId}
+          noValidate
+          onSubmit={submit}
+          className="grid grid-cols-1 gap-[12px] sm:grid-cols-2"
+        >
+          {fields}
+          {alert}
+        </form>
+      </Modal>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-[12px]">
+      {fields}
+      {alert}
+      <div className="flex gap-[8px]">
+        <Button variant="secondary" size={38} className="flex-1" onClick={props.onCancel}>
           Cancel
-        </button>
-        <button type="submit" className={primaryBtn} disabled={busy}>
+        </Button>
+        <Button type="submit" size={38} className="flex-1 shadow-none" disabled={busy}>
           {busy ? "Saving…" : "Save"}
-        </button>
+        </Button>
       </div>
     </form>
   );

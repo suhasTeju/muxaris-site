@@ -2,7 +2,7 @@
  * Preview data for the core screens, derived from the design fixtures the way the API would
  * derive it (stats, today's range, names). Development only.
  */
-import type { Appointment } from "@muxaris/shared";
+import type { Appointment, PatientDetail } from "@muxaris/shared";
 import {
   FIXTURE_NOW,
   FIXTURE_TODAY,
@@ -11,6 +11,7 @@ import {
   calls,
   clinic,
   doctors,
+  notifications,
   patients,
   services,
 } from "@/components/dev/fixtures";
@@ -49,4 +50,27 @@ export function param(
 ): string | undefined {
   const v = q[key];
   return Array.isArray(v) ? v[0] : v;
+}
+
+/** GET /v1/patients/:id for a fixture patient, plus its messages (GET /v1/notifications). */
+export function patientDetail(id: string) {
+  const patient = patients.find((p) => p.id === id);
+  if (!patient) return null;
+  const detail: PatientDetail = {
+    patient,
+    appointments: appointments
+      .filter((a) => a.patientId === id)
+      .sort((a, b) => b.startsAt.localeCompare(a.startsAt)),
+    calls: calls
+      .filter((c) => c.patientId === id)
+      .map(({ id: cid, startedAt, endedAt, durationS, outcome, summary }) => ({
+        id: cid,
+        startedAt,
+        endedAt,
+        durationS,
+        outcome,
+        summary,
+      })),
+  };
+  return { detail, notifications: notifications.filter((n) => n.patientId === id) };
 }

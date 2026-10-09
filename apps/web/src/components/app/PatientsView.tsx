@@ -1,172 +1,194 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Search, UserPlus } from "lucide-react";
 import type { Patient } from "@muxaris/shared";
-import { useApi } from "@/lib/api-client";
-import { formatDay, languageLabel } from "@/lib/dashboard";
-import { EmptyState } from "./EmptyState";
-import { fieldClass, ghostBtn, Modal, primaryBtn } from "./Modal";
+import {
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  PageHeader,
+  TableHead,
+  TableRow,
+  cn,
+  useToast,
+} from "@/components/ui";
+import { languageLabel } from "@/lib/dashboard";
+import { useCoreApi } from "./core/api";
+import { formatDayShort, initials } from "./core/format";
 import { PatientForm } from "./PatientForm";
 
 const PAGE = 50;
+const COLUMNS = "minmax(0,1.4fr) 170px 110px minmax(0,1.2fr) 110px";
+
+function PatientRow({ p, tz }: { p: Patient; tz: string }) {
+  return (
+    <TableRow columns={COLUMNS} href={`/app/patients/${p.id}`}>
+      <span className="flex min-w-0 items-center gap-[10px]">
+        <span
+          aria-hidden
+          className={cn(
+            "grid size-[30px] shrink-0 place-items-center rounded-full text-[12px] font-semibold",
+            p.name ? "bg-teal-soft text-teal-ink" : "bg-chip text-muted-2",
+          )}
+        >
+          {initials(p.name)}
+        </span>
+        <span className={cn("truncate font-medium", !p.name && "text-muted-2")}>
+          {p.name ?? "Unnamed"}
+        </span>
+      </span>
+      <span className="text-ink-2 font-mono text-[12.5px]">{p.phoneMasked}</span>
+      <span className="text-ink-2">{languageLabel(p.preferredLanguage)}</span>
+      <span className="text-muted truncate">{p.email ?? "—"}</span>
+      <span className="text-muted font-mono text-[12.5px]">{formatDayShort(p.createdAt, tz)}</span>
+    </TableRow>
+  );
+}
 
 /**
- * Searchable patient list. The server renders the unfiltered first page; the search term stays in
- * component state only (never the URL), because it can be a phone number, email or name.
+ * Patients list from AppPatients.dc.html. The server renders the unfiltered first page; the search
+ * term stays in component state only (never the URL), because it can be a phone number, email or
+ * name.
  */
 export function PatientsView({
   initial,
   initialTotal,
   tz,
+  initialAdding = false,
 }: {
   initial: Patient[];
   initialTotal: number;
   tz: string;
+  /** Open the Add patient dialog on mount (dev previews). */
+  initialAdding?: boolean;
 }) {
-  const api = useApi();
+  const api = useCoreApi();
   const router = useRouter();
+  const { toast } = useToast();
   const [items, setItems] = useState(initial);
   const [total, setTotal] = useState(initialTotal);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(initialAdding);
   const seq = useRef(0);
-  const first = useRef(true);
+  // The term the list on screen was fetched for; the server rendered the unfiltered first page.
+  const shown = useRef("");
 
-  async function fetchPage(query: string, offset: number) {
-    const id = ++seq.current;
-    setBusy(true);
-    setError(null);
-    try {
-      const qs = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
-      if (query) qs.set("q", query);
-      const r = await api<{ patients: Patient[]; total: number }>(`/v1/patients?${qs}`);
-      if (id !== seq.current) return;
-      setItems((prev) => {
-        if (offset === 0) return r.patients;
-        const seen = new Set(prev.map((p) => p.id));
-        return [...prev, ...r.patients.filter((p) => !seen.has(p.id))];
-      });
-      setTotal(r.total);
-    } catch (e) {
-      if (id === seq.current) setError(e instanceof Error ? e.message : "Could not load patients");
-    } finally {
-      if (id === seq.current) setBusy(false);
-    }
-  }
+  const fetchPage = useCallback(
+    async (query: string, offset: number) => {
+      const id = ++seq.current;
+      setBusy(true);
+      setError(null);
+      try {
+        const qs = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
+        if (query) qs.set("q", query);
+        const r = await api<{ patients: Patient[]; total: number }>(`/v1/patients?${qs}`);
+        if (id !== seq.current) return;
+        setItems((prev) => {
+          if (offset === 0) return r.patients;
+          const seen = new Set(prev.map((p) => p.id));
+          return [...prev, ...r.patients.filter((p) => !seen.has(p.id))];
+        });
+        setTotal(r.total);
+      } catch (e) {
+        if (id === seq.current)
+          setError(e instanceof Error ? e.message : "Could not load patients");
+      } finally {
+        if (id === seq.current) setBusy(false);
+      }
+    },
+    [api],
+  );
 
-  // Debounced search: refetch from the first page.
+  // Debounced search: refetch from the first page whenever the trimmed term changes.
   useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
+    const term = q.trim();
+    if (term === shown.current) return;
     const t = setTimeout(() => {
-      void fetchPage(q.trim(), 0);
+      shown.current = term;
+      void fetchPage(term, 0);
     }, 300);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, fetchPage]);
 
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <div className="flex min-w-56 flex-1 flex-col gap-1 text-sm">
-          <label htmlFor="patient-search" className="text-muted">
-            Search patients
-          </label>
-          <input
-            id="patient-search"
-            type="search"
-            className={fieldClass}
-            placeholder="Name, phone or email"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-        <button type="button" className={primaryBtn} onClick={() => setAdding(true)}>
-          Add patient
-        </button>
-      </div>
+    <div className="animate-mx-in flex flex-col gap-[18px]">
+      <PageHeader
+        title="Patients"
+        subtitle={`${initialTotal} ${initialTotal === 1 ? "patient" : "patients"}`}
+        actions={
+          <Button icon={UserPlus} onClick={() => setAdding(true)}>
+            Add patient
+          </Button>
+        }
+      />
+      <label className="relative flex max-w-[420px] items-center">
+        <span className="sr-only">Search patients</span>
+        <Input
+          type="search"
+          icon={Search}
+          className="rounded-10 pr-[12px] text-[14.5px]"
+          placeholder="Name, phone or email"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </label>
       {error ? (
-        <p role="alert" className="text-danger mb-3 text-sm">
-          {error}{" "}
-          <button type="button" className="underline" onClick={() => fetchPage(q.trim(), 0)}>
+        <p role="alert" className="text-rose m-0 flex items-center gap-[10px] text-[13.5px]">
+          {error}
+          <Button variant="secondary" size={28} onClick={() => fetchPage(q.trim(), 0)}>
             Retry
-          </button>
+          </Button>
         </p>
       ) : null}
       {items.length === 0 ? (
-        <EmptyState>
+        <EmptyState size="sm">
           {q.trim()
             ? "No patients match that search."
             : "No patients yet. They are added automatically when the assistant books an appointment."}
         </EmptyState>
       ) : (
-        <div className="border-line bg-surface rounded-card overflow-x-auto border">
-          <table className="w-full text-left text-[15px]">
-            <thead className="text-muted text-sm">
-              <tr>
-                <th scope="col" className="px-3 py-2 font-normal">
-                  Name
-                </th>
-                <th scope="col" className="px-3 py-2 font-normal">
-                  Phone
-                </th>
-                <th scope="col" className="px-3 py-2 font-normal">
-                  Language
-                </th>
-                <th scope="col" className="px-3 py-2 font-normal">
-                  Email
-                </th>
-                <th scope="col" className="px-3 py-2 font-normal">
-                  Added
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+        <Card aria-label="Patients" className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <div className="min-w-[760px]">
+              <TableHead columns={COLUMNS}>
+                <span>Name</span>
+                <span>Phone</span>
+                <span>Language</span>
+                <span>Email</span>
+                <span>Added</span>
+              </TableHead>
               {items.map((p) => (
-                <tr key={p.id} className="border-line border-t">
-                  <td className="px-3 py-3">
-                    <Link
-                      href={`/app/patients/${p.id}`}
-                      className="text-accent-deep font-medium underline-offset-4 hover:underline"
-                    >
-                      {p.name ?? "Unnamed"}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-3 tabular-nums">{p.phoneMasked}</td>
-                  <td className="px-3 py-3">{languageLabel(p.preferredLanguage)}</td>
-                  <td className="px-3 py-3">{p.email ?? "—"}</td>
-                  <td className="text-muted px-3 py-3 whitespace-nowrap">
-                    {formatDay(p.createdAt, tz)}
-                  </td>
-                </tr>
+                <PatientRow key={p.id} p={p} tz={tz} />
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </div>
+        </Card>
       )}
       {items.length < total ? (
-        <button
-          type="button"
-          className={`${ghostBtn} mt-4`}
+        <Button
+          variant="secondary"
+          size={36}
+          className="self-start"
           disabled={busy}
           onClick={() => fetchPage(q.trim(), items.length)}
         >
           {busy ? "Loading…" : "Load more"}
-        </button>
+        </Button>
       ) : null}
       {adding ? (
-        <Modal title="Add patient" onClose={() => setAdding(false)}>
-          <PatientForm
-            mode="create"
-            onCancel={() => setAdding(false)}
-            onSaved={(p) => router.push(`/app/patients/${p.id}`)}
-          />
-        </Modal>
+        <PatientForm
+          mode="create"
+          onCancel={() => setAdding(false)}
+          onSaved={(p) => {
+            toast("Patient added");
+            router.push(`/app/patients/${p.id}`);
+          }}
+        />
       ) : null}
     </div>
   );
