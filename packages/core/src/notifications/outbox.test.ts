@@ -126,6 +126,52 @@ const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
     expect(retried.toMasked).toBe("r•••@example.test");
     expect(retried.payload.subject).toContain(a.clinic.name);
     expect(retried.payload.body).toContain("Ravi");
+    // Now an email: the stored row gained the HTML part, the API view never carries it.
+    expect(retried.payload).not.toHaveProperty("html");
+    const stored = await rowOf(apt.id, "appointment_confirmed");
+    expect(String(stored!.payload["html"])).toMatch(/^<!DOCTYPE html>/);
+  });
+
+  it("stores the HTML email only on email rows, next to the unchanged one-paragraph text", async () => {
+    await withEmail("+919876600090", "meera@example.test");
+    const byEmail = await book("+919876600090", dayAt(15), "Meera Krishnan");
+    const email = await rowOf(byEmail.id, "appointment_confirmed");
+    expect(email).toMatchObject({ channel: "email", status: "queued" });
+    expect(String(email!.payload["html"])).toContain("Namaste Meera.");
+    // The text body keeps the pre-redesign shape: one paragraph, the full name, the phone as stored.
+    expect(email!.payload["body"]).toMatch(
+      /^Namaste Meera Krishnan\. Your Cleaning with Dr Rao at /,
+    );
+    expect(String(email!.payload["body"])).not.toContain("\n");
+
+    const byWhatsApp = await bookAppointment(db, {
+      clinicId: a.clinic.id,
+      patient: { phone: "+919876600091", name: "Arjun" },
+      doctorId,
+      serviceId,
+      startsAt: dayAt(16),
+      source: "dashboard",
+      allowOutsideRules: true,
+      notify: { sms: false, whatsapp: true },
+    });
+    const whatsapp = await rowOf(byWhatsApp.id, "appointment_confirmed");
+    expect(whatsapp).toMatchObject({ channel: "whatsapp", status: "queued" });
+    expect(whatsapp!.payload).not.toHaveProperty("html");
+    expect(whatsapp!.payload["body"]).toMatch(/^Namaste Arjun\. /);
+
+    const skipped = await rowOf(
+      (await book("+919876600092", dayAt(17))).id,
+      "appointment_confirmed",
+    );
+    expect(skipped).toMatchObject({ status: "skipped", error: "no_contact" });
+    expect(skipped!.payload).not.toHaveProperty("html");
+
+    const listed = await listNotifications(db, a.clinic.id, {
+      appointmentId: byEmail.id,
+      limit: 10,
+      offset: 0,
+    });
+    expect(listed.notifications[0]!.payload).not.toHaveProperty("html");
   });
 
   it("reschedule and cancel queue their own kinds and reschedule re-arms reminders", async () => {

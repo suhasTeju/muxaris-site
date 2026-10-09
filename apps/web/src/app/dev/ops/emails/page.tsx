@@ -12,7 +12,9 @@ import {
 // development-only gallery imports the one self-contained template module directly instead.
 import {
   formatWhen,
+  renderEmailHtml,
   renderNotification,
+  type TemplateVars,
 } from "../../../../../../../packages/core/src/notifications/templates";
 import { EmailFrame } from "./EmailFrame";
 
@@ -40,20 +42,22 @@ export default async function EmailsPreview({
   const label = LANGUAGES.find((l) => l.code === lang)?.label ?? lang;
   const startsAt = new Date("2026-10-09T11:00:00Z"); // Fri 9 Oct 2026, 4:30 pm IST
   const timezone = "Asia/Kolkata";
+  const vars: TemplateVars = {
+    patientName: "Ananya Krishnan",
+    clinicName: "Sunrise Dental Care",
+    doctorName: "Dr. Meera Rao",
+    serviceName: "Consultation",
+    when: formatWhen(startsAt, timezone, lang),
+    clinicPhone: "+918041234567",
+    startsAt,
+    timezone,
+    clinicAddress: "41, 9th Block, Jayanagar, Bengaluru",
+    clinicCity: "Bengaluru",
+  };
   const emails = NOTIFICATION_KINDS.map((kind) => ({
     kind,
-    ...renderNotification(kind, lang, {
-      patientName: "Ananya Krishnan",
-      clinicName: "Sunrise Dental Care",
-      doctorName: "Dr. Meera Rao",
-      serviceName: "Consultation",
-      when: formatWhen(startsAt, timezone, lang),
-      clinicPhone: "+918041234567",
-      startsAt,
-      timezone,
-      clinicAddress: "41, 9th Block, Jayanagar, Bengaluru",
-      clinicCity: "Bengaluru",
-    }),
+    subject: renderNotification(kind, lang, vars).subject,
+    html: renderEmailHtml(kind, lang, vars),
   }));
   const row = "flex gap-[8px]";
   const key = "text-muted w-[56px] shrink-0";

@@ -3,7 +3,9 @@ import { LANGUAGE_CODES, NOTIFICATION_KINDS } from "@muxaris/shared";
 import {
   displayPhone,
   escapeHtml,
+  formatEmailWhen,
   formatWhen,
+  renderEmailHtml,
   renderNotification,
   templateLanguage,
   type TemplateVars,
@@ -38,46 +40,64 @@ describe("notification templates", () => {
         expect(r.subject).not.toMatch(/\{[a-z]+\}/);
         // subjects never carry the patient's name
         expect(r.subject).not.toContain("Ravi");
-        expect(r.html, `${lang}/${kind} html`).toContain("Sunrise Dental");
-        expect(r.html).toContain(`<html lang="${lang}">`);
-        expect(r.html).not.toMatch(/\{[a-z]+\}|undefined|null/);
+        expect(r).not.toHaveProperty("html");
+        const html = renderEmailHtml(kind, lang, full);
+        expect(html, `${lang}/${kind} html`).toContain("Sunrise Dental");
+        expect(html).toContain(`<html lang="${lang}">`);
+        expect(html).not.toMatch(/\{[a-z]+\}|undefined|null/);
       }
     }
   });
 
-  it("writes the text body as three paragraphs, greeting by first name", () => {
+  it("keeps the text body as it always was: one paragraph, full name, phone as stored", () => {
     const r = renderNotification("appointment_confirmed", "en-IN", vars);
     expect(r.body).toBe(
-      "Namaste Ravi.\n\nYour cleaning with Dr. Rao at Sunrise Dental is booked for Mon, 6 Oct 2026, 11:00 am.\n\nTo change it, call +91 80 4000 1234.",
+      "Namaste Ravi Kumar. Your Cleaning with Dr. Rao at Sunrise Dental is booked for Mon, 6 Oct 2026, 11:00 am. To change it, call +918040001234.",
     );
     expect(
       renderNotification("appointment_confirmed", "en-IN", { ...vars, patientName: null }).body,
-    ).toMatch(/^Namaste\.\n\n/);
+    ).toMatch(/^Namaste\. Your/);
     expect(renderNotification("appointment_cancelled", "en-IN", vars).body).toMatch(
-      /\n\nCall the clinic to book again\.$/,
+      / Call the clinic to book again\.$/,
+    );
+    // The email's own date format and first-name greeting stay out of the text body.
+    expect(renderNotification("appointment_confirmed", "en-IN", full).body).toContain(vars.when);
+  });
+
+  it("writes the email's sentence as the design does: first name, design date, grouped phone", () => {
+    const html = renderEmailHtml("appointment_confirmed", "en-IN", full);
+    expect(html).toContain("Namaste Ravi.");
+    expect(html).toContain(
+      "Your cleaning with Dr. Rao at Sunrise Dental is booked for Fri, 9 Oct 2026, 4:30 pm.",
+    );
+    expect(html).toContain("To change it, call +91 80 4000 1234.");
+    // Without a start time the sentence falls back to the text body's `when`.
+    expect(renderEmailHtml("appointment_confirmed", "en-IN", vars)).toContain(
+      "booked for Mon, 6 Oct 2026, 11:00 am.",
     );
   });
 
-  it("keeps acronyms in an English service name and leaves other languages' names alone", () => {
-    const rct = { ...vars, serviceName: "Root Canal (RCT)" };
-    expect(renderNotification("appointment_confirmed", "en-IN", rct).body).toContain(
-      "Your root canal (RCT) with",
-    );
-    expect(renderNotification("appointment_confirmed", "hi-IN", rct).body).toContain(
-      "Root Canal (RCT)",
-    );
+  it("lowers only common-word service names in the email; brands and other languages keep case", () => {
+    const sentence = (serviceName: string, lang: "en-IN" | "hi-IN" = "en-IN") =>
+      renderEmailHtml("appointment_confirmed", lang, { ...full, serviceName });
+    expect(sentence("Root Canal (RCT)")).toContain("Your root canal (RCT) with");
+    expect(sentence("Teeth Cleaning")).toContain("Your teeth cleaning with");
+    expect(sentence("Invisalign Consultation")).toContain("Your Invisalign Consultation with");
+    expect(sentence("Root Canal (RCT)", "hi-IN")).toContain("Root Canal (RCT)");
+    // The text body never changes the name's case.
+    expect(
+      renderNotification("appointment_confirmed", "en-IN", { ...vars, serviceName: "Root Canal" })
+        .body,
+    ).toContain("Your Root Canal with");
   });
 
   it("includes the clinic phone only when present", () => {
     expect(renderNotification("appointment_confirmed", "hi-IN", vars).body).toContain(
-      "+91 80 4000 1234",
+      "+918040001234",
     );
-    const none = renderNotification("appointment_confirmed", "hi-IN", {
-      ...vars,
-      clinicPhone: null,
-    });
-    expect(none.body).not.toContain("+91");
-    expect(none.html).not.toContain("tel:");
+    const none = { ...vars, clinicPhone: null };
+    expect(renderNotification("appointment_confirmed", "hi-IN", none).body).not.toContain("+91");
+    expect(renderEmailHtml("appointment_confirmed", "hi-IN", none)).not.toContain("tel:");
   });
 
   it("groups Indian numbers for reading and leaves others as stored", () => {
@@ -88,7 +108,7 @@ describe("notification templates", () => {
   });
 
   it("builds the designed email: header, chip, date card, call button and footer", () => {
-    const { html } = renderNotification("appointment_confirmed", "en-IN", full);
+    const html = renderEmailHtml("appointment_confirmed", "en-IN", full);
     expect(html).toMatch(/^<!DOCTYPE html>/);
     expect(html).toContain("JAYANAGAR · BENGALURU");
     expect(html).toContain("Appointment confirmed</td>");
@@ -110,18 +130,18 @@ describe("notification templates", () => {
   });
 
   it("strikes the time through on a cancellation and colours the card per kind", () => {
-    const cancelled = renderNotification("appointment_cancelled", "en-IN", full).html;
+    const cancelled = renderEmailHtml("appointment_cancelled", "en-IN", full);
     expect(cancelled.match(/text-decoration:line-through/g)).toHaveLength(2);
     expect(cancelled).toContain("background-color:#eef2f6;border-radius:15px 0 0 15px");
-    expect(renderNotification("appointment_rescheduled", "en-IN", full).html).toContain(
+    expect(renderEmailHtml("appointment_rescheduled", "en-IN", full)).toContain(
       "border:1px solid #f3dfb8",
     );
-    expect(renderNotification("reminder_2h", "en-IN", full).html).toContain("Appointment today");
-    expect(renderNotification("reminder_24h", "en-IN", full).html).not.toContain("line-through");
+    expect(renderEmailHtml("reminder_2h", "en-IN", full)).toContain("Appointment today");
+    expect(renderEmailHtml("reminder_24h", "en-IN", full)).not.toContain("line-through");
   });
 
   it("leaves the date card out without a start time", () => {
-    const { html } = renderNotification("appointment_confirmed", "en-IN", vars);
+    const html = renderEmailHtml("appointment_confirmed", "en-IN", vars);
     expect(html).not.toContain(">OCT<");
     expect(html).toContain("Namaste Ravi.");
   });
@@ -133,7 +153,7 @@ describe("notification templates", () => {
       clinicName: 'Smile & "Co"',
       clinicAddress: "<script>x</script>, Bengaluru",
     };
-    const { html } = renderNotification("appointment_confirmed", "en-IN", evil);
+    const html = renderEmailHtml("appointment_confirmed", "en-IN", evil);
     expect(html).not.toContain("<b>");
     expect(html).not.toContain("<script>");
     expect(html).toContain("Smile &amp; &quot;Co&quot;");
@@ -143,11 +163,28 @@ describe("notification templates", () => {
 
   it("formats times in the clinic zone and language", () => {
     const at = new Date("2026-10-06T05:30:00Z");
-    expect(formatWhen(at, "Asia/Kolkata", "en-IN")).toBe("Tue, 6 Oct 2026, 11:00 am");
-    expect(formatWhen(new Date("2026-09-10T10:30:00Z"), "Asia/Kolkata", "en-IN")).toBe(
+    // The text body's format is Intl's, as before the redesign.
+    expect(formatWhen(at, "Asia/Kolkata", "en-IN")).toBe(
+      new Intl.DateTimeFormat("en-IN", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: "Asia/Kolkata",
+      }).format(at),
+    );
+    expect(formatWhen(at, "Asia/Kolkata", "en-IN")).toMatch(/6 Oct,? 2026/);
+    expect(formatWhen(at, "Asia/Kolkata", "hi-IN")).toMatch(/2026/);
+    // The email's sentence reads as the design writes it.
+    expect(formatEmailWhen(at, "Asia/Kolkata", "en-IN")).toBe("Tue, 6 Oct 2026, 11:00 am");
+    expect(formatEmailWhen(new Date("2026-09-10T10:30:00Z"), "Asia/Kolkata", "en-IN")).toBe(
       "Thu, 10 Sep 2026, 4:00 pm",
     );
-    expect(formatWhen(at, "Asia/Kolkata", "hi-IN")).toMatch(/2026/);
+    expect(formatEmailWhen(at, "Asia/Kolkata", "hi-IN")).toBe(
+      formatWhen(at, "Asia/Kolkata", "hi-IN"),
+    );
   });
 
   it("falls back to English for unknown codes", () => {
