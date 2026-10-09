@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
+import { X } from "lucide-react";
 import { CALL_OUTCOMES } from "@muxaris/shared";
+import { Button, Field, Input, Select } from "@/components/ui";
 import { OUTCOME_LABEL } from "@/lib/dashboard";
-import { fieldClass, ghostBtn } from "./Modal";
 
 export interface CallFilterValue {
   outcome?: string | undefined;
@@ -44,12 +45,12 @@ export function CallFilters({ value }: { value: CallFilterValue }) {
     <form
       aria-label="Filter calls"
       onSubmit={(e) => e.preventDefault()}
-      className="mb-6 flex flex-wrap items-end gap-3"
+      className="border-line flex flex-wrap items-end gap-[10px] rounded-14 border bg-[rgba(255,255,255,0.7)] p-[12px]"
     >
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted">Outcome</span>
-        <select
-          className={fieldClass}
+      <Field label="Outcome" variant="filter">
+        <Select
+          size={36}
+          className="w-auto min-w-[160px] font-medium"
           value={value.outcome ?? ""}
           onChange={(e) => update("outcome", e.target.value)}
         >
@@ -59,12 +60,12 @@ export function CallFilters({ value }: { value: CallFilterValue }) {
               {OUTCOME_LABEL[o]}
             </option>
           ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted">Status</span>
-        <select
-          className={fieldClass}
+        </Select>
+      </Field>
+      <Field label="Status" variant="filter">
+        <Select
+          size={36}
+          className="w-auto min-w-[150px] font-medium"
           value={value.status ?? ""}
           onChange={(e) => update("status", e.target.value)}
         >
@@ -74,32 +75,41 @@ export function CallFilters({ value }: { value: CallFilterValue }) {
               {l}
             </option>
           ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted">From</span>
-        <input
+        </Select>
+      </Field>
+      <Field label="From" variant="filter">
+        <Input
           type="date"
-          className={fieldClass}
+          size={36}
+          mono
+          className="w-auto font-medium"
           value={value.from ?? ""}
           max={value.to || undefined}
           onChange={(e) => update("from", e.target.value)}
         />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted">To</span>
-        <input
+      </Field>
+      <Field label="To" variant="filter">
+        <Input
           type="date"
-          className={fieldClass}
+          size={36}
+          mono
+          className="w-auto font-medium"
           value={value.to ?? ""}
           min={value.from || undefined}
           onChange={(e) => update("to", e.target.value)}
         />
-      </label>
+      </Field>
       {active ? (
-        <button type="button" className={ghostBtn} onClick={() => router.push(pathname)}>
+        <Button
+          variant="ghost-teal"
+          size={36}
+          icon={X}
+          iconSize={13}
+          className="gap-[6px]"
+          onClick={() => router.push(pathname)}
+        >
           Clear filters
-        </button>
+        </Button>
       ) : null}
     </form>
   );

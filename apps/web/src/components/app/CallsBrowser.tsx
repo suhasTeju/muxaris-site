@@ -2,23 +2,29 @@
 
 import { useState } from "react";
 import type { Call } from "@muxaris/shared";
-import { useApi } from "@/lib/api-client";
+import { Button } from "@/components/ui";
 import { CALLS_PAGE_SIZE } from "@/lib/dashboard";
 import { CallList } from "./CallList";
-import { ghostBtn } from "./Modal";
+import { useCoreApi } from "./core/api";
+import type { PatientNames } from "./core/calls";
 
 /** First page comes from the server; "Load more" pages through GET /v1/calls by offset. */
 export function CallsBrowser({
   initial,
   tz,
   filters = {},
+  now,
+  names,
 }: {
   initial: Call[];
   tz: string;
   /** API query params (ISO from/to already resolved); also used for every "Load more" page. */
   filters?: Record<string, string>;
+  /** Anchors "Today" and "Yesterday" (defaults to the current time). */
+  now?: Date;
+  names?: PatientNames;
 }) {
-  const api = useApi();
+  const api = useCoreApi();
   const [calls, setCalls] = useState(initial);
   const [done, setDone] = useState(initial.length < CALLS_PAGE_SIZE);
   const [busy, setBusy] = useState(false);
@@ -48,16 +54,22 @@ export function CallsBrowser({
 
   return (
     <>
-      <CallList calls={calls} tz={tz} filtered={Object.keys(filters).length > 0} />
+      <CallList
+        calls={calls}
+        tz={tz}
+        now={now}
+        names={names}
+        filtered={Object.keys(filters).length > 0}
+      />
       {error ? (
-        <p role="alert" className="text-danger mt-3 text-sm">
+        <p role="alert" className="text-rose m-0 text-[13.5px]">
           {error}
         </p>
       ) : null}
       {!done ? (
-        <button type="button" className={`${ghostBtn} mt-4`} onClick={more} disabled={busy}>
+        <Button variant="secondary" size={36} className="self-start" onClick={more} disabled={busy}>
           {busy ? "Loading…" : "Load more"}
-        </button>
+        </Button>
       ) : null}
     </>
   );

@@ -1,9 +1,11 @@
-import type { Call, Clinic } from "@muxaris/shared";
+import type { Call, Clinic, Patient } from "@muxaris/shared";
 import { callOutcomeEnum, callStatusEnum } from "@muxaris/shared";
 import { requireActiveClinic, serverApi } from "@/lib/api-server";
 import { CALLS_PAGE_SIZE, addDays, startOfLocalDay } from "@/lib/dashboard";
 import { CallsBrowser } from "@/components/app/CallsBrowser";
-import { CallFilters, type CallFilterValue } from "@/components/app/CallFilters";
+import type { CallFilterValue } from "@/components/app/CallFilters";
+import { CallsPageView } from "@/components/app/calls/CallsPageView";
+import { patientNamesFrom } from "@/components/app/core/calls";
 
 export const dynamic = "force-dynamic";
 
@@ -37,19 +39,27 @@ export default async function CallsPage({
   if (value.from) filters.from = startOfLocalDay(value.from, clinic.timezone).toISOString();
   if (value.to) filters.to = startOfLocalDay(addDays(value.to, 1), clinic.timezone).toISOString();
 
-  const { calls } = await serverApi<{ calls: Call[] }>(
-    `/v1/calls?${new URLSearchParams({ ...filters, limit: String(CALLS_PAGE_SIZE) })}`,
-  );
+  const [list, patients] = await Promise.all([
+    serverApi<{ calls: Call[]; total?: number }>(
+      `/v1/calls?${new URLSearchParams({ ...filters, limit: String(CALLS_PAGE_SIZE) })}`,
+    ),
+    // Call rows carry only the patient id; names come from the latest patients (best effort).
+    serverApi<{ patients: Patient[] }>("/v1/patients?limit=200").catch(() => null),
+  ]);
+  const total = list.total ?? list.calls.length;
   return (
-    <div className="px-4 py-8 sm:px-8">
-      <h1 className="font-display mb-6 text-3xl">Calls</h1>
-      <CallFilters value={value} />
-      <CallsBrowser
-        key={`${active.clinicId}|${new URLSearchParams(filters)}`}
-        initial={calls}
-        tz={clinic.timezone}
-        filters={filters}
-      />
-    </div>
+    <CallsPageView
+      total={total}
+      filterValue={value}
+      browser={
+        <CallsBrowser
+          key={`${active.clinicId}|${new URLSearchParams(filters)}`}
+          initial={list.calls}
+          tz={clinic.timezone}
+          filters={filters}
+          names={patients ? patientNamesFrom(patients.patients) : {}}
+        />
+      }
+    />
   );
 }

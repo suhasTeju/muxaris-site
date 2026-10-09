@@ -6,7 +6,7 @@ import type { Call, CallTurn, Callback } from "@muxaris/shared";
 import { formatDateTime, formatDuration } from "@/lib/dashboard";
 import { Badge, CallStatusBadge, OutcomeBadge } from "./Badge";
 import { AnalysisCard, PURGED_NOTE } from "./AnalysisCard";
-import { languageLabel } from "./CallList";
+import { languageLabel } from "@/lib/dashboard";
 import { CallPlayer } from "./CallPlayer";
 import { OutcomeEditor } from "./OutcomeEditor";
 import { SyncedTranscript } from "./SyncedTranscript";
@@ -47,7 +47,7 @@ export function CallDetail({
         {call.outcomeSource === "staff" ? <Badge tone="muted">Edited by staff</Badge> : null}
         <CallStatusBadge status={call.status} />
         <span className="text-muted">{formatDuration(call.durationS)}</span>
-        <span className="text-muted">{languageLabel(call.languageDetected)}</span>
+        <span className="text-muted">{call.languageDetected ? languageLabel(call.languageDetected) : "-"}</span>
         <span className="text-muted">
           {call.channel === "browser" ? "Test call" : (call.callerPhoneMasked ?? "Phone call")}
         </span>
