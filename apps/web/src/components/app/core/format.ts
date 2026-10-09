@@ -4,6 +4,7 @@
  * `YYYY-MM-DD` keys are calendar dates.
  */
 import { DEFAULT_TZ } from "@/lib/dashboard";
+import { formatIndianPhone } from "@/lib/phone";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -140,13 +141,12 @@ export function formatClock(seconds: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-/** "+91 98451 23210" for a revealed Indian number; anything else is shown as given. */
+/**
+ * A revealed number as the design prints it: "+91 98451 23210" for a mobile, "+91 80 4123 4567" for
+ * a landline (`formatIndianPhone` in @muxaris/shared); anything else is shown as given.
+ */
 export function formatPhone(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith("91")) {
-    return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
-  }
-  return raw;
+  return formatIndianPhone(raw);
 }
 
 /** Up to two initials, "?" without a name (the design's avatar). */

@@ -59,6 +59,7 @@ describe("core formats", () => {
 
   it("groups a revealed Indian number and builds initials", () => {
     expect(formatPhone("+919845123210")).toBe("+91 98451 23210");
+    expect(formatPhone("+918041234567")).toBe("+91 80 4123 4567");
     expect(formatPhone("+15550100")).toBe("+15550100");
     expect(initials("Ananya Krishnan")).toBe("AK");
     expect(initials("Dr. Meera Rao Iyer")).toBe("DM");

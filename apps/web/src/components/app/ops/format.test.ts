@@ -23,11 +23,11 @@ describe("ops formatters", () => {
     expect(shortWhen("2026-10-09T09:00:00Z", "Not/AZone")).toBe("9 Oct, 2:30 pm");
   });
 
-  it("groups Indian mobiles and metro landlines and leaves anything else alone", () => {
+  it("groups Indian mobiles and STD landlines and leaves anything else alone", () => {
     expect(displayPhone("+919739014821")).toBe("+91 97390 14821");
-    expect(displayPhone("+918041234567")).toBe("+91 80412 34567");
+    expect(displayPhone("+918041234567")).toBe("+91 80 4123 4567");
     expect(displayPhone("+911123456789")).toBe("+91 11 2345 6789");
-    expect(displayPhone("+914712345678")).toBe("+914712345678");
+    expect(displayPhone("+914712345678")).toBe("+91 471 234 5678");
     expect(displayPhone("+14155550100")).toBe("+14155550100");
   });
 });

@@ -1,4 +1,5 @@
 import { formatDay, formatTime, localDateKey } from "@/lib/dashboard";
+import { formatIndianPhone } from "@/lib/phone";
 
 const DEFAULT_TZ = "Asia/Kolkata";
 
@@ -29,15 +30,9 @@ export function shortWhen(iso: string, tz: string): string {
 }
 
 /**
- * A revealed patient number the way the design prints it: mobiles "+91 97390 14821", metro
- * landlines "+91 11 2345 6789". Ten digits starting 6-9 read as a mobile (patients call from
- * mobiles). Anything else is returned unchanged.
+ * A revealed patient number the way the design prints it: mobiles "+91 97390 14821", landlines
+ * "+91 11 2345 6789" (`formatIndianPhone` in @muxaris/shared). Anything else is returned unchanged.
  */
 export function displayPhone(phone: string): string {
-  const m = /^\+91(\d{10})$/.exec(phone.replace(/[\s-]/g, ""));
-  if (!m) return phone;
-  const d = m[1]!;
-  if (/^[6-9]/.test(d)) return `+91 ${d.slice(0, 5)} ${d.slice(5)}`;
-  if (/^(11|20|22|33|40|44)/.test(d)) return `+91 ${d.slice(0, 2)} ${d.slice(2, 6)} ${d.slice(6)}`;
-  return phone;
+  return formatIndianPhone(phone);
 }
