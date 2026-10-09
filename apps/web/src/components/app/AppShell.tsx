@@ -14,10 +14,16 @@ import { Topbar } from "./Topbar";
 export function AppShell({
   email,
   usage,
+  openCallbacks,
+  refresh = true,
   children,
 }: {
   email: string;
   usage: UsageSummary | null;
+  /** Open-callback count for the sidebar badge; the sidebar fetches it when omitted. */
+  openCallbacks?: number;
+  /** Let the sidebar fetch and refresh its counts from the API (default). */
+  refresh?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -32,7 +38,13 @@ export function AppShell({
   return (
     <ToastProvider>
       <div className="text-ink min-h-screen text-[14px] leading-[1.5] lg:grid lg:grid-cols-[244px_minmax(0,1fr)]">
-        <Sidebar open={open} onNavigate={() => setOpen(false)} initialUsage={usage} />
+        <Sidebar
+          open={open}
+          onNavigate={() => setOpen(false)}
+          initialUsage={usage}
+          initialOpenCallbacks={openCallbacks}
+          refresh={refresh}
+        />
         {open ? (
           <div
             aria-hidden="true"

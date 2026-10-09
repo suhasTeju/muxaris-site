@@ -84,15 +84,24 @@ export function Sidebar({
   open,
   onNavigate,
   initialUsage = null,
+  initialOpenCallbacks = 0,
+  refresh = true,
 }: {
   open: boolean;
   onNavigate: () => void;
   /** Usage fetched by the layout; refreshed here on navigation. */
   initialUsage?: UsageSummary | null;
+  /** Open-callback count to show before (or instead of) the fetch. */
+  initialOpenCallbacks?: number;
+  /**
+   * Fetch the open-callback count and refresh usage from the API on navigation (default). Off,
+   * the sidebar shows only the values it was given and makes no requests.
+   */
+  refresh?: boolean;
 }) {
   const pathname = usePathname() ?? "";
   const api = useApi();
-  const [openCallbacks, setOpenCallbacks] = useState(0);
+  const [openCallbacks, setOpenCallbacks] = useState(initialOpenCallbacks);
 
   // A new server value (clinic switch, router.refresh) replaces whatever was fetched here.
   const [usage, setUsage] = useState(initialUsage);
@@ -104,6 +113,7 @@ export function Sidebar({
 
   // Refreshed on navigation; a failure simply leaves no badge.
   useEffect(() => {
+    if (!refresh) return;
     let live = true;
     api<{ total: number }>("/v1/callbacks?status=open&limit=1")
       .then((r) => {
@@ -115,12 +125,13 @@ export function Sidebar({
     return () => {
       live = false;
     };
-  }, [api, pathname]);
+  }, [api, pathname, refresh]);
 
   // Minutes move after test calls, so refresh them on navigation too. The layout already fetched
   // them for the first render; a failed refresh keeps the last good value.
   const skipFirstUsage = useRef(initialUsage !== null);
   useEffect(() => {
+    if (!refresh) return;
     if (skipFirstUsage.current) {
       skipFirstUsage.current = false;
       return;
@@ -134,7 +145,7 @@ export function Sidebar({
     return () => {
       live = false;
     };
-  }, [api, pathname]);
+  }, [api, pathname, refresh]);
 
   return (
     <aside

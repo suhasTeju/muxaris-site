@@ -46,6 +46,22 @@ function route({ total = 0, minutes = usage() }: { total?: number; minutes?: unk
 const mainNav = () => within(screen.getByRole("navigation", { name: "Main" }));
 
 describe("Sidebar", () => {
+  it("shows the given values and makes no requests when refresh is off", () => {
+    route({ total: 9 });
+    render(
+      <Sidebar
+        open
+        onNavigate={() => undefined}
+        initialUsage={usage()}
+        initialOpenCallbacks={3}
+        refresh={false}
+      />,
+    );
+    expect(screen.getByLabelText("3 open")).toBeTruthy();
+    expect(screen.getByText("1,842")).toBeTruthy();
+    expect(api).not.toHaveBeenCalled();
+  });
+
   it("links Callbacks and shows the open count", async () => {
     route({ total: 3 });
     render(<Sidebar open onNavigate={() => undefined} initialUsage={usage()} />);
