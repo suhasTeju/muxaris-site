@@ -17,7 +17,13 @@ export function EmailFrame({ html, title }: { html: string; title: string }) {
     // A srcdoc frame can finish loading before hydration attaches a listener.
     if (frame.contentDocument?.readyState === "complete") fit();
     frame.addEventListener("load", fit);
-    return () => frame.removeEventListener("load", fit);
+    // A narrower frame reflows the email taller; refit whenever the frame's width changes.
+    const observer = new ResizeObserver(fit);
+    observer.observe(frame);
+    return () => {
+      frame.removeEventListener("load", fit);
+      observer.disconnect();
+    };
   }, [html]);
   return (
     <iframe

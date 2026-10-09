@@ -6,13 +6,20 @@ import {
   maskEmail,
   maskPhone,
   type ChannelFlags,
+  type NotificationChannel,
   type NotificationKind,
   type SkipReason,
 } from "@muxaris/shared";
 import { isActiveAppointmentStatus } from "../services/appointment-status.js";
 import type { DbLike } from "../services/db-types.js";
 import { CoreError } from "../services/errors.js";
-import { formatWhen, renderNotification, templateLanguage } from "./templates.js";
+import {
+  formatWhen,
+  renderEmailHtml,
+  renderNotification,
+  templateLanguage,
+  type TemplateVars,
+} from "./templates.js";
 
 const { notifications, appointments, patients, doctors, services, clinics } = schema;
 
@@ -71,12 +78,17 @@ async function loadContext(tx: DbLike, clinicId: string, appointmentId: string) 
 type AppointmentContext = Awaited<ReturnType<typeof loadContext>>;
 
 /**
- * Renders a message from the appointment as it is now, in the patient's language: subject, text
- * body and the HTML email, all stored in the payload so the notifier sends what was rendered here.
+ * Renders a message from the appointment as it is now, in the patient's language: subject and
+ * text body for every channel, plus the designed HTML email only when the row goes out by email.
+ * All of it is stored in the payload so the notifier sends what was rendered here.
  */
-function renderFromContext(ctx: AppointmentContext, kind: NotificationKind) {
+function renderFromContext(
+  ctx: AppointmentContext,
+  kind: NotificationKind,
+  channel: NotificationChannel | undefined,
+) {
   const lang = templateLanguage(ctx.patient.preferredLanguage);
-  const payload = renderNotification(kind, lang, {
+  const vars: TemplateVars = {
     patientName: ctx.patient.name,
     clinicName: ctx.clinic.name,
     doctorName: ctx.doctorName,
@@ -87,8 +99,21 @@ function renderFromContext(ctx: AppointmentContext, kind: NotificationKind) {
     timezone: ctx.clinic.timezone,
     clinicAddress: ctx.clinic.address,
     clinicCity: ctx.clinic.city,
-  });
+  };
+  const payload: { subject: string; body: string; html?: string } = renderNotification(
+    kind,
+    lang,
+    vars,
+  );
+  if (channel === "email") payload.html = renderEmailHtml(kind, lang, vars);
   return { lang, payload };
+}
+
+/** A stored payload without the HTML email, for a row that no longer goes out by email. */
+function withoutHtml(payload: Record<string, unknown>): Record<string, unknown> {
+  const rest = { ...payload };
+  delete rest["html"];
+  return rest;
 }
 
 /**
@@ -110,8 +135,8 @@ export async function queueAppointmentNotification(
   const settings = clinicNotificationSettings(clinic.settings);
   const isReminder = REMINDER_KINDS.includes(input.kind);
   if (isReminder ? !settings.reminders : !settings.confirmations) return null;
-  const { lang, payload: rendered } = renderFromContext(ctx, input.kind);
   const target = chooseChannel(patient, input.channels);
+  const { lang, payload: rendered } = renderFromContext(ctx, input.kind, target?.channel);
   const [row] = await tx
     .insert(notifications)
     .values({
@@ -327,22 +352,34 @@ export async function retryNotification(
       throw new CoreError("conflict", "this message was replaced by a later one");
 
     let patient: { email: string | null; phone: string } | undefined;
-    let rendered: { language: string; payload: Record<string, unknown> } | null = null;
+    let appointment: { ctx: AppointmentContext; kind: NotificationKind } | null = null;
     if (row.appointmentId) {
-      if (!isNotificationKind(row.template))
+      const kind = row.template;
+      if (!isNotificationKind(kind))
         throw new CoreError("conflict", "this message can no longer be retried");
       const ctx = await loadContext(tx, input.clinicId, row.appointmentId);
-      if (row.template !== "appointment_cancelled" && !isActiveAppointmentStatus(ctx.apt.status))
+      if (kind !== "appointment_cancelled" && !isActiveAppointmentStatus(ctx.apt.status))
         throw new CoreError("conflict", `the appointment is ${ctx.apt.status}`);
       if (ctx.apt.startsAt <= now)
         throw new CoreError("conflict", "the appointment time has passed");
-      const { lang, payload } = renderFromContext(ctx, row.template);
       patient = ctx.patient;
-      rendered = { language: lang, payload };
+      appointment = { ctx, kind };
     } else if (row.patientId) {
       [patient] = await tx.select().from(patients).where(eq(patients.id, row.patientId));
     }
     const target = patient ? chooseChannel(patient, input.channels) : null;
+    // Re-rendered for the channel it now goes out on; the HTML email only for email.
+    let rendered: { language: string; payload: Record<string, unknown> } | null = null;
+    if (appointment) {
+      const { lang, payload } = renderFromContext(
+        appointment.ctx,
+        appointment.kind,
+        target?.channel,
+      );
+      rendered = { language: lang, payload };
+    } else if (target && target.channel !== "email" && row.payload && "html" in row.payload) {
+      rendered = { language: row.language, payload: withoutHtml(row.payload) };
+    }
     const [updated] = await tx
       .update(notifications)
       .set({

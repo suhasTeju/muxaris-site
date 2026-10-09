@@ -59,7 +59,10 @@ export async function deliverOnce(deps: DeliverDeps, limit = 20) {
         to: n.to,
         subject: payload.subject ?? "",
         body: payload.body,
-        ...(typeof payload.html === "string" && payload.html ? { html: payload.html } : {}),
+        // The designed HTML part only ever goes with an email.
+        ...(n.channel === "email" && typeof payload.html === "string" && payload.html
+          ? { html: payload.html }
+          : {}),
       });
       await markNotificationSent(deps.db, n.id, { providerId, now });
       r.sent++;

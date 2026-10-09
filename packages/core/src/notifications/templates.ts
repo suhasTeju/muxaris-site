@@ -7,9 +7,9 @@ export interface TemplateVars {
   serviceName: string;
   /** Already formatted in the clinic's zone and the recipient's language (formatWhen). */
   when: string;
-  /** E.164; the message prints it grouped ("+91 80 4123 4567"). */
+  /** E.164. The text body prints it as stored; the HTML email groups it ("+91 80 4123 4567"). */
   clinicPhone: string | null;
-  /** The appointment's start, for the HTML email's date card (left out without it). */
+  /** The appointment's start: the HTML email's date card and sentence (left out without it). */
   startsAt?: Date;
   /** IANA zone the date card is read in (default Asia/Kolkata). */
   timezone?: string;
@@ -226,17 +226,54 @@ export function templateLanguage(code: string | null | undefined): LanguageCode 
     : "en-IN";
 }
 
+/**
+ * Subject and plain-text body for one message, on every channel: one paragraph, the patient's
+ * name as stored, the time as `when` gives it and the clinic phone as stored. The designed HTML
+ * email is separate (renderEmailHtml) and only rendered for email rows.
+ */
+export function renderNotification(
+  kind: NotificationKind,
+  lang: LanguageCode,
+  vars: TemplateVars,
+): { subject: string; body: string } {
+  const pack = PACKS[lang];
+  const t = pack.kinds[kind];
+  const tail = kind === "appointment_cancelled" ? pack.rebook : pack.change(vars.clinicPhone);
+  return {
+    subject: fill(t.subject, vars),
+    body: `${pack.greeting(vars.patientName)} ${fill(t.body, vars)} ${tail}`,
+  };
+}
+
 /** The design greets by first name: "Namaste Ananya." */
 function firstName(name: string | null): string | null {
   return name?.trim().split(/\s+/)[0] || null;
 }
 
-/** "Teeth Cleaning (RCT)" → "teeth cleaning (RCT)" for an English sentence; acronyms keep case. */
+/** Words a service name may be made of and still read as a common noun mid-sentence. */
+const GENERIC_SERVICE_WORDS = new Set(
+  (
+    "a an and of for with the new first follow-up followup general routine regular full mouth " +
+    "consultation consult check-up checkup review visit appointment session treatment procedure " +
+    "cleaning scaling polishing filling fillings extraction extractions root canal crown crowns " +
+    "bridge bridges braces aligners denture dentures implant implants whitening teeth tooth " +
+    "dental oral x-ray xray scan screening examination exam emergency minor surgery therapy " +
+    "dressing vaccination test tests"
+  ).split(" "),
+);
+
+/**
+ * "Teeth Cleaning (RCT)" → "teeth cleaning (RCT)" in an English sentence, as the design writes
+ * it. Only names made of common words (and acronyms, which keep their case) are lowered; a brand
+ * or a proper name ("Invisalign Consultation") is printed as stored.
+ */
 function inSentence(service: string): string {
-  return service
-    .split(" ")
-    .map((w) => ((w.match(/[A-Z]/g)?.length ?? 0) > 1 ? w : w.toLowerCase()))
-    .join(" ");
+  const words = service.split(" ");
+  const acronym = (w: string) => (w.match(/[A-Z]/g)?.length ?? 0) > 1;
+  const generic = (w: string) =>
+    GENERIC_SERVICE_WORDS.has(w.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/g, ""));
+  if (!words.every((w) => !w || acronym(w) || generic(w))) return service;
+  return words.map((w) => (acronym(w) ? w : w.toLowerCase())).join(" ");
 }
 
 /**
@@ -253,37 +290,34 @@ export function displayPhone(phone: string): string {
   return phone;
 }
 
-/** The three paragraphs every message has, in the recipient's language. */
+/** The email's three paragraphs, as the design writes them, in the recipient's language. */
 function parts(kind: NotificationKind, lang: LanguageCode, vars: TemplateVars) {
   const pack = PACKS[lang];
   const phone = vars.clinicPhone ? displayPhone(vars.clinicPhone) : null;
-  const sentenceVars =
-    lang === "en-IN" ? { ...vars, serviceName: inSentence(vars.serviceName) } : vars;
+  const when = vars.startsAt
+    ? formatEmailWhen(vars.startsAt, vars.timezone ?? "Asia/Kolkata", lang)
+    : vars.when;
+  const serviceName = lang === "en-IN" ? inSentence(vars.serviceName) : vars.serviceName;
   return {
     pack,
     phone,
     greeting: pack.greeting(firstName(vars.patientName)),
-    main: fill(pack.kinds[kind].body, sentenceVars),
+    main: fill(pack.kinds[kind].body, { ...vars, serviceName, when }),
     tail: kind === "appointment_cancelled" ? pack.rebook : pack.change(phone),
   };
 }
 
 /**
- * Subject, plain-text body and HTML body for one message. The text body is the three paragraphs
- * separated by blank lines; the HTML is the designed email (Muxaris Emails.dc.html).
+ * The designed HTML email (Muxaris Emails.dc.html) for one message, sent next to the text body.
+ * Rendered only for rows that go out by email.
  */
-export function renderNotification(
+export function renderEmailHtml(
   kind: NotificationKind,
   lang: LanguageCode,
   vars: TemplateVars,
-): { subject: string; body: string; html: string } {
+): string {
   const p = parts(kind, lang, vars);
-  const subject = fill(p.pack.kinds[kind].subject, vars);
-  return {
-    subject,
-    body: [p.greeting, p.main, p.tail].join("\n\n"),
-    html: emailHtml(kind, lang, vars, subject, p),
-  };
+  return emailHtml(kind, lang, vars, fill(p.pack.kinds[kind].subject, vars), p);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -520,32 +554,8 @@ ${footer}
 `;
 }
 
-/**
- * The appointment time in the clinic's zone and the recipient's language. English reads as the
- * design writes it: "Fri, 9 Oct 2026, 4:30 pm".
- */
+/** The appointment time in the clinic's zone and the recipient's language (the text body's `when`). */
 export function formatWhen(at: Date, tz: string, lang: LanguageCode): string {
-  if (lang === "en-IN") {
-    const p = Object.fromEntries(
-      new Intl.DateTimeFormat("en-US", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        timeZone: tz,
-      })
-        .formatToParts(at)
-        .map((x) => [x.type, x.value]),
-    );
-    const time = new Intl.DateTimeFormat("en-IN", {
-      hour: "numeric",
-      minute: "2-digit",
-      timeZone: tz,
-    })
-      .format(at)
-      .replace(/\s?(am|pm)/i, (_, m: string) => ` ${m.toLowerCase()}`);
-    return `${p["weekday"]}, ${p["day"]} ${p["month"]} ${p["year"]}, ${time}`;
-  }
   return new Intl.DateTimeFormat(lang, {
     weekday: "short",
     day: "numeric",
@@ -555,4 +565,31 @@ export function formatWhen(at: Date, tz: string, lang: LanguageCode): string {
     minute: "2-digit",
     timeZone: tz,
   }).format(at);
+}
+
+/**
+ * The time in the HTML email's sentence. English reads as the design writes it,
+ * "Fri, 9 Oct 2026, 4:30 pm"; other languages as formatWhen.
+ */
+export function formatEmailWhen(at: Date, tz: string, lang: LanguageCode): string {
+  if (lang !== "en-IN") return formatWhen(at, tz, lang);
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: tz,
+    })
+      .formatToParts(at)
+      .map((x) => [x.type, x.value]),
+  );
+  const time = new Intl.DateTimeFormat("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: tz,
+  })
+    .format(at)
+    .replace(/\s?(am|pm)/i, (_, m: string) => ` ${m.toLowerCase()}`);
+  return `${p["weekday"]}, ${p["day"]} ${p["month"]} ${p["year"]}, ${time}`;
 }

@@ -27,7 +27,7 @@ export function MonthBars({
       <div
         role="img"
         aria-label={title}
-        className="border-line relative flex h-[180px] items-end gap-[18px] border-b px-[6px]"
+        className="border-line relative flex h-[180px] items-end gap-[18px] border-b px-[6px] max-sm:gap-[10px]"
       >
         {included !== undefined ? (
           <div
@@ -53,7 +53,7 @@ export function MonthBars({
         ))}
       </div>
       <div
-        className="text-muted-2 flex gap-[18px] px-[6px] font-mono text-[11px]"
+        className="text-muted-2 flex gap-[18px] px-[6px] font-mono text-[11px] max-sm:gap-[10px]"
         aria-hidden="true"
       >
         {months.map((m, i) => (

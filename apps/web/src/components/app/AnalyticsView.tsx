@@ -171,9 +171,10 @@ export function AnalyticsView({
   const maxHour = a ? Math.max(0, ...a.byHour) : 0;
 
   return (
-    <div className="animate-mx-in flex flex-col gap-[18px]">
+    <div className="animate-mx-in flex flex-col gap-[18px] motion-reduce:animate-none">
       <PageHeader
         title="Analytics"
+        className="max-sm:flex-wrap max-sm:[&_h1]:text-[22px]"
         subtitle={start && end ? `${dateLong(start)} – ${dateLong(end)}` : undefined}
         actions={
           <Segmented
@@ -190,7 +191,7 @@ export function AnalyticsView({
 
       <section
         aria-label="Key numbers"
-        className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-[14px]"
+        className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(200px,1fr))]"
       >
         <KpiCard label="Calls" value={a ? num(a.totalCalls) : DASH} />
         <KpiCard label="Booked" value={a ? num(a.bookedCalls) : DASH} />

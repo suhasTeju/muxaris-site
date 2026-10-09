@@ -23,15 +23,15 @@ const log = (_level: string, _msg: string, fields?: object) => {
 
 class FakeProvider implements NotificationProvider {
   readonly channel = "email" as const;
-  sent: Array<{ to: string; subject: string }> = [];
+  sent: Array<{ to: string; subject: string; body: string; html?: string }> = [];
   constructor(private readonly fail = false) {}
-  async send(msg: { to: string; subject: string; body: string }) {
+  async send(msg: { to: string; subject: string; body: string; html?: string }) {
     if (this.fail) {
       const err = new Error("rejected by provider");
       err.name = "MessageRejected";
       throw err;
     }
-    this.sent.push({ to: msg.to, subject: msg.subject });
+    this.sent.push({ to: msg.to, subject: msg.subject, body: msg.body, html: msg.html });
     return { providerId: `fake-${this.sent.length}` };
   }
 }
@@ -87,7 +87,10 @@ describe.skipIf(!reachable)("deliverOnce", () => {
     const email = new FakeProvider();
     const r = await deliverOnce({ ...base(), providers: { email, sms: null, whatsapp: null } }, 50);
     expect(r.sent).toBeGreaterThanOrEqual(1);
-    expect(email.sent.some((s) => s.to === "one@example.test")).toBe(true);
+    const message = email.sent.find((s) => s.to === "one@example.test");
+    // The plain-text part plus the designed HTML part rendered when the row was queued.
+    expect(message?.body).not.toContain("\n");
+    expect(message?.html).toMatch(/^<!DOCTYPE html>/);
     const [after] = await db
       .select()
       .from(schema.notifications)
