@@ -18,10 +18,13 @@ const { notifications, appointments, patients, doctors, services, clinics } = sc
 
 export type NotificationRow = typeof notifications.$inferSelect;
 export type NotificationView = Omit<NotificationRow, "to"> & { toMasked: string };
+/** API shape: the recipient masked, and the payload without the stored HTML email (subject and body only). */
 export function toNotificationView(row: NotificationRow): NotificationView {
   const { to, ...rest } = row;
   const toMasked = !to ? "" : row.channel === "email" ? maskEmail(to) : maskPhone(to);
-  return { ...rest, toMasked };
+  const payload: Record<string, unknown> = { ...row.payload };
+  delete payload["html"];
+  return { ...rest, payload, toMasked };
 }
 
 export const MAX_ATTEMPTS = 5;
@@ -67,7 +70,10 @@ async function loadContext(tx: DbLike, clinicId: string, appointmentId: string) 
 
 type AppointmentContext = Awaited<ReturnType<typeof loadContext>>;
 
-/** Renders a message from the appointment as it is now, in the patient's language. */
+/**
+ * Renders a message from the appointment as it is now, in the patient's language: subject, text
+ * body and the HTML email, all stored in the payload so the notifier sends what was rendered here.
+ */
 function renderFromContext(ctx: AppointmentContext, kind: NotificationKind) {
   const lang = templateLanguage(ctx.patient.preferredLanguage);
   const payload = renderNotification(kind, lang, {
@@ -77,6 +83,10 @@ function renderFromContext(ctx: AppointmentContext, kind: NotificationKind) {
     serviceName: ctx.serviceName,
     when: formatWhen(ctx.apt.startsAt, ctx.clinic.timezone, lang),
     clinicPhone: ctx.clinic.phone,
+    startsAt: ctx.apt.startsAt,
+    timezone: ctx.clinic.timezone,
+    clinicAddress: ctx.clinic.address,
+    clinicCity: ctx.clinic.city,
   });
   return { lang, payload };
 }
