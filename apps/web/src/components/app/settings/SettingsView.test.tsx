@@ -43,6 +43,47 @@ function renderView(role: Role = "owner") {
 const section = (name: string) => screen.getByRole("region", { name });
 
 describe("SettingsView", () => {
+  it("a clinic switch shows and saves the new clinic's details, not the previous clinic's", async () => {
+    const other = {
+      ...clinic,
+      id: "cl_lake",
+      name: "Lakeside Clinic",
+      city: "Mysuru",
+      address: "12 Lake Road",
+      phone: "+918212423456",
+    };
+    const view = (c: typeof clinic, docs: typeof doctors) => (
+      <SettingsView
+        clinic={c}
+        role="owner"
+        doctors={docs}
+        services={services}
+        slotRules={slotRules}
+        assistant={assistantProfile}
+        usage={usageFor("standard")}
+        billing={{ enabled: true }}
+      />
+    );
+    const { rerender } = render(view(clinic, doctors));
+    expect(within(section("Clinic")).getByText("Sunrise Dental Care")).toBeTruthy();
+    // The shell switches clinic with a router refresh: same component, the new clinic's props.
+    rerender(view(other, []));
+    expect(within(section("Clinic")).getByText("Lakeside Clinic")).toBeTruthy();
+    expect(within(section("Clinic")).getByText("+91 821 242 3456")).toBeTruthy();
+    expect(within(section("Doctors")).queryByText(/Meera Rao/)).toBeNull();
+    api.mockResolvedValue({ clinic: other });
+    fireEvent.click(screen.getByRole("button", { name: "Edit clinic details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save clinic details" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/v1/clinic",
+        expect.objectContaining({
+          body: expect.objectContaining({ name: "Lakeside Clinic", phone: "+918212423456" }),
+        }),
+      ),
+    );
+  });
+
   it("below 1024 hides the jump list and gives the sections the full width", () => {
     renderView();
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
