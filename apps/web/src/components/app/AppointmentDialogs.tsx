@@ -12,12 +12,23 @@ import { SlotPicker, type Slot } from "./SlotPicker";
 
 export const CONFLICT = "That slot was just taken. Pick another time.";
 
+/**
+ * The slot was taken (or filled up) between showing it and booking it. Other 409s, such as a time
+ * that became too soon to book or an appointment that was already finalised, keep their own reason.
+ */
+export function slotTaken(e: unknown): boolean {
+  return (
+    e instanceof ApiError &&
+    e.code === "slot_unavailable" &&
+    (e.reason === "conflict" || e.reason === "full")
+  );
+}
+
 function errText(e: unknown): string {
-  if (e instanceof ApiError) {
-    if (e.code === "conflict" || e.status === 409) return CONFLICT;
-    return e.message;
-  }
-  return e instanceof Error ? e.message : "Something went wrong";
+  if (slotTaken(e)) return CONFLICT;
+  // Server messages start lowercase ("that time is too soon to book").
+  const m = e instanceof Error ? e.message : "";
+  return m ? m.charAt(0).toUpperCase() + m.slice(1) : "Something went wrong";
 }
 
 /** Controls sit inside 500-weight #2c3646 labels in the design and inherit both. */
@@ -124,9 +135,8 @@ export function NewAppointmentDialog({
       toast(`Booked ${service.name} for ${keyDate(day)}, ${formatTime(slot.startsAt, tz)}`);
       onDone(day);
     } catch (err) {
-      const text = errText(err);
-      setError(text);
-      if (text === CONFLICT) {
+      setError(errText(err));
+      if (slotTaken(err)) {
         // Someone else took it: drop the pick and show what is still free.
         setSlot(null);
         setReload((n) => n + 1);
@@ -267,9 +277,8 @@ export function RescheduleDialog({
       toast(`Moved to ${keyDate(day)}, ${formatTime(slot.startsAt, tz)}`);
       onDone(day);
     } catch (err) {
-      const text = errText(err);
-      setError(text);
-      if (text === CONFLICT) {
+      setError(errText(err));
+      if (slotTaken(err)) {
         setSlot(null);
         setReload((n) => n + 1);
       }

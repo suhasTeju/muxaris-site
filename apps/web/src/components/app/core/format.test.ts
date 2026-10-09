@@ -13,11 +13,21 @@ import {
   localParts,
   minutesOfDay,
   relativeDay,
+  validDateKey,
 } from "./format";
 
 const TZ = "Asia/Kolkata";
 
 describe("core formats", () => {
+  it("accepts only real calendar dates as date keys", () => {
+    expect(validDateKey("2026-10-09")).toBe("2026-10-09");
+    expect(validDateKey("2028-02-29")).toBe("2028-02-29");
+    expect(validDateKey("2026-13-45")).toBeUndefined();
+    expect(validDateKey("2026-02-30")).toBeUndefined();
+    expect(validDateKey("2026-1-9")).toBeUndefined();
+    expect(validDateKey(undefined)).toBeUndefined();
+  });
+
   it("reads instants in the clinic timezone", () => {
     // 20:14 IST on 8 Oct is 14:44 UTC.
     const p = localParts("2026-10-08T14:44:00Z", TZ);

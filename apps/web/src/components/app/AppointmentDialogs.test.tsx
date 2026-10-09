@@ -20,11 +20,76 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+const taken = () =>
+  new ApiError(409, "slot_unavailable", "that time is no longer available", undefined, "conflict");
+
+function renderNew(onDone = vi.fn()) {
+  render(
+    <NewAppointmentDialog
+      services={services}
+      doctors={doctors}
+      tz="Asia/Kolkata"
+      defaultDate="2099-01-01"
+      onClose={vi.fn()}
+      onDone={onDone}
+    />,
+  );
+  return onDone;
+}
+
+async function book() {
+  fireEvent.change(screen.getByLabelText("Service"), { target: { value: "s1" } });
+  fireEvent.click(await screen.findByRole("option", { name: /9:30 am/ }));
+  fireEvent.change(screen.getByLabelText("Patient phone"), { target: { value: "+919876543210" } });
+  fireEvent.click(screen.getByRole("button", { name: "Book appointment" }));
+}
+
 describe("NewAppointmentDialog", () => {
+  it("shows the server's reason for other 409s and keeps the picked slot", async () => {
+    let slotLoads = 0;
+    api.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path.startsWith("/v1/slots")) {
+        slotLoads += 1;
+        return { slots: [slot] };
+      }
+      if (init?.method === "POST")
+        throw new ApiError(
+          409,
+          "slot_unavailable",
+          "that time is too soon to book",
+          undefined,
+          "lead_time",
+        );
+      return {};
+    });
+    const onDone = renderNew();
+    await book();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("That time is too soon to book");
+    expect(onDone).not.toHaveBeenCalled();
+    // Not a race for the slot: the pick stays and the grid is not reloaded.
+    expect(screen.getByRole("option", { name: /9:30 am/ }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(slotLoads).toBe(1);
+  });
+
+  it("shows a clinic limit 409 as the server words it", async () => {
+    api.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path.startsWith("/v1/slots")) return { slots: [slot] };
+      if (init?.method === "POST")
+        throw new ApiError(409, "clinic_limit", "monthly booking limit reached");
+      return {};
+    });
+    renderNew();
+    await book();
+    expect((await screen.findByRole("alert")).textContent).toBe("Monthly booking limit reached");
+  });
+
   it("shows the 'slot just taken' message on a 409 conflict and keeps the dialog open", async () => {
     api.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path.startsWith("/v1/slots")) return { slots: [slot] };
-      if (init?.method === "POST") throw new ApiError(409, "conflict", "slot taken");
+      if (init?.method === "POST") throw taken();
       return {};
     });
     const onDone = vi.fn();

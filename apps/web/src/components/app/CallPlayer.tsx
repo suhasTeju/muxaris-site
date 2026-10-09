@@ -102,8 +102,11 @@ export function CallPlayer({
       setUrl(r.url);
       setFailure(null);
       setOverride(null);
-    } else if ("override" in r) setOverride(r.override);
-    else setFailure(r.failure);
+    } else if ("override" in r) {
+      // A Retry that lands on "pending" or "gone" replaces the earlier failure.
+      setFailure(null);
+      setOverride(r.override);
+    } else setFailure(r.failure);
   }, []);
   const fetchUrl = useCallback(() => requestUrl().then(apply), [requestUrl, apply]);
 

@@ -69,6 +69,13 @@ function keyParts(key: string): { y: number; m: number; d: number; wd: number } 
   return { y, m, d, wd: new Date(Date.UTC(y, m - 1, d)).getUTCDay() };
 }
 
+/** `v` when it is a real calendar date as `YYYY-MM-DD` ("2026-02-30" and "2026-13-45" are not). */
+export function validDateKey(v: string | undefined): string | undefined {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return undefined;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v ? v : undefined;
+}
+
 /** "Fri, 9 Oct 2026" for a `YYYY-MM-DD` key (the design's `h.dateLong`). */
 export function keyDateLong(key: string): string {
   const { y, m, d, wd } = keyParts(key);

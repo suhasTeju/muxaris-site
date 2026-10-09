@@ -50,6 +50,20 @@ describe("apiFetch", () => {
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 422, code: "validation_error", message: "bad input" });
     expect(err.issues).toEqual([{ message: "required" }]);
+    expect(err.reason).toBeUndefined();
+  });
+
+  it("keeps the reason a slot_unavailable error carries", async () => {
+    mockFetch(409, {
+      error: {
+        code: "slot_unavailable",
+        message: "that time is too soon to book",
+        reason: "lead_time",
+      },
+      reason: "lead_time",
+    });
+    const err = (await apiFetch("/v1/appointments").catch((e: unknown) => e)) as ApiError;
+    expect(err).toMatchObject({ status: 409, code: "slot_unavailable", reason: "lead_time" });
   });
 
   it("falls back for non-JSON errors", async () => {

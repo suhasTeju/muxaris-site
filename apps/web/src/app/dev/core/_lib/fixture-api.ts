@@ -187,7 +187,13 @@ export function createFixtureApi(opts: FixtureOptions = {}): ApiFetcher {
         )[0];
         if (conflictPending && first?.startsAt === slot.startsAt) {
           conflictPending = false;
-          throw new ApiError(409, "conflict", "Slot taken");
+          throw new ApiError(
+            409,
+            "slot_unavailable",
+            "that time is no longer available",
+            undefined,
+            "conflict",
+          );
         }
         const p = (body as { patient: { phone: string; name?: string } }).patient;
         const digits = p.phone.replace(/\D/g, "").slice(-10);

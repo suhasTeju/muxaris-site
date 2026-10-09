@@ -73,6 +73,18 @@ describe("CallPlayer", () => {
     await waitFor(() => expect(container.querySelector("audio")).not.toBeNull());
   });
 
+  it("drops the failure when a Retry finds the recording still being saved", async () => {
+    api
+      .mockRejectedValueOnce(new ApiError(500, "internal", "boom"))
+      .mockRejectedValueOnce(new ApiError(409, "recording_pending", "pending"));
+    render(<CallPlayer {...props("ready")} />);
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Recording is being saved…")).toBeTruthy();
+    expect(screen.queryByText("Recording unavailable")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("draws 48 bars, teal up to the playback position", () => {
     const bars = waveBars(0.5);
     expect(bars).toHaveLength(48);
