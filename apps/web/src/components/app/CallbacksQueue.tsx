@@ -1,14 +1,27 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowUpRight, Check, CircleCheck, Eye } from "lucide-react";
 import { useState } from "react";
 import type { Callback } from "@muxaris/shared";
 import { useApi } from "@/lib/api-client";
-import { formatDateTime } from "@/lib/dashboard";
-import { Badge } from "./Badge";
-import { EmptyState } from "./EmptyState";
-import { fieldClass, ghostBtn, primaryBtn } from "./Modal";
-import { RevealPhone } from "./RevealPhone";
+import { localDateKey } from "@/lib/dashboard";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Input,
+  PageHeader,
+  Tabs,
+  badgeFor,
+  cn,
+  useToast,
+} from "@/components/ui";
+import { callbackWhen, displayPhone } from "./ops/format";
+import { useRevealPhone } from "./ops/useRevealPhone";
 
 const PAGE = 50;
 type Tab = "open" | "done";
@@ -17,28 +30,47 @@ interface Bucket {
   total: number;
 }
 
-function Row({
+/** The design lists open callbacks urgent → high → normal, newest first within a priority. */
+const RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2 };
+const rank = (p: string) => RANK[p] ?? 3;
+
+function sortFor(tab: Tab, items: Callback[]): Callback[] {
+  const list = [...items];
+  if (tab === "open")
+    return list.sort(
+      (a, b) => rank(a.priority) - rank(b.priority) || b.createdAt.localeCompare(a.createdAt),
+    );
+  return list.sort((a, b) => (b.doneAt ?? b.createdAt).localeCompare(a.doneAt ?? a.createdAt));
+}
+
+function CallbackCard({
   cb,
   tz,
+  today,
   onChanged,
 }: {
   cb: Callback;
   tz: string;
+  today: string;
   onChanged: (updated: Callback) => void;
 }) {
   const api = useApi();
+  const { toast } = useToast();
+  const reveal = useRevealPhone(`/v1/callbacks/${encodeURIComponent(cb.id)}/reveal-phone`);
   const [note, setNote] = useState(cb.note ?? "");
   const [assignee, setAssignee] = useState(cb.assignedTo ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const open = cb.status === "open";
+  const urgent = open && cb.priority === "urgent";
+  const priority = badgeFor("priority", cb.priority);
 
   const body: Record<string, unknown> = {};
   if (assignee.trim() !== (cb.assignedTo ?? "")) body.assignedTo = assignee.trim() || null;
   if (note.trim() !== (cb.note ?? "")) body.note = note.trim();
   const dirty = Object.keys(body).length > 0;
 
-  async function patch(payload: Record<string, unknown>) {
+  async function patch(payload: Record<string, unknown>, done: string) {
     setBusy(true);
     setError(null);
     try {
@@ -47,6 +79,7 @@ function Row({
         body: payload,
       });
       onChanged(r.callback);
+      toast(done);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not update the callback");
     } finally {
@@ -55,90 +88,158 @@ function Row({
   }
 
   return (
-    <li className="flex flex-col gap-3 px-4 py-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <RevealPhone
-          masked={cb.phoneMasked}
-          path={`/v1/callbacks/${encodeURIComponent(cb.id)}/reveal-phone`}
-        />
-        <Badge tone={cb.priority === "high" || cb.priority === "urgent" ? "warn" : "muted"}>
-          {cb.priority}
-        </Badge>
-        <span className="text-muted text-sm">{formatDateTime(cb.createdAt, tz)}</span>
-        {cb.callId ? (
-          <Link
-            href={`/app/calls/${cb.callId}`}
-            className="text-accent-deep ml-auto text-sm underline-offset-4 hover:underline"
-          >
-            View call
-          </Link>
-        ) : null}
+    <Card
+      as="article"
+      className={cn(
+        "animate-mx-in flex flex-col gap-[14px] p-[18px]",
+        urgent && "border-rose-line shadow-[0_0_0_3px_rgba(224,72,112,0.08)]",
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-[12px]">
+        <div className="flex flex-wrap items-center gap-[10px]">
+          {reveal.phone ? (
+            <a
+              href={`tel:${reveal.phone}`}
+              className="text-ink hover:text-ink font-mono text-[14px] font-medium"
+            >
+              {displayPhone(reveal.phone)}
+            </a>
+          ) : (
+            <span className="font-mono text-[14px] font-medium">{cb.phoneMasked}</span>
+          )}
+          {!reveal.phone ? (
+            <Button
+              variant="secondary"
+              size={26}
+              icon={Eye}
+              disabled={reveal.busy}
+              onClick={reveal.reveal}
+            >
+              Show number
+            </Button>
+          ) : null}
+          {open ? (
+            <Badge tone={priority.tone} className="font-semibold">
+              {priority.label}
+            </Badge>
+          ) : null}
+        </div>
+        <div className="text-muted flex items-center gap-[14px] text-[13px]">
+          <span className="font-mono text-[12.5px]">{callbackWhen(cb.createdAt, tz, today)}</span>
+          {cb.callId ? (
+            <Link
+              href={`/app/calls/${cb.callId}`}
+              className="inline-flex items-center gap-[5px] font-medium"
+            >
+              View call
+              <ArrowUpRight size={13} aria-hidden="true" />
+            </Link>
+          ) : null}
+        </div>
       </div>
-      <p className="text-[15px]">{cb.reason}</p>
+      <p className="text-ink m-0 text-[15px] leading-[1.55]">{cb.reason}</p>
+      {reveal.phone ? (
+        <span className="text-muted -mt-[8px] text-[12px]">
+          Visible for 60 seconds. This view is logged.
+        </span>
+      ) : null}
+      {reveal.error ? (
+        <p role="alert" className="text-rose m-0 -mt-[8px] text-[12px]">
+          {reveal.error}
+        </p>
+      ) : null}
       {open ? (
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex min-w-40 flex-1 flex-col gap-1 text-sm">
-            <span className="text-muted">Assigned to</span>
-            <input
-              className={fieldClass}
+        <div className="border-chip grid grid-cols-1 items-end gap-[10px] border-t pt-[14px] md:grid-cols-[200px_minmax(0,1fr)_auto]">
+          <Field label="Assigned to" variant="muted">
+            <Input
+              size={38}
               value={assignee}
               maxLength={64}
+              placeholder="Name"
               onChange={(e) => setAssignee(e.target.value)}
             />
-          </label>
-          <label className="flex min-w-56 flex-[2] flex-col gap-1 text-sm">
-            <span className="text-muted">Note</span>
-            <input
-              className={fieldClass}
+          </Field>
+          <Field label="Note" variant="muted">
+            <Input
+              size={38}
               value={note}
               maxLength={500}
+              placeholder="What was agreed"
               onChange={(e) => setNote(e.target.value)}
             />
-          </label>
-          {dirty ? (
-            <button type="button" className={ghostBtn} disabled={busy} onClick={() => patch(body)}>
-              Save details
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={primaryBtn}
-            disabled={busy}
-            onClick={() => patch({ status: "done", ...body })}
-          >
-            Mark done
-          </button>
+          </Field>
+          <div className="flex gap-[8px]">
+            {dirty ? (
+              <Button
+                variant="secondary"
+                size={38}
+                className="rounded-9 px-[12px] text-[13.5px]"
+                disabled={busy}
+                onClick={() => patch(body, "Details saved")}
+              >
+                Save details
+              </Button>
+            ) : null}
+            <Button
+              size={38}
+              icon={Check}
+              iconSize={14}
+              className="rounded-9 gap-[6px] text-[13.5px] shadow-none"
+              disabled={busy}
+              onClick={() => patch({ status: "done", ...body }, "Callback marked done")}
+            >
+              Mark done
+            </Button>
+          </div>
         </div>
       ) : (
-        <div className="text-muted flex flex-wrap gap-x-4 text-sm">
-          {cb.doneAt ? <span>Done {formatDateTime(cb.doneAt, tz)}</span> : null}
+        <div className="border-chip text-ink-2 flex flex-wrap gap-[18px] border-t pt-[12px] text-[13.5px]">
+          {cb.doneAt ? (
+            <span className="text-green-ink flex items-center gap-[6px]">
+              <CircleCheck size={14} aria-hidden="true" />
+              Done {callbackWhen(cb.doneAt, tz, today)}
+            </span>
+          ) : null}
           {cb.assignedTo ? <span>Assigned to {cb.assignedTo}</span> : null}
-          {cb.note ? <span className="text-[var(--color-ink)]">{cb.note}</span> : null}
+          {cb.note ? <span className="text-muted">{cb.note}</span> : null}
         </div>
       )}
       {error ? (
-        <p role="alert" className="text-danger text-sm">
+        <p role="alert" className="text-rose m-0 text-[13px]">
           {error}
         </p>
       ) : null}
-    </li>
+    </Card>
   );
 }
 
-/** Open/done callbacks. The server renders the open page; Done loads on first visit. */
+/**
+ * Open and done callbacks. The server renders both first pages so each tab shows its count;
+ * if the done page could not be loaded it loads on first visit.
+ */
 export function CallbacksQueue({
   initial,
   initialTotal,
+  initialDone,
+  initialTab = "open",
   tz,
+  today: todayProp,
 }: {
   initial: Callback[];
   initialTotal: number;
+  /** First page of done callbacks, when the server could load it. */
+  initialDone?: Bucket;
+  initialTab?: Tab;
   tz: string;
+  /** Clinic-local "YYYY-MM-DD" that reads as "Today"; the server page passes it. */
+  today?: string;
 }) {
   const api = useApi();
-  const [tab, setTab] = useState<Tab>("open");
+  const router = useRouter();
+  const [today] = useState(() => todayProp ?? localDateKey(new Date(), tz));
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [open, setOpen] = useState<Bucket>({ items: initial, total: initialTotal });
-  const [done, setDone] = useState<Bucket | null>(null);
+  const [done, setDone] = useState<Bucket | null>(initialDone ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -181,6 +282,8 @@ export function CallbacksQueue({
           ? { items: [updated, ...b.items.filter((c) => c.id !== updated.id)], total: b.total + 1 }
           : b,
       );
+      // The sidebar's open-callbacks badge comes from the layout.
+      router.refresh();
     } else {
       setOpen((b) => ({
         ...b,
@@ -190,72 +293,63 @@ export function CallbacksQueue({
   }
 
   const bucket = tab === "open" ? open : done;
-  const tabs: Array<[Tab, string, number | null]> = [
-    ["open", "Open", open.total],
-    ["done", "Done", done?.total ?? null],
-  ];
-
   return (
-    <div>
-      <div role="tablist" aria-label="Callback status" className="mb-4 flex gap-2">
-        {tabs.map(([key, label, count]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            id={`cb-tab-${key}`}
-            aria-selected={tab === key}
-            aria-controls="cb-panel"
-            onClick={() => choose(key)}
-            className={`min-h-11 rounded-xl px-4 text-[15px] focus-visible:outline-2 focus-visible:outline-[var(--color-accent)] ${
-              tab === key ? "bg-accent text-on-accent" : "border-line text-muted border"
-            }`}
-          >
-            {label}
-            {count !== null ? <span className="ml-1.5 tabular-nums">({count})</span> : null}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" id="cb-panel" aria-labelledby={`cb-tab-${tab}`}>
-        {error ? (
-          <p role="alert" className="text-danger mb-3 text-sm">
-            {error}{" "}
-            <button
-              type="button"
-              className="underline"
-              onClick={() => load(tab, bucket?.items.length ?? 0)}
+    <div className="animate-mx-in flex max-w-[980px] flex-col gap-[18px]">
+      <PageHeader title="Callbacks" />
+      <Tabs
+        aria-label="Callback status"
+        value={tab}
+        onChange={(id) => choose(id as Tab)}
+        items={[
+          { id: "open", label: `Open (${open.total})` },
+          { id: "done", label: done ? `Done (${done.total})` : "Done" },
+        ]}
+      />
+      <div role="tabpanel" aria-label={tab === "open" ? "Open callbacks" : "Done callbacks"}>
+        <div className="flex flex-col gap-[18px]">
+          {error ? (
+            <p role="alert" className="text-rose m-0 text-[13.5px]">
+              {error}{" "}
+              <button
+                type="button"
+                className="cursor-pointer font-medium underline"
+                onClick={() => load(tab, bucket?.items.length ?? 0)}
+              >
+                Retry
+              </button>
+            </p>
+          ) : null}
+          {bucket === null ? (
+            error ? null : (
+              <p className="text-muted m-0 text-[14px]" aria-live="polite">
+                Loading…
+              </p>
+            )
+          ) : bucket.items.length === 0 ? (
+            <EmptyState size="sm">
+              {tab === "open"
+                ? "Nothing waiting. When a caller asks for a callback it appears here."
+                : "No completed callbacks yet."}
+            </EmptyState>
+          ) : (
+            <div className="flex flex-col gap-[10px]">
+              {sortFor(tab, bucket.items).map((cb) => (
+                <CallbackCard key={cb.id} cb={cb} tz={tz} today={today} onChanged={changed} />
+              ))}
+            </div>
+          )}
+          {bucket && bucket.items.length < bucket.total ? (
+            <Button
+              variant="secondary"
+              size={36}
+              className="self-start"
+              disabled={busy}
+              onClick={() => load(tab, bucket.items.length)}
             >
-              Retry
-            </button>
-          </p>
-        ) : null}
-        {bucket === null ? (
-          <p className="text-muted" aria-live="polite">
-            {error ? null : "Loading…"}
-          </p>
-        ) : bucket.items.length === 0 ? (
-          <EmptyState>
-            {tab === "open"
-              ? "Nothing waiting. When a caller asks for a callback it appears here."
-              : "No completed callbacks yet."}
-          </EmptyState>
-        ) : (
-          <ul className="border-line bg-surface divide-line divide-y rounded-card border">
-            {bucket.items.map((cb) => (
-              <Row key={cb.id} cb={cb} tz={tz} onChanged={changed} />
-            ))}
-          </ul>
-        )}
-        {bucket && bucket.items.length < bucket.total ? (
-          <button
-            type="button"
-            className={`${ghostBtn} mt-4`}
-            disabled={busy}
-            onClick={() => load(tab, bucket.items.length)}
-          >
-            {busy ? "Loading…" : "Load more"}
-          </button>
-        ) : null}
+              {busy ? "Loading…" : "Load more"}
+            </Button>
+          ) : null}
+        </div>
       </div>
     </div>
   );

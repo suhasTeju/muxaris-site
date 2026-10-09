@@ -1,4 +1,4 @@
-import type { CallAnalytics, Clinic, MonthlyUsage } from "@muxaris/shared";
+import type { CallAnalytics, Clinic, MonthlyUsage, UsageSummary } from "@muxaris/shared";
 import { requireActiveClinic, serverApi } from "@/lib/api-server";
 import { addDays, localDateKey, toSection } from "@/lib/dashboard";
 import { AnalyticsView, RANGES, type RangeDays } from "@/components/app/AnalyticsView";
@@ -18,9 +18,11 @@ export default async function AnalyticsPage({
   const tz = clinic.timezone;
   const to = localDateKey(new Date(), tz);
   const from = addDays(to, -(days - 1));
-  const [calls, usage] = await Promise.allSettled([
+  const [calls, usage, plan] = await Promise.allSettled([
     serverApi<CallAnalytics>(`/v1/analytics/calls?${new URLSearchParams({ from, to })}`),
     serverApi<{ months: MonthlyUsage[] }>("/v1/analytics/usage?months=6"),
+    // Only for the "min included" line on Minutes per month.
+    serverApi<UsageSummary>("/v1/usage"),
   ]);
   const usageSection = toSection(usage);
   return (
@@ -28,6 +30,13 @@ export default async function AnalyticsPage({
       analytics={toSection(calls)}
       months={usageSection.ok ? { ok: true, data: usageSection.data.months } : usageSection}
       days={days}
+      from={from}
+      to={to}
+      includedMinutes={
+        plan.status === "fulfilled" && typeof plan.value.includedCallMinutes === "number"
+          ? plan.value.includedCallMinutes
+          : undefined
+      }
       tz={tz}
     />
   );

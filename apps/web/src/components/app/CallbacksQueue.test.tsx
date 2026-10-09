@@ -2,15 +2,19 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Callback } from "@muxaris/shared";
+import { ToastProvider } from "@/components/ui";
 
 const api = vi.hoisted(() => vi.fn());
+const refresh = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api-client", () => ({ useApi: () => api }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 import { CallbacksQueue } from "./CallbacksQueue";
 
 afterEach(() => {
   cleanup();
   api.mockReset();
+  refresh.mockReset();
 });
 
 const cb = (over: Partial<Callback> = {}): Callback => ({
@@ -29,19 +33,80 @@ const cb = (over: Partial<Callback> = {}): Callback => ({
   ...over,
 });
 
+type Props = Parameters<typeof CallbacksQueue>[0];
+function renderQueue(props: Partial<Props> = {}) {
+  return render(
+    <ToastProvider>
+      <CallbacksQueue
+        initial={[cb()]}
+        initialTotal={1}
+        tz="Asia/Kolkata"
+        today="2026-10-06"
+        {...props}
+      />
+    </ToastProvider>,
+  );
+}
+
 describe("CallbacksQueue", () => {
-  it("lists open callbacks with masked phones and a link to the call", () => {
-    render(<CallbacksQueue initial={[cb()]} initialTotal={1} tz="Asia/Kolkata" />);
+  it("lists open callbacks with masked phones, priority and a link to the call", () => {
+    renderQueue();
+    expect(screen.getByRole("heading", { name: "Callbacks" })).toBeTruthy();
     expect(screen.getByText("+91 •••• ••3210")).toBeTruthy();
     expect(screen.getByText("Wants a call about braces")).toBeTruthy();
+    expect(screen.getByText("Normal")).toBeTruthy();
+    expect(screen.getByText("Today, 9:30 am")).toBeTruthy();
     expect(screen.getByRole("link", { name: "View call" }).getAttribute("href")).toBe(
       "/app/calls/c1",
     );
-    expect(screen.getByRole("tab", { name: /Open/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Open (1)" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByPlaceholderText("Name")).toBeTruthy();
+    expect(screen.getByPlaceholderText("What was agreed")).toBeTruthy();
   });
 
-  it("marks done, sends the note, and moves the row to the Done tab", async () => {
-    api.mockImplementation(async (path: string, init?: { method?: string }) => {
+  it("orders open callbacks urgent, high, normal and newest first within a priority", () => {
+    renderQueue({
+      initial: [
+        cb({ id: "a", reason: "normal old", createdAt: "2026-10-06T03:00:00Z" }),
+        cb({ id: "b", reason: "high", priority: "high" }),
+        cb({ id: "c", reason: "normal new", createdAt: "2026-10-06T05:00:00Z" }),
+        cb({ id: "d", reason: "urgent", priority: "urgent" }),
+      ],
+      initialTotal: 4,
+    });
+    const reasons = screen.getAllByRole("article").map((a) => a.querySelector("p")?.textContent);
+    expect(reasons).toEqual(["urgent", "high", "normal new", "normal old"]);
+  });
+
+  it("shows both counts when the server sent the done page, and lists done details", () => {
+    renderQueue({
+      initialDone: {
+        items: [
+          cb({
+            id: "k9",
+            status: "done",
+            reason: "Bill copy",
+            assignedTo: "Kavya",
+            note: "Emailed it",
+            doneAt: "2026-10-05T11:50:00Z",
+          }),
+        ],
+        total: 1,
+      },
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Done (1)" }));
+    const card = screen.getByText("Bill copy").closest("article")!;
+    expect(within(card).getByText("Done Mon, 5 Oct, 5:20 pm")).toBeTruthy();
+    expect(within(card).getByText("Assigned to Kavya")).toBeTruthy();
+    expect(within(card).getByText("Emailed it")).toBeTruthy();
+    expect(within(card).queryByText("Normal")).toBeNull();
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("marks done, sends the note, toasts and moves the row to the Done tab", async () => {
+    api.mockImplementation(async (_path: string, init?: { method?: string }) => {
       if (init?.method === "PATCH")
         return { callback: cb({ status: "done", doneAt: "2026-10-06T05:00:00Z", note: "Called" }) };
       return {
@@ -49,7 +114,7 @@ describe("CallbacksQueue", () => {
         total: 1,
       };
     });
-    render(<CallbacksQueue initial={[cb()]} initialTotal={1} tz="Asia/Kolkata" />);
+    renderQueue();
     fireEvent.change(screen.getByLabelText("Note"), { target: { value: "Called" } });
     fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
     await waitFor(() =>
@@ -59,18 +124,21 @@ describe("CallbacksQueue", () => {
       }),
     );
     await waitFor(() => expect(screen.queryByText("Wants a call about braces")).toBeNull());
+    expect(screen.getByRole("status").textContent).toContain("Callback marked done");
+    expect(refresh).toHaveBeenCalled();
     expect(screen.getByText(/Nothing waiting/)).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Open (0)" })).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: /Done/ }));
     const row = await screen.findByText("Wants a call about braces");
-    expect(within(row.closest("li")!).getByText("Called")).toBeTruthy();
+    expect(within(row.closest("article")!).getByText("Called")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Mark done" })).toBeNull();
-    // The Done tab asked the API for done callbacks.
+    // Without a server-rendered done page, the Done tab asked the API for it.
     expect(api.mock.calls.some(([p]) => String(p).includes("status=done"))).toBe(true);
   });
 
   it("saves assignee and note without closing the callback", async () => {
     api.mockResolvedValue({ callback: cb({ assignedTo: "Priya", note: "Try after 5" }) });
-    render(<CallbacksQueue initial={[cb()]} initialTotal={1} tz="Asia/Kolkata" />);
+    renderQueue();
     expect(screen.queryByRole("button", { name: "Save details" })).toBeNull();
     fireEvent.change(screen.getByLabelText("Assigned to"), { target: { value: "Priya" } });
     fireEvent.change(screen.getByLabelText("Note"), { target: { value: "Try after 5" } });
@@ -82,14 +150,39 @@ describe("CallbacksQueue", () => {
       }),
     );
     await waitFor(() => expect(screen.queryByRole("button", { name: "Save details" })).toBeNull());
+    expect(screen.getByRole("status").textContent).toContain("Details saved");
+    expect(refresh).not.toHaveBeenCalled();
     expect(screen.getByText("Wants a call about braces")).toBeTruthy();
+  });
+
+  it("reveals the number through the audited endpoint and says it is logged", async () => {
+    api.mockResolvedValue({ phone: "+919845123210" });
+    renderQueue();
+    fireEvent.click(screen.getByRole("button", { name: "Show number" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith("/v1/callbacks/k1/reveal-phone", { method: "POST" }),
+    );
+    const link = await screen.findByRole("link", { name: "+91 98451 23210" });
+    expect(link.getAttribute("href")).toBe("tel:+919845123210");
+    expect(screen.getByText("Visible for 60 seconds. This view is logged.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show number" })).toBeNull();
   });
 
   it("shows an inline error and keeps the row when Mark done fails", async () => {
     api.mockRejectedValue(new Error("offline"));
-    render(<CallbacksQueue initial={[cb()]} initialTotal={1} tz="Asia/Kolkata" />);
+    renderQueue();
     fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
     expect((await screen.findByRole("alert")).textContent).toBe("offline");
     expect(screen.getByText("Wants a call about braces")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("shows the empty states", () => {
+    renderQueue({ initial: [], initialTotal: 0, initialDone: { items: [], total: 0 } });
+    expect(
+      screen.getByText("Nothing waiting. When a caller asks for a callback it appears here."),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Done (0)" }));
+    expect(screen.getByText("No completed callbacks yet.")).toBeTruthy();
   });
 });
