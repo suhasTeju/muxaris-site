@@ -19,6 +19,7 @@ import {
   TextField,
   errMsg,
   issueMap,
+  useStepBusy,
   type Call,
 } from "./ui";
 
@@ -64,7 +65,7 @@ export function StepBasics({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   // One shared flag so no two actions (create, demo, retry) can run at once.
-  const [pending, setPending] = useState<"create" | "demo" | "retry" | null>(null);
+  const [pending, setPending] = useStepBusy<"create" | "demo" | "retry" | null>(null);
   const locked = clinic !== null;
 
   async function run(kind: "create" | "demo" | "retry", fn: () => Promise<void>) {

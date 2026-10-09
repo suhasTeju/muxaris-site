@@ -202,6 +202,59 @@ describe("Wizard", () => {
     );
   });
 
+  it("locks the rail while a step is saving, so a jump cannot race the save", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    setApi({
+      "GET /v1/onboarding": { step: "services" },
+      "GET /v1/clinics/c1": { clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN"] } },
+      "POST /v1/services": async () => {
+        await gate;
+        return {};
+      },
+    });
+    render(<Wizard initialClinic={{ id: "c1", name: "Test Clinic" }} cookieStale={false} />);
+    await heading("What do you offer?");
+    const rail = within(screen.getByRole("complementary", { name: "Onboarding progress" }));
+    const doctors = rail.getByRole("button", { name: /Doctors/ }) as HTMLButtonElement;
+    expect(doctors.disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(calls).toContain("POST /v1/services"));
+    expect(doctors.disabled).toBe(true);
+    fireEvent.click(doctors);
+    expect(calls).not.toContain("PUT /v1/onboarding/step");
+
+    release();
+    await heading("Meet your assistant");
+    expect(calls.filter((c) => c === "PUT /v1/onboarding/step")).toHaveLength(1);
+    expect(doctors.disabled).toBe(false);
+  });
+
+  it("holds Continue while a rail jump is saving", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    setApi({
+      "GET /v1/onboarding": { step: "services" },
+      "GET /v1/clinics/c1": { clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN"] } },
+      "PUT /v1/onboarding/step": async () => {
+        await gate;
+        return {};
+      },
+    });
+    render(<Wizard initialClinic={{ id: "c1", name: "Test Clinic" }} cookieStale={false} />);
+    await heading("What do you offer?");
+    const rail = within(screen.getByRole("complementary", { name: "Onboarding progress" }));
+    fireEvent.click(rail.getByRole("button", { name: /Doctors/ }));
+    const next = screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
+    await waitFor(() => expect(next.disabled).toBe(true));
+    fireEvent.click(next);
+    expect(calls).not.toContain("POST /v1/services");
+    release();
+    await heading("Who sees patients?");
+    expect(calls).not.toContain("POST /v1/services");
+  });
+
   it("shows step errors in the card, under the heading", async () => {
     setApi({
       "GET /v1/onboarding": { step: "doctors" },

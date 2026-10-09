@@ -11,11 +11,14 @@ import { STEP_LABELS, WIZARD_STEPS, type OnboardingStep } from "@/lib/onboarding
 export function Progress({
   step,
   maxStep = 0,
+  locked = false,
   onGo,
 }: {
   step: OnboardingStep | null;
   /** Index of the furthest step reached. */
   maxStep?: number;
+  /** While the current step saves or a jump is in flight, every step button is disabled. */
+  locked?: boolean;
   onGo?: (step: OnboardingStep) => void;
 }) {
   const current = step ? Math.max(0, WIZARD_STEPS.indexOf(step)) : -1;
@@ -29,30 +32,31 @@ export function Progress({
       <div className="flex flex-col gap-[6px]">
         <MonoLabel className={current < 0 ? "invisible" : undefined}>
           Step {current + 1} of {total}
+          {step ? <span className="lg:hidden">: {STEP_LABELS[step]}</span> : null}
         </MonoLabel>
         <div className="bg-line h-[4px] overflow-hidden rounded-[4px]">
           <div
-            className="bg-teal h-[4px] rounded-[4px] transition-[width] duration-300 ease-in-out"
+            className="bg-teal h-[4px] rounded-[4px] transition-[width] duration-300 ease-in-out motion-reduce:transition-none"
             style={{ width: `${pct}%` }}
           />
         </div>
       </div>
-      <ol className="m-0 flex list-none flex-col gap-[4px] p-0 max-lg:flex-row max-lg:overflow-x-auto">
+      <ol className="m-0 flex list-none flex-col gap-[4px] p-0 max-lg:hidden">
         {WIZARD_STEPS.map((s, i) => {
           const cur = i === current;
           const done = !cur && current >= 0 && (i < current || i < maxStep);
           const reachable = current >= 0 && i <= Math.max(maxStep, current);
           return (
-            <li key={s} className="max-lg:flex-none">
+            <li key={s}>
               <button
                 type="button"
-                disabled={!reachable}
+                disabled={!reachable || (locked && !cur)}
                 aria-current={cur ? "step" : undefined}
                 onClick={() => {
-                  if (!cur && reachable) onGo?.(s);
+                  if (!cur && reachable && !locked) onGo?.(s);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-[12px] rounded-12 border px-[12px] py-[10px] text-left transition-all duration-200 max-lg:w-auto max-lg:whitespace-nowrap",
+                  "flex w-full items-center gap-[12px] rounded-12 border px-[12px] py-[10px] text-left transition-all duration-200 motion-reduce:transition-none",
                   cur ? "border-line bg-surface" : "border-transparent bg-transparent",
                   reachable ? "cursor-pointer" : "cursor-default",
                 )}
@@ -87,7 +91,7 @@ export function Progress({
           );
         })}
       </ol>
-      <p className="text-muted m-0 flex gap-[8px] text-[13px] leading-[1.5]">
+      <p className="text-muted m-0 flex gap-[8px] text-[13px] leading-[1.5] max-lg:hidden">
         <Save size={14} aria-hidden="true" className="mt-[2px] flex-none" />
         Progress is saved after every step, so you can leave and resume.
       </p>

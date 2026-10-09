@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AudioLines, ListChecks, Stethoscope, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui";
 import { STEP_LABELS, type OnboardingStep } from "@/lib/onboarding";
-import { StepFooter, StepShell, errMsg, type Call } from "./ui";
+import { StepFooter, StepShell, errMsg, useStepBusy, type Call } from "./ui";
 
 interface Summary {
   doctors: Array<{ name: string }>;
@@ -27,7 +27,7 @@ export function StepReview({
 }) {
   const [sum, setSum] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useStepBusy(false);
 
   useEffect(() => {
     let live = true;
@@ -64,7 +64,7 @@ export function StepReview({
   const block = (title: string, icon: LucideIcon, step: OnboardingStep, items: string[]) => {
     const Icon = icon;
     return (
-      <div className="border-line bg-subtle grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-[16px] rounded-16 border p-[18px]">
+      <div className="border-line bg-subtle grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-[16px] rounded-16 border p-[18px] max-sm:grid-cols-[44px_minmax(0,1fr)] max-sm:gap-y-[12px]">
         <span className="bg-surface border-line text-teal-ink grid size-[44px] place-items-center rounded-12 border">
           <Icon size={18} aria-hidden="true" />
         </span>
@@ -81,7 +81,12 @@ export function StepReview({
             ))}
           </ul>
         </div>
-        <Button variant="secondary" size={34} onClick={() => void onEdit(step)}>
+        <Button
+          variant="secondary"
+          size={34}
+          onClick={() => void onEdit(step)}
+          className="max-sm:col-start-2 max-sm:justify-self-start"
+        >
           Edit<span className="sr-only"> {STEP_LABELS[step].toLowerCase()}</span>
         </Button>
       </div>

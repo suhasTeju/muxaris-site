@@ -13,7 +13,16 @@ import { getAccessToken } from "@/lib/api-client";
 import { DEFAULT_SPEAKER, fillGreeting } from "@/lib/onboarding";
 import { Play, Plus, Square, WandSparkles } from "lucide-react";
 import { Button, Input, Select, Textarea, cn } from "@/components/ui";
-import { Field, StepFooter, StepShell, StepSubheading, TextField, errMsg, type Call } from "./ui";
+import {
+  Field,
+  StepFooter,
+  StepShell,
+  StepSubheading,
+  TextField,
+  errMsg,
+  useStepBusy,
+  type Call,
+} from "./ui";
 
 /** Fetches the spoken greeting as audio. The wizard's previews inject their own. */
 export type VoicePreview = (
@@ -75,7 +84,7 @@ export function StepAssistant({
   const [faq, setFaq] = useState<Faq[]>([{ q: "", a: "" }]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useStepBusy(false);
   const [previewing, setPreviewing] = useState<LanguageCode | null>(null);
   const [previewErr, setPreviewErr] = useState<Partial<Record<LanguageCode, string>>>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -245,7 +254,7 @@ export function StepAssistant({
               <div
                 key={l.code}
                 className={cn(
-                  "bg-subtle flex flex-col gap-[10px] rounded-16 border p-[16px] transition-[border-color] duration-200",
+                  "bg-subtle flex flex-col gap-[10px] rounded-16 border p-[16px] transition-[border-color] duration-200 motion-reduce:transition-none",
                   playing ? "border-teal-border" : "border-line",
                 )}
               >
@@ -262,7 +271,7 @@ export function StepAssistant({
                     />
                   )}
                 </Field>
-                <div className="flex flex-wrap items-center gap-[10px]">
+                <div className="flex flex-wrap items-center gap-[10px] max-sm:flex-col max-sm:items-start">
                   <label className="text-muted flex items-center gap-[8px] text-[13px]">
                     {l.label} voice
                     <Select
@@ -280,20 +289,22 @@ export function StepAssistant({
                       ))}
                     </Select>
                   </label>
-                  <Button
-                    size={34}
-                    icon={playing ? Square : Play}
-                    iconSize={12}
-                    aria-pressed={playing}
-                    onClick={() => void preview(l.code)}
-                    className={cn(
-                      "gap-[8px] font-medium shadow-none",
-                      playing && "bg-teal hover:bg-teal",
-                    )}
-                  >
-                    Preview
-                  </Button>
-                  {playing ? <VoiceBars /> : null}
+                  <span className="contents max-sm:flex max-sm:items-center max-sm:gap-[10px]">
+                    <Button
+                      size={34}
+                      icon={playing ? Square : Play}
+                      iconSize={12}
+                      aria-pressed={playing}
+                      onClick={() => void preview(l.code)}
+                      className={cn(
+                        "gap-[8px] font-medium shadow-none",
+                        playing && "bg-teal hover:bg-teal",
+                      )}
+                    >
+                      Preview
+                    </Button>
+                    {playing ? <VoiceBars /> : null}
+                  </span>
                   {err ? (
                     <span role="alert" className="text-rose text-[12.5px]">
                       {err}
@@ -321,7 +332,7 @@ export function StepAssistant({
           {faq.map((f, i) => (
             <div
               key={i}
-              className="border-line bg-subtle grid grid-cols-[minmax(0,1fr)_auto] items-start gap-[10px] rounded-14 border p-[14px]"
+              className="border-line bg-subtle grid grid-cols-[minmax(0,1fr)_auto] items-start gap-[10px] rounded-14 border p-[14px] max-sm:grid-cols-[minmax(0,1fr)]"
             >
               <div className="flex flex-col gap-[8px]">
                 <Input
@@ -352,7 +363,7 @@ export function StepAssistant({
                 variant="danger-ghost"
                 size={32}
                 onClick={() => setFaq(faq.filter((_, j) => j !== i))}
-                className="rounded-9"
+                className="rounded-9 max-sm:justify-self-end"
               >
                 Remove<span className="sr-only"> question {i + 1}</span>
               </Button>
@@ -388,7 +399,7 @@ function VoiceBars() {
       {[0, 0.15, 0.3, 0.45].map((delay) => (
         <span
           key={delay}
-          className="bg-teal h-[16px] w-[3px] animate-[mxBar35_.9s_ease-in-out_infinite] rounded-[2px]"
+          className="bg-teal h-[16px] w-[3px] animate-[mxBar35_.9s_ease-in-out_infinite] rounded-[2px] motion-reduce:animate-none"
           style={{ animationDelay: `${delay}s` }}
         />
       ))}

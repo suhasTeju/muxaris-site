@@ -22,6 +22,12 @@ function Harness({ onWeek }: { onWeek: (w: WeekHours) => void }) {
 }
 
 describe("WorkingHoursGrid", () => {
+  it("keeps the day and time columns and scrolls inside its border on narrow screens", () => {
+    render(<Harness onWeek={() => undefined} />);
+    const group = screen.getByRole("group", { name: "Working hours" });
+    expect(group.className).toContain("overflow-x-auto");
+    expect(group.firstElementChild!.className).toContain("min-w-[500px]");
+  });
   it("shows an error when end is not after start", () => {
     render(<Harness onWeek={() => undefined} />);
     fireEvent.change(screen.getByLabelText("Tuesday closes"), { target: { value: "09:00" } });

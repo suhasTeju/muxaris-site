@@ -10,7 +10,7 @@ import {
 } from "@/lib/onboarding";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui";
-import { LangChip, StepFooter, StepShell, TextField, errMsg, type Call } from "./ui";
+import { LangChip, StepFooter, StepShell, TextField, errMsg, useStepBusy, type Call } from "./ui";
 import { WorkingHoursGrid } from "./WorkingHoursGrid";
 
 interface Draft {
@@ -50,7 +50,7 @@ export function StepDoctors({
   // Per draft: which field to mark ("name" or "languages").
   const [fieldErr, setFieldErr] = useState<Record<number, "name" | "languages">>({});
   const [stepErr, setStepErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useStepBusy(false);
 
   useEffect(() => {
     let live = true;

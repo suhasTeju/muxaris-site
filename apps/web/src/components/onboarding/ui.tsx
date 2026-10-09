@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useId } from "react";
+import { createContext, useCallback, useContext, useId, useState } from "react";
 import { ArrowRight, Check, CircleAlert } from "lucide-react";
 import { Button, Input, Select, cn, type InputProps, type SelectProps } from "@/components/ui";
 import type { ApiInit } from "@/lib/api";
@@ -177,7 +177,7 @@ export function LangChip({
       aria-checked={on}
       onClick={onToggle}
       className={cn(
-        "text-ink inline-flex cursor-pointer items-center gap-[8px] border transition-all duration-150 disabled:cursor-default",
+        "text-ink inline-flex cursor-pointer items-center gap-[8px] border transition-all duration-150 disabled:cursor-default motion-reduce:transition-none",
         size === 38
           ? "h-[38px] rounded-10 pr-[13px] pl-[9px] text-[14px]"
           : "h-[34px] rounded-9 pr-[12px] pl-[8px] text-[13.5px]",
@@ -215,6 +215,29 @@ export function StepError({
 /** A failed Back/Edit/rail navigation, shown in the current step's error slot. */
 export const NavErrorContext = createContext<string | null>(null);
 
+/** True while a Back/Edit/rail navigation is saving the step; the step's footer waits for it. */
+export const NavBusyContext = createContext(false);
+
+/** Lets a step tell the wizard it is saving, so the rail cannot jump mid-save. */
+export const StepBusyContext = createContext<(busy: boolean) => void>(() => undefined);
+
+/**
+ * A step's busy state (`idle` when nothing runs) that also reports to the wizard. The report is
+ * synchronous with the state change, so a rail click right after Continue is already refused.
+ */
+export function useStepBusy<T>(idle: T) {
+  const report = useContext(StepBusyContext);
+  const [value, setValue] = useState<T>(idle);
+  const set = useCallback(
+    (next: T) => {
+      report(next !== idle);
+      setValue(next);
+    },
+    [report, idle],
+  );
+  return [value, set] as const;
+}
+
 /** The step card: heading, optional error, body, and the Back / Continue footer. */
 export function StepShell({
   title,
@@ -235,11 +258,11 @@ export function StepShell({
   const navError = useContext(NavErrorContext);
   const shown = error || navError;
   return (
-    <section className="bg-surface border-line animate-[mxIn_.3s_ease_both] overflow-hidden rounded-[24px] border shadow-[0_1px_2px_rgba(12,18,32,0.04),0_24px_60px_-40px_rgba(12,18,32,0.25)]">
+    <section className="bg-surface border-line animate-[mxIn_.3s_ease_both] overflow-hidden motion-reduce:animate-none rounded-[24px] border shadow-[0_1px_2px_rgba(12,18,32,0.04),0_24px_60px_-40px_rgba(12,18,32,0.25)]">
       <div className="flex flex-col gap-[6px] px-[20px] pt-[30px] pb-[6px] sm:px-[32px]">
         <h1
           tabIndex={-1}
-          className="m-0 text-[28px] leading-[1.15] font-semibold tracking-[-0.03em] outline-none"
+          className="m-0 text-[28px] leading-[1.15] font-semibold tracking-[-0.03em] outline-none max-sm:text-[24px]"
         >
           {title}
         </h1>
@@ -272,6 +295,7 @@ export function StepFooter({
   /** Omit to make the button submit the step's form. */
   onNext?: () => void;
 }) {
+  const navigating = useContext(NavBusyContext);
   return (
     <>
       <Button
@@ -288,7 +312,7 @@ export function StepFooter({
         size={44}
         iconRight={ArrowRight}
         iconSize={15}
-        disabled={busy || disabled}
+        disabled={busy || disabled || navigating}
         onClick={onNext}
         className="px-[20px]"
       >
