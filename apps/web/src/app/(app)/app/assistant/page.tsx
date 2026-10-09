@@ -1,18 +1,25 @@
-import { PhoneCall } from "lucide-react";
-import { ButtonLink } from "@/components/ui/Button";
-import { PageHeader } from "@/components/ui/PageHeader";
+import type { AssistantProfile, Clinic, Role } from "@muxaris/shared";
+import { ApiError } from "@/lib/api";
+import { requireActiveClinic, serverApi } from "@/lib/api-server";
+import { AssistantView } from "@/components/app/assistant/AssistantView";
 
-// Placeholder until the Assistant configuration page lands (AppAssistant.dc.html).
-export default function AssistantPage() {
+export const dynamic = "force-dynamic";
+
+export default async function AssistantPage() {
+  const active = await requireActiveClinic();
+  const [{ clinic, role }, assistant] = await Promise.all([
+    serverApi<{ clinic: Clinic; role: Role }>(`/v1/clinics/${active.clinicId}`),
+    serverApi<{ assistant: AssistantProfile }>("/v1/assistant").catch((e) => {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }),
+  ]);
   return (
-    <div className="animate-mx-in flex flex-col gap-[18px]">
-      <PageHeader
-        title="Assistant"
-        subtitle="How it introduces itself, and how it sounds in each language."
-      />
-      <ButtonLink href="/app/assistant/try" icon={PhoneCall} className="self-start">
-        Try your assistant
-      </ButtonLink>
-    </div>
+    <AssistantView
+      key={clinic.id}
+      clinic={clinic}
+      role={role}
+      assistant={assistant?.assistant ?? null}
+    />
   );
 }

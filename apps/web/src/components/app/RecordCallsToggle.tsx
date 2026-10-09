@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import { clinicRecordCalls, type Clinic } from "@muxaris/shared";
+import { Card, Switch, useToast } from "@/components/ui";
 import { useApi } from "@/lib/api-client";
 
 const HELP = "When off, calls are transcribed but no audio is kept.";
+const SAVED_MS = 2500;
 
-/** Per-clinic recording switch. Owners can change it; everyone else sees the current state. */
+/**
+ * Assistant → Record calls: the per-clinic recording switch, saved as soon as it changes.
+ * Owners change it; everyone else sees On or Off.
+ */
 export function RecordCallsToggle({
   clinicId,
   initial,
@@ -17,10 +23,18 @@ export function RecordCallsToggle({
   isOwner: boolean;
 }) {
   const api = useApi();
+  const { toast } = useToast();
   const [on, setOn] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   async function toggle() {
     const next = !on;
@@ -34,6 +48,9 @@ export function RecordCallsToggle({
       );
       setOn(clinicRecordCalls(r.clinic.settings));
       setSaved(true);
+      toast("Saved");
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setSaved(false), SAVED_MS);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the setting");
     } finally {
@@ -41,49 +58,45 @@ export function RecordCallsToggle({
     }
   }
 
-  if (!isOwner) {
-    return (
-      <div className="text-[15px]">
-        <p>
-          <span className="text-muted">Record calls: </span>
-          {on ? "On" : "Off"}
-        </p>
-        <p className="text-muted text-sm">{HELP} Only the clinic owner can change this.</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="text-[15px]">
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          aria-labelledby="record-calls-label"
-          disabled={busy}
-          onClick={toggle}
-          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] disabled:opacity-60 ${on ? "bg-[var(--color-accent)]" : "bg-[var(--color-line)]"}`}
-        >
-          <span
-            className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${on ? "translate-x-6" : "translate-x-1"}`}
-          />
-        </button>
-        <span id="record-calls-label" className="font-medium">
-          Record calls
+    <Card
+      as="section"
+      aria-labelledby="record-calls-label"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-[20px] px-[20px] py-[18px]"
+    >
+      <div className="flex flex-col gap-[3px]">
+        <span className="flex items-center gap-[10px]">
+          <span id="record-calls-label" className="text-[14.5px] font-semibold">
+            Record calls
+          </span>
+          {saved ? (
+            <span
+              role="status"
+              className="text-green-ink flex items-center gap-[6px] text-[12.5px]"
+            >
+              <Check size={13} aria-hidden="true" />
+              Saved
+            </span>
+          ) : null}
         </span>
-        {saved ? (
-          <span role="status" className="text-muted text-sm">
-            Saved
+        <span className="text-muted text-[13px]">{HELP}</span>
+        {error ? (
+          <span role="alert" className="text-rose text-[13px]">
+            {error}
           </span>
         ) : null}
       </div>
-      <p className="text-muted mt-1 text-sm">{HELP}</p>
-      {error ? (
-        <p role="alert" className="mt-1 text-sm text-red-700">
-          {error}
-        </p>
-      ) : null}
-    </div>
+      {isOwner ? (
+        <Switch
+          size={28}
+          checked={on}
+          disabled={busy}
+          onCheckedChange={() => void toggle()}
+          aria-labelledby="record-calls-label"
+        />
+      ) : (
+        <span className="text-[13.5px] font-medium">{on ? "On" : "Off"}</span>
+      )}
+    </Card>
   );
 }
