@@ -126,6 +126,8 @@ export interface OverviewStats {
   callsToday: number;
   bookedToday: number;
   openCallbacks: number;
+  /** Open callbacks flagged urgent. Optional until every API deploy returns it. */
+  openUrgentCallbacks?: number;
   avgDurationS: number | null;
   byOutcome: Record<string, number>;
 }

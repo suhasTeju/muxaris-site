@@ -1,11 +1,10 @@
-import type { Call, Clinic, Patient } from "@muxaris/shared";
+import type { Call, Clinic } from "@muxaris/shared";
 import { callOutcomeEnum, callStatusEnum } from "@muxaris/shared";
 import { requireActiveClinic, serverApi } from "@/lib/api-server";
 import { CALLS_PAGE_SIZE, addDays, startOfLocalDay } from "@/lib/dashboard";
 import { CallsBrowser } from "@/components/app/CallsBrowser";
 import type { CallFilterValue } from "@/components/app/CallFilters";
 import { CallsPageView } from "@/components/app/calls/CallsPageView";
-import { patientNamesFrom } from "@/components/app/core/calls";
 
 export const dynamic = "force-dynamic";
 
@@ -39,13 +38,9 @@ export default async function CallsPage({
   if (value.from) filters.from = startOfLocalDay(value.from, clinic.timezone).toISOString();
   if (value.to) filters.to = startOfLocalDay(addDays(value.to, 1), clinic.timezone).toISOString();
 
-  const [list, patients] = await Promise.all([
-    serverApi<{ calls: Call[]; total?: number }>(
-      `/v1/calls?${new URLSearchParams({ ...filters, limit: String(CALLS_PAGE_SIZE) })}`,
-    ),
-    // Call rows carry only the patient id; names come from the latest patients (best effort).
-    serverApi<{ patients: Patient[] }>("/v1/patients?limit=200").catch(() => null),
-  ]);
+  const list = await serverApi<{ calls: Call[]; total?: number }>(
+    `/v1/calls?${new URLSearchParams({ ...filters, limit: String(CALLS_PAGE_SIZE) })}`,
+  );
   const total = list.total ?? list.calls.length;
   return (
     <CallsPageView
@@ -57,7 +52,6 @@ export default async function CallsPage({
           initial={list.calls}
           tz={clinic.timezone}
           filters={filters}
-          names={patients ? patientNamesFrom(patients.patients) : {}}
         />
       }
     />

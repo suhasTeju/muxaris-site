@@ -55,7 +55,13 @@ describe("CallList design", () => {
     status: "completed",
   };
   const calls = [
-    { ...base, id: "c9", startedAt: "2026-10-09T08:22:00Z", patientId: "p5" },
+    {
+      ...base,
+      id: "c9",
+      startedAt: "2026-10-09T08:22:00Z",
+      patientId: "p5",
+      patientName: "Priya Venkatesh",
+    },
     { ...base, id: "c8", startedAt: "2026-10-09T07:50:00Z", channel: "browser" },
     { ...base, id: "c1", startedAt: "2026-10-08T14:44:00Z", status: "failed" },
     { ...base, id: "c13", startedAt: "2026-10-07T14:18:00Z" },
@@ -69,14 +75,7 @@ describe("CallList design", () => {
   });
 
   it("names known patients over their masked number and labels test calls", () => {
-    render(
-      <CallList
-        calls={calls}
-        tz="Asia/Kolkata"
-        now={new Date("2026-10-09T08:40:00Z")}
-        names={{ p5: "Priya Venkatesh" }}
-      />,
-    );
+    render(<CallList calls={calls} tz="Asia/Kolkata" now={new Date("2026-10-09T08:40:00Z")} />);
     const row = screen.getByText("Priya Venkatesh").closest("a")!;
     expect(row.getAttribute("href")).toBe("/app/calls/c9");
     expect(row.textContent).toContain("+91 •••• ••0192");

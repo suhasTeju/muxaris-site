@@ -12,7 +12,7 @@ import {
   badgeFor,
 } from "@/components/ui";
 import { addDays, formatTime, languageLabel, localDateKey } from "@/lib/dashboard";
-import { callIcon, callerOf, type PatientNames } from "./core/calls";
+import { callIcon, callerOf } from "./core/calls";
 import { formatDur, keyDateLong } from "./core/format";
 import { CALLS_TABLE_MIN_W } from "./core/layout";
 
@@ -42,14 +42,12 @@ export function CallList({
   calls,
   tz,
   now = new Date(),
-  names,
   filtered = false,
 }: {
   calls: Call[];
   tz: string;
   /** Anchors the "Today" and "Yesterday" group labels. */
   now?: Date;
-  names?: PatientNames;
   /** A filter is active: an empty list means "no matches", not "no calls yet". */
   filtered?: boolean;
 }) {
@@ -81,7 +79,7 @@ export function CallList({
             <Fragment key={g.key}>
               <TableGroup>{g.label}</TableGroup>
               {g.calls.map((c) => {
-                const who = callerOf(c, names);
+                const who = callerOf(c);
                 const { icon: Icon, tile } = callIcon(c);
                 const ob = badgeFor("outcome", c.outcome);
                 const sb = badgeFor("status", c.status);

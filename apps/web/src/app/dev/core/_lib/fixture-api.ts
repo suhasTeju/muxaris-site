@@ -2,7 +2,13 @@
  * In-memory stand-in for the API, answering the requests the core screens make in the browser.
  * Development only: it backs the /dev/core previews through ApiFetcherProvider.
  */
-import { maskPhone, type Appointment, type Patient, type PatientDetail } from "@muxaris/shared";
+import {
+  maskPhone,
+  type Appointment,
+  type Call,
+  type Patient,
+  type PatientDetail,
+} from "@muxaris/shared";
 import type { ApiFetcher } from "@/components/app/core/api";
 import {
   FIXTURE_NOW,
@@ -89,6 +95,11 @@ export function createFixtureApi(opts: FixtureOptions = {}): ApiFetcher {
     const p = patientOf(a.patientId);
     return p ? { ...a, patient: { name: p.name, phoneMasked: p.phoneMasked } } : a;
   };
+  /** GET /v1/calls and /v1/calls/:id join the linked patient's name. */
+  const withPatientName = (c: Call): Call => ({
+    ...c,
+    patientName: (c.patientId ? patientOf(c.patientId)?.name : null) ?? null,
+  });
 
   function slots(q: URLSearchParams) {
     const date = q.get("date") ?? "";
@@ -283,7 +294,7 @@ export function createFixtureApi(opts: FixtureOptions = {}): ApiFetcher {
         if (status) list = list.filter((c) => c.status === status);
         const offset = Number(q.get("offset") ?? 0);
         return {
-          calls: list.slice(offset, offset + Number(q.get("limit") ?? 50)),
+          calls: list.slice(offset, offset + Number(q.get("limit") ?? 50)).map(withPatientName),
           total: list.length,
         };
       }
@@ -298,10 +309,11 @@ export function createFixtureApi(opts: FixtureOptions = {}): ApiFetcher {
       }
       if (method === "PATCH") {
         Object.assign(call, body, { outcomeSource: "staff" });
+        // Like the API: PATCH returns the bare row, without the joined name.
         return { call };
       }
       return {
-        call,
+        call: withPatientName(call),
         turns: callTurns[call.id] ?? [],
         callbacks: callbacks.filter((c) => c.callId === call.id),
       };

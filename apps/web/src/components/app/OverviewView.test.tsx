@@ -25,7 +25,8 @@ const stats = {
   callsToday: 7,
   bookedToday: 3,
   openCallbacks: 2,
-  avgDurationS: 86.6,
+  openUrgentCallbacks: 1,
+  avgDurationS: 125,
   byOutcome: { booked: 3 },
 };
 
@@ -78,13 +79,12 @@ describe("OverviewView", () => {
         usage={{ ok: true, data: usage }}
         appointments={{ ok: false }}
         recentCalls={{ ok: false }}
-        urgentCallbacks={1}
       />,
     );
     const kpis = screen.getByLabelText("Key numbers", { selector: "section" });
     expect(within(kpis).getByText("Calls today").nextSibling?.textContent).toBe("7");
     expect(within(kpis).getByText("Booked by assistant").nextSibling?.textContent).toBe("3");
-    expect(within(kpis).getByText("Average 87s")).toBeTruthy();
+    expect(within(kpis).getByText("Average 2m 05s")).toBeTruthy();
     const link = within(kpis).getByRole("link", { name: /Open callbacks/ });
     expect(link.getAttribute("href")).toBe("/app/callbacks");
     expect(within(link).getByText("2")).toBeTruthy();
@@ -93,17 +93,54 @@ describe("OverviewView", () => {
   });
 
   it("hides the urgent badge when nothing is urgent or the count is unknown", () => {
-    render(
+    const { rerender } = render(
       <OverviewView
         {...base}
-        stats={{ ok: true, data: stats }}
+        stats={{ ok: true, data: { ...stats, openUrgentCallbacks: 0 } }}
         usage={{ ok: true, data: usage }}
         appointments={{ ok: false }}
         recentCalls={{ ok: false }}
-        urgentCallbacks={0}
       />,
     );
     expect(screen.queryByText(/urgent/)).toBeNull();
+    // An API that predates the count leaves it out.
+    const older: Omit<typeof stats, "openUrgentCallbacks"> & { openUrgentCallbacks?: number } = {
+      ...stats,
+    };
+    delete older.openUrgentCallbacks;
+    rerender(
+      <OverviewView
+        {...base}
+        stats={{ ok: true, data: older }}
+        usage={{ ok: true, data: usage }}
+        appointments={{ ok: false }}
+        recentCalls={{ ok: false }}
+      />,
+    );
+    expect(screen.queryByText(/urgent/)).toBeNull();
+  });
+
+  it("formats the average call length, short and unknown", () => {
+    const { rerender } = render(
+      <OverviewView
+        {...base}
+        stats={{ ok: true, data: { ...stats, avgDurationS: 41 } }}
+        usage={{ ok: false }}
+        appointments={{ ok: false }}
+        recentCalls={{ ok: false }}
+      />,
+    );
+    expect(screen.getByText("Average 41s")).toBeTruthy();
+    rerender(
+      <OverviewView
+        {...base}
+        stats={{ ok: true, data: { ...stats, avgDurationS: null } }}
+        usage={{ ok: false }}
+        appointments={{ ok: false }}
+        recentCalls={{ ok: false }}
+      />,
+    );
+    expect(screen.getByText("Average -")).toBeTruthy();
   });
 
   it("falls back on KPIs and appointments independently, and masks caller phones", () => {
@@ -126,7 +163,7 @@ describe("OverviewView", () => {
   });
 
   it("names known patients and labels browser calls as test calls", () => {
-    const named = { ...call, id: "c2", patientId: "p1" } as Call;
+    const named = { ...call, id: "c2", patientId: "p1", patientName: "Priya Venkatesh" } as Call;
     const test = { ...call, id: "c3", channel: "browser", callerPhoneMasked: null } as Call;
     render(
       <OverviewView
@@ -135,7 +172,6 @@ describe("OverviewView", () => {
         usage={{ ok: false }}
         appointments={{ ok: false }}
         recentCalls={{ ok: true, data: [named, test] }}
-        patientNames={{ p1: "Priya Venkatesh" }}
       />,
     );
     const recent = screen.getByLabelText("Recent calls", { selector: "section" });
