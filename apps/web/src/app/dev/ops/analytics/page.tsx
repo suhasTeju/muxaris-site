@@ -1,5 +1,5 @@
 import { DevAppFrame } from "@/components/dev/DevAppFrame";
-import { clinic, usageFor } from "@/components/dev/fixtures";
+import { usageFor } from "@/components/dev/fixtures";
 import { AnalyticsView, RANGES, type RangeDays } from "@/components/app/AnalyticsView";
 import { analyticsFor, monthsFor } from "./fixtures";
 
@@ -32,7 +32,6 @@ export default async function AnalyticsPreview({
         from={a.from}
         to={a.to}
         includedMinutes={state === "no-plan" ? undefined : usage.includedCallMinutes}
-        tz={clinic.timezone}
       />
     </DevAppFrame>
   );

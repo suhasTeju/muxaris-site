@@ -136,7 +136,6 @@ export function AnalyticsView({
   to?: string;
   /** The plan's included minutes, for the dashed line on "Minutes per month". */
   includedMinutes?: number;
-  tz: string;
 }) {
   const a = analytics.ok ? analytics.data : undefined;
   const start = from ?? a?.from;

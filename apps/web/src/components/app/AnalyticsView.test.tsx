@@ -35,7 +35,6 @@ function renderView(props: Partial<Parameters<typeof AnalyticsView>[0]> = {}) {
       months={{ ok: true, data: months }}
       days={30}
       includedMinutes={3000}
-      tz="Asia/Kolkata"
       {...props}
     />,
   );

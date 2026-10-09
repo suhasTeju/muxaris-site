@@ -37,7 +37,6 @@ export default async function AnalyticsPage({
           ? plan.value.includedCallMinutes
           : undefined
       }
-      tz={tz}
     />
   );
 }
