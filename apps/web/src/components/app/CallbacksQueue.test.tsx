@@ -177,6 +177,15 @@ describe("CallbacksQueue", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
+  it("stacks the details form on narrow screens and keeps the desktop row from 768px", () => {
+    renderQueue();
+    const form = screen.getByLabelText("Note").closest(".grid")!;
+    expect(form.className).toContain("grid-cols-1");
+    expect(form.className).toContain("md:grid-cols-[200px_minmax(0,1fr)_auto]");
+    const header = screen.getByRole("heading", { name: "Callbacks" }).parentElement!.parentElement!;
+    expect(header.className).toContain("max-sm:[&_h1]:text-[22px]");
+  });
+
   it("shows the empty states", () => {
     renderQueue({ initial: [], initialTotal: 0, initialDone: { items: [], total: 0 } });
     expect(

@@ -295,7 +295,7 @@ export function CallbacksQueue({
   const bucket = tab === "open" ? open : done;
   return (
     <div className="animate-mx-in flex max-w-[980px] flex-col gap-[18px]">
-      <PageHeader title="Callbacks" />
+      <PageHeader title="Callbacks" className="max-sm:flex-wrap max-sm:[&_h1]:text-[22px]" />
       <Tabs
         aria-label="Callback status"
         value={tab}
