@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DemoForm } from "./DemoForm";
+import { DEMO_MESSAGES, validateDemo } from "./demo-request";
 
 const props = {
   cities: ["Bengaluru", "Other"],
@@ -18,6 +19,8 @@ function fill() {
   set("Mobile number", "98765 43210");
   set("Email", "asha@example.com");
 }
+const submit = () =>
+  fireEvent.submit(screen.getByRole("button", { name: "Request a demo" }).closest("form")!);
 
 afterEach(() => {
   cleanup();
@@ -31,7 +34,7 @@ describe("DemoForm", () => {
     render(<DemoForm {...props} />);
     expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
     fill();
-    fireEvent.submit(screen.getByRole("button", { name: "Request a demo" }).closest("form")!);
+    submit();
     const heading = await screen.findByRole("heading", { name: /Thank you/ });
     await waitFor(() => expect(document.activeElement).toBe(heading));
     expect(screen.getByRole("status").textContent).toMatch(/sent/);
@@ -49,6 +52,28 @@ describe("DemoForm", () => {
     });
   });
 
+  it("checks the fields before sending, as the design does", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DemoForm {...props} />);
+    fireEvent.change(screen.getByLabelText("Mobile number"), { target: { value: "12345" } });
+    submit();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("status").textContent).toBe(
+      "Please check: Your name, Clinic name, City, Mobile number, Email.",
+    );
+    const name = screen.getByLabelText("Your name");
+    expect(name.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(name);
+    const phone = screen.getByLabelText(/Mobile number/);
+    expect(document.getElementById(phone.getAttribute("aria-describedby")!)?.textContent).toMatch(
+      /10-digit/,
+    );
+    // Typing into a field clears its error.
+    fireEvent.change(name, { target: { value: "Dr Asha" } });
+    expect(name.getAttribute("aria-invalid")).toBeNull();
+  });
+
   it("marks the offending field invalid on a 400", async () => {
     vi.stubGlobal(
       "fetch",
@@ -60,11 +85,51 @@ describe("DemoForm", () => {
     );
     render(<DemoForm {...props} />);
     fill();
-    fireEvent.submit(screen.getByRole("button", { name: "Request a demo" }).closest("form")!);
+    submit();
     const phone = await screen.findByLabelText(/Mobile number/);
     await waitFor(() => expect(phone.getAttribute("aria-invalid")).toBe("true"));
     const describedBy = phone.getAttribute("aria-describedby")!;
     expect(document.getElementById(describedBy)?.textContent).toMatch(/10-digit/);
-    expect(screen.getByRole("status").textContent).toMatch(/mobile number/);
+    expect(screen.getByRole("status").textContent).toMatch(/Mobile number/);
+  });
+
+  it.each([
+    [429, DEMO_MESSAGES.rateLimited],
+    [500, DEMO_MESSAGES.server],
+  ])("explains a %i", async (status, message) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status }));
+    render(<DemoForm {...props} />);
+    fill();
+    submit();
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe(message));
+  });
+
+  it("explains a network failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    render(<DemoForm {...props} />);
+    fill();
+    submit();
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe(DEMO_MESSAGES.network));
+  });
+
+  it("can open in the sent state without stealing focus", () => {
+    render(<DemoForm {...props} initialState={{ status: "done", message: DEMO_MESSAGES.sent }} />);
+    const heading = screen.getByRole("heading", { name: /Thank you/ });
+    expect(document.activeElement).not.toBe(heading);
+    expect(screen.queryByRole("button", { name: "Request a demo" })).toBeNull();
+  });
+});
+
+describe("validateDemo", () => {
+  const ok = { name: "A", clinic: "B", city: "Bengaluru", phone: "", email: "a@b.in" };
+  it("accepts a 10-digit Indian mobile with or without +91", () => {
+    expect(validateDemo({ ...ok, phone: "98765 43210" })).toEqual({});
+    expect(validateDemo({ ...ok, phone: "+91 98765 43210" })).toEqual({});
+    expect(Object.keys(validateDemo({ ...ok, phone: "58765 43210" }))).toEqual(["phone"]);
+  });
+  it("rejects a malformed email", () => {
+    expect(Object.keys(validateDemo({ ...ok, phone: "9876543210", email: "nope" }))).toEqual([
+      "email",
+    ]);
   });
 });

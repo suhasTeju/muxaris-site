@@ -1,53 +1,80 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Check, CircleAlert } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Button } from "@/components/ui/Button";
+import { cn } from "@/components/ui/cn";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { assertRuntimeEnv, env } from "@/lib/env";
+import {
+  DEMO_MESSAGES,
+  FIELD_HINTS,
+  FIELD_LABELS,
+  checkMessage,
+  validateDemo,
+  type DemoFormState,
+  type DemoStatus,
+} from "./demo-request";
 
 interface Option {
   value: string;
   label: string;
 }
-type Status = "idle" | "sending" | "done" | "error";
 
-const FIELD_LABELS: Record<string, string> = {
-  name: "name",
-  clinic: "clinic name",
-  city: "city",
-  phone: "mobile number",
-  email: "email",
-  specialty: "specialty",
-  language: "language",
-};
-const FIELD_HINTS: Record<string, string> = {
-  phone: "Enter a 10-digit Indian mobile number, for example 98765 43210.",
-  email: "Enter a valid email address, for example you@clinic.in.",
-};
-
-const field =
-  "mt-1.5 min-h-12 w-full rounded-xl border border-white/15 bg-white/[0.06] px-4 text-base text-dark-text placeholder:text-dark-muted focus:border-accent-bright focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-bright/40";
+function Label({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
+  return (
+    <label
+      className={cn(
+        "text-ink flex flex-col gap-[8px] text-[14px] font-medium",
+        wide && "sm:col-span-2",
+      )}
+    >
+      {children}
+    </label>
+  );
+}
 
 export function DemoForm({
   cities,
   specialties,
   languages,
+  initialState,
 }: {
   cities: string[];
   specialties: Option[];
   languages: Option[];
+  initialState?: DemoFormState;
 }) {
-  const [status, setStatus] = useState<Status>("idle");
-  const [message, setMessage] = useState("");
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<DemoStatus>(initialState?.status ?? "idle");
+  const [message, setMessage] = useState(initialState?.message ?? "");
+  const [errors, setErrors] = useState<Record<string, string>>(initialState?.errors ?? {});
   const formRef = useRef<HTMLFormElement>(null);
   const doneHeading = useRef<HTMLHeadingElement>(null);
+  const sentHere = useRef(false);
 
   useEffect(() => {
-    if (status === "done") doneHeading.current?.focus();
+    if (status === "done" && sentHere.current) doneHeading.current?.focus();
   }, [status]);
+
+  function fail(fieldErrors: Record<string, string>, fallback: string) {
+    setStatus("error");
+    setErrors(fieldErrors);
+    const keys = Object.keys(fieldErrors);
+    setMessage(keys.length ? checkMessage(keys) : fallback);
+    const first = keys[0];
+    if (first) formRef.current?.querySelector<HTMLElement>(`[name="${first}"]`)?.focus();
+  }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const { company_url: trap, ...data } = Object.fromEntries(new FormData(e.currentTarget));
+    const invalid = validateDemo(data);
+    if (Object.keys(invalid).length) {
+      fail(invalid, DEMO_MESSAGES.checkDetails);
+      return;
+    }
     setStatus("sending");
     setMessage("Sending…");
     setErrors({});
@@ -60,13 +87,13 @@ export function DemoForm({
         body: JSON.stringify({ ...data, website: trap ?? "" }),
       });
       if (res.ok) {
+        sentHere.current = true;
         setStatus("done");
-        setMessage("Thank you. Your demo request was sent.");
+        setMessage(DEMO_MESSAGES.sent);
         return;
       }
-      setStatus("error");
       if (res.status === 429) {
-        setMessage("That’s a lot of requests from your network. Please try again in an hour.");
+        fail({}, DEMO_MESSAGES.rateLimited);
       } else if (res.status === 400) {
         const body = (await res.json().catch(() => null)) as {
           error?: { issues?: { path?: (string | number)[]; message?: string }[] };
@@ -78,51 +105,54 @@ export function DemoForm({
             fieldErrors[key] = FIELD_HINTS[key] ?? issue.message ?? "Please check this field.";
           }
         }
-        setErrors(fieldErrors);
-        const names = Object.keys(fieldErrors).map((k) => FIELD_LABELS[k]);
-        setMessage(
-          names.length
-            ? `Please check: ${names.join(", ")}.`
-            : "Please check your details and try again.",
-        );
-        const first = Object.keys(fieldErrors)[0];
-        if (first) formRef.current?.querySelector<HTMLElement>(`[name="${first}"]`)?.focus();
+        fail(fieldErrors, DEMO_MESSAGES.checkDetails);
       } else {
-        setMessage(
-          "Something went wrong on our side. Please try again, or email hello@muxaris.com.",
-        );
+        fail({}, DEMO_MESSAGES.server);
       }
-    } catch (e) {
-      setStatus("error");
-      setMessage(
-        e instanceof Error && e.message.startsWith("This deployment is misconfigured")
-          ? e.message
-          : "We couldn’t reach the server. Check your connection and try again.",
+    } catch (err) {
+      fail(
+        {},
+        err instanceof Error && err.message.startsWith("This deployment is misconfigured")
+          ? err.message
+          : DEMO_MESSAGES.network,
       );
     }
   }
 
-  const a11y = (name: string) => ({
+  const clear = (name: string) => () =>
+    setErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  const field = (name: string) => ({
+    name,
+    onChange: clear(name),
     "aria-invalid": errors[name] ? (true as const) : undefined,
-    "aria-describedby": errors[name] ? `demo-err-${name}` : undefined,
+    "aria-describedby": errors[name] && FIELD_HINTS[name] ? `demo-err-${name}` : undefined,
   });
-  const err = (name: string) =>
-    errors[name] ? (
-      <span id={`demo-err-${name}`} className="mt-1.5 block text-sm text-[#fda4af]">
+  const hint = (name: string) =>
+    errors[name] && FIELD_HINTS[name] ? (
+      <span id={`demo-err-${name}`} className="text-rose text-[13px] font-normal">
         {errors[name]}
       </span>
     ) : null;
 
+  // One polite region, always mounted: it announces sending and success, and shows errors.
   const live = (
     <div
       role="status"
       aria-live="polite"
       className={
         status === "error"
-          ? "mb-5 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger"
+          ? "rounded-12 border-rose-line bg-rose-soft text-rose-deep flex items-start gap-[10px] border px-[14px] py-[12px] text-[14px] leading-[1.5] sm:col-span-2"
           : "sr-only"
       }
     >
+      {status === "error" ? (
+        <CircleAlert size={16} aria-hidden className="mt-[2px] flex-none" />
+      ) : null}
       {message}
     </div>
   );
@@ -131,15 +161,18 @@ export function DemoForm({
     return (
       <div>
         {live}
-        <div className="mx-card-dark mx-card-ring p-8 sm:p-10">
+        <div className="flex animate-[mxIn8_.35s_ease_both] flex-col items-start gap-[14px] px-[4px] py-[24px] motion-reduce:animate-none">
+          <span className="rounded-14 bg-green-soft text-green-ink grid size-[48px] place-items-center">
+            <Check size={22} aria-hidden />
+          </span>
           <h3
             ref={doneHeading}
             tabIndex={-1}
-            className="font-display text-3xl tracking-tight outline-none"
+            className="m-0 text-[26px] font-semibold tracking-[-0.03em] outline-none"
           >
             Thank you. We have your request.
           </h3>
-          <p className="text-dark-muted mt-3 leading-relaxed">
+          <p className="text-ink-3 m-0 text-[16px] leading-[1.6]">
             Someone from Muxaris will call or email you within one working day to set up your demo.
           </p>
         </div>
@@ -148,108 +181,108 @@ export function DemoForm({
   }
 
   return (
-    <form ref={formRef} onSubmit={onSubmit} className="mx-card-dark p-6 sm:p-8">
-      <div className="grid gap-5 sm:grid-cols-2">
-        <label className="block text-sm">
-          Your name
-          <input
-            name="name"
-            {...a11y("name")}
-            required
-            maxLength={120}
-            autoComplete="name"
-            className={field}
-          />
-          {err("name")}
-        </label>
-        <label className="block text-sm">
-          Clinic name
-          <input
-            name="clinic"
-            {...a11y("clinic")}
-            required
-            maxLength={160}
-            autoComplete="organization"
-            className={field}
-          />
-          {err("clinic")}
-        </label>
-        <label className="block text-sm">
-          City
-          <select name="city" {...a11y("city")} required defaultValue="" className={field}>
-            <option value="" disabled>
-              Select city
+    <form
+      ref={formRef}
+      onSubmit={onSubmit}
+      noValidate
+      className="relative grid gap-x-[16px] gap-y-[18px] sm:grid-cols-2"
+    >
+      <Label>
+        Your name
+        <Input size={48} soft {...field("name")} required maxLength={120} autoComplete="name" />
+      </Label>
+      <Label>
+        Clinic name
+        <Input
+          size={48}
+          soft
+          {...field("clinic")}
+          required
+          maxLength={160}
+          autoComplete="organization"
+        />
+      </Label>
+      <Label>
+        City
+        <Select
+          size={48}
+          soft
+          {...field("city")}
+          required
+          defaultValue=""
+          className="focus:bg-subtle"
+        >
+          <option value="" disabled>
+            Select city
+          </option>
+          {cities.map((c) => (
+            <option key={c} value={c}>
+              {c}
             </option>
-            {cities.map((c) => (
-              <option key={c} value={c} className="text-ink">
-                {c}
-              </option>
-            ))}
-          </select>
-          {err("city")}
-        </label>
-        <label className="block text-sm">
-          Specialty
-          <select
-            name="specialty"
-            {...a11y("specialty")}
-            required
-            defaultValue="dental"
-            className={field}
-          >
-            {specialties.map((s) => (
-              <option key={s.value} value={s.value} className="text-ink">
-                {s.label}
-              </option>
-            ))}
-          </select>
-          {err("specialty")}
-        </label>
-        <label className="block text-sm">
-          Mobile number
-          <input
-            name="phone"
-            {...a11y("phone")}
-            type="tel"
-            required
-            inputMode="tel"
-            autoComplete="tel"
-            placeholder="98765 43210"
-            className={field}
-          />
-          {err("phone")}
-        </label>
-        <label className="block text-sm">
-          Email
-          <input
-            name="email"
-            {...a11y("email")}
-            type="email"
-            required
-            maxLength={200}
-            autoComplete="email"
-            className={field}
-          />
-          {err("email")}
-        </label>
-        <label className="block text-sm sm:col-span-2">
-          Preferred language for the call
-          <select
-            name="language"
-            {...a11y("language")}
-            required
-            defaultValue="en-IN"
-            className={field}
-          >
-            {languages.map((l) => (
-              <option key={l.value} value={l.value} className="text-ink">
-                {l.label}
-              </option>
-            ))}
-          </select>
-          {err("language")}
-        </label>
-      </div>
+          ))}
+        </Select>
+      </Label>
+      <Label>
+        Specialty
+        <Select
+          size={48}
+          soft
+          {...field("specialty")}
+          required
+          defaultValue="dental"
+          className="focus:bg-subtle"
+        >
+          {specialties.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </Select>
+      </Label>
+      <Label>
+        Mobile number
+        <Input
+          size={48}
+          soft
+          {...field("phone")}
+          type="tel"
+          required
+          inputMode="tel"
+          autoComplete="tel"
+          placeholder="98765 43210"
+        />
+        {hint("phone")}
+      </Label>
+      <Label>
+        Email
+        <Input
+          size={48}
+          soft
+          {...field("email")}
+          type="email"
+          required
+          maxLength={200}
+          autoComplete="email"
+        />
+        {hint("email")}
+      </Label>
+      <Label wide>
+        Preferred language for the call
+        <Select
+          size={48}
+          soft
+          {...field("language")}
+          required
+          defaultValue="en-IN"
+          className="focus:bg-subtle"
+        >
+          {languages.map((l) => (
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
+          ))}
+        </Select>
+      </Label>
 
       {/* Honeypot: hidden from people and assistive tech; bots fill it. */}
       <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
@@ -259,18 +292,26 @@ export function DemoForm({
         </label>
       </div>
 
-      <div className="mt-5 empty:hidden">{live}</div>
+      {live}
 
-      <button
-        type="submit"
-        disabled={status === "sending"}
-        className="mx-btn-primary hover:bg-accent-bright hover:text-ink mx-btn mt-6 w-full disabled:opacity-60"
-      >
-        {status === "sending" ? "Sending…" : "Request a demo"}
-      </button>
-      <p className="text-dark-muted mt-4 text-xs">
-        We use your details only to contact you about Muxaris. See our privacy policy.
-      </p>
+      <div className="flex flex-col gap-[12px] pt-[6px] sm:col-span-2">
+        <Button
+          type="submit"
+          size={52}
+          block
+          disabled={status === "sending"}
+          className="shadow-cta"
+        >
+          {status === "sending" ? "Sending…" : "Request a demo"}
+        </Button>
+        <p className="text-muted m-0 text-center text-[13px]">
+          We use your details only to contact you about Muxaris. See our{" "}
+          <Link href="/privacy" className="text-teal-ink underline underline-offset-2">
+            privacy policy
+          </Link>
+          .
+        </p>
+      </div>
     </form>
   );
 }
