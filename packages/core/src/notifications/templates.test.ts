@@ -104,6 +104,8 @@ describe("notification templates", () => {
     expect(html).toContain("Sent with");
     // Email-safe: tables and inline styles, no stylesheet, no classes, no scripts, no images.
     expect(html).toContain('role="presentation"');
+    // Fluid single column: full width on a phone, the design's 560px on a desktop client.
+    expect(html).toContain("width:100%;max-width:560px;");
     expect(html).not.toMatch(/<style|class=|<script|<img|<link/);
   });
 
