@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LANGUAGES, type Clinic, type LanguageCode } from "@muxaris/shared";
 import { useVoiceCall, type VoiceClientOptions } from "@muxaris/voice-sdk";
+import { useToast } from "@/components/ui";
 import { getAccessToken } from "@/lib/api-client";
 import { assertRuntimeEnv, env } from "@/lib/env";
 import { TryCallView } from "./assistant/TryCallView";
@@ -88,7 +89,16 @@ export function TryCallSession({
     ...(voice.mediaFactory ? { mediaFactory: voice.mediaFactory } : {}),
     ...(voice.playerFactory ? { playerFactory: voice.playerFactory } : {}),
   });
-  const { phase, start, stop } = call;
+  const { phase, booking, start, stop } = call;
+  const { toast } = useToast();
+
+  // As in the design, a booking made during the test call is also announced with a toast.
+  useEffect(() => {
+    if (booking)
+      toast("Appointment booked by your assistant", {
+        action: { label: "View", href: "/app/appointments" },
+      });
+  }, [booking, toast]);
 
   // Never keep a token past the call that used it: drop it as the call ends or fails.
   const [seenPhase, setSeenPhase] = useState(phase);

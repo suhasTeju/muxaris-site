@@ -32,6 +32,7 @@ vi.mock("@/lib/env", () => ({
 }));
 vi.mock("@/lib/api-client", () => ({ getAccessToken: () => getAccessToken() }));
 
+import { ToastProvider } from "@/components/ui";
 import { TryCall } from "./TryCall";
 
 const base = {
@@ -247,6 +248,32 @@ describe("TryCall", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start another call" }));
     await waitFor(() => expect(start).toHaveBeenCalledTimes(2));
     expect(hook.opts.at(-1)!.token).toBe("tok-second");
+  });
+
+  it("announces a booking with a toast that links to the appointments", () => {
+    hook.value = {
+      ...base,
+      phase: "live",
+      state: "speaking",
+      booking: {
+        appointmentId: "a1",
+        doctorName: "Dr. Rao",
+        serviceName: "Cleaning",
+        startsAt: "2026-10-06T04:00:00Z",
+      },
+    };
+    render(
+      <ToastProvider>
+        <TryCall />
+      </ToastProvider>,
+    );
+    const toast = screen
+      .getAllByRole("status")
+      .find((s) => s.textContent?.includes("Appointment booked by your assistant"));
+    expect(toast).toBeTruthy();
+    expect(within(toast!).getByRole("link", { name: "View" }).getAttribute("href")).toBe(
+      "/app/appointments",
+    );
   });
 
   it("classifies a failure by the SDK errorCode before its wording", () => {
