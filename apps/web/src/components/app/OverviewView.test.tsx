@@ -180,4 +180,23 @@ describe("OverviewView", () => {
     expect(within(today).getByText("10:00 am")).toBeTruthy();
     expect(within(today).getByText("2:30 pm")).toBeTruthy();
   });
+
+  it("stacks the KPI tiles one per row on phones and two on tablets, and shrinks the title", () => {
+    render(
+      <OverviewView
+        {...base}
+        stats={{ ok: true, data: stats }}
+        usage={{ ok: true, data: usage }}
+        appointments={{ ok: true, data: { appointments: [], doctors: [], services: [] } }}
+        recentCalls={{ ok: false }}
+      />,
+    );
+    const kpis = screen.getByRole("region", { name: "Key numbers" }).className;
+    expect(kpis).toContain("grid-cols-1");
+    expect(kpis).toContain("sm:grid-cols-2");
+    // Desktop keeps the design's auto-fit grid.
+    expect(kpis).toContain("lg:grid-cols-[repeat(auto-fit,minmax(210px,1fr))]");
+    const header = screen.getByRole("heading", { level: 1 }).closest("div")!.parentElement!;
+    expect(header.className).toContain("max-lg:[&_h1]:text-[22px]");
+  });
 });

@@ -86,6 +86,19 @@ describe("PatientsView", () => {
     expect(screen.getByRole("dialog", { name: "Add patient" })).toBeTruthy();
     expect(screen.getByLabelText("Phone")).toBeTruthy();
   });
+  it("scrolls the patient table inside its card on narrow screens", () => {
+    render(
+      <PatientsView
+        initial={[patient("p1", "Ananya Krishnan")]}
+        initialTotal={1}
+        tz="Asia/Kolkata"
+      />,
+    );
+    const row = screen.getByRole("link", { name: /Ananya Krishnan/ });
+    const scroller = row.closest(".overflow-x-auto")!;
+    expect(scroller).toBeTruthy();
+    expect(scroller.firstElementChild!.className).toContain("min-w-[760px]");
+  });
 });
 
 function patient(id: string, name: string | null): Patient {

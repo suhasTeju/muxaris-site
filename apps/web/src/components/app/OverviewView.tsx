@@ -13,6 +13,7 @@ import {
 import { TodayAppointmentList } from "./overview/TodayAppointmentList";
 import { callIcon, callerOf, type PatientNames } from "./core/calls";
 import { formatDateLong, formatDur, relativeDay } from "./core/format";
+import { PAGE_TITLE_MOBILE } from "./core/layout";
 import { usageCard } from "./usage";
 
 export interface TodayAppointments {
@@ -70,6 +71,7 @@ export function OverviewView({
   return (
     <div className="animate-mx-in flex flex-col gap-[22px]">
       <PageHeader
+        className={PAGE_TITLE_MOBILE}
         title="Overview"
         subtitle={clinicName}
         actions={
@@ -82,7 +84,7 @@ export function OverviewView({
 
       <section
         aria-label="Key numbers"
-        className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-[14px]"
+        className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(210px,1fr))]"
       >
         <KpiCard
           icon={Phone}

@@ -121,4 +121,15 @@ describe("AppointmentsBoard", () => {
     expect(await screen.findByText(/^Booked Consultation for Fri, 9 Oct, /)).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+  it("scrolls the doctor columns inside the card and stacks the week on narrow screens", async () => {
+    renderBoard();
+    const schedule = await screen.findByLabelText("Day schedule");
+    expect(schedule.firstElementChild!.className).toContain("overflow-x-auto");
+    fireEvent.click(screen.getByRole("tab", { name: "Week" }));
+    const monday = await screen.findByRole("region", { name: "Mon, 5 Oct" });
+    const week = monday.parentElement!.className;
+    expect(week).toContain("grid-cols-1");
+    expect(week).toContain("sm:grid-cols-2");
+    expect(week).toContain("lg:grid-cols-7");
+  });
 });

@@ -21,6 +21,9 @@ import { formatDayShort, initials, keyDob } from "./core/format";
 const ROW =
   "border-line-soft grid items-center gap-[12px] border-t px-[18px] py-[11px] text-[14px]";
 const WHEN = "text-ink-2 font-mono text-[12.5px]";
+/** Below 640px the date takes its own line above the row's content and badge. */
+const ROW_STACK = "max-sm:gap-y-[4px]";
+const WHEN_STACK = `${WHEN} max-sm:col-span-full`;
 
 function Section({
   id,
@@ -162,8 +165,11 @@ export function PatientDetailView({
             empty={appointments.length ? null : "No visits yet."}
           >
             {appointments.map((a) => (
-              <li key={a.id} className={`${ROW} grid-cols-[150px_minmax(0,1fr)_auto]`}>
-                <span className={WHEN}>{formatDateTime(a.startsAt, tz)}</span>
+              <li
+                key={a.id}
+                className={`${ROW} ${ROW_STACK} grid-cols-[150px_minmax(0,1fr)_auto] max-sm:grid-cols-[minmax(0,1fr)_auto]`}
+              >
+                <span className={WHEN_STACK}>{formatDateTime(a.startsAt, tz)}</span>
                 <span className="min-w-0">
                   {service.get(a.serviceId) ?? "Appointment"} ·{" "}
                   {doctor.get(a.doctorId) ?? "Unassigned"}
@@ -177,9 +183,9 @@ export function PatientDetailView({
               <li key={c.id}>
                 <Link
                   href={`/app/calls/${c.id}`}
-                  className={`${ROW} text-ink hover:bg-subtle hover:text-ink grid-cols-[150px_auto_minmax(0,1fr)]`}
+                  className={`${ROW} text-ink hover:bg-subtle hover:text-ink ${ROW_STACK} grid-cols-[150px_auto_minmax(0,1fr)] max-sm:grid-cols-[auto_minmax(0,1fr)]`}
                 >
-                  <span className={WHEN}>{formatDateTime(c.startedAt, tz)}</span>
+                  <span className={WHEN_STACK}>{formatDateTime(c.startedAt, tz)}</span>
                   <StatusBadge kind="outcome" value={c.outcome} />
                   <span className="text-muted truncate">{c.summary || "No summary"}</span>
                 </Link>
@@ -192,8 +198,11 @@ export function PatientDetailView({
             empty={notifications.length ? null : "No messages yet."}
           >
             {notifications.map((n) => (
-              <li key={n.id} className={`${ROW} grid-cols-[150px_minmax(0,1fr)_auto]`}>
-                <span className={WHEN}>
+              <li
+                key={n.id}
+                className={`${ROW} ${ROW_STACK} grid-cols-[150px_minmax(0,1fr)_auto] max-sm:grid-cols-[minmax(0,1fr)_auto]`}
+              >
+                <span className={WHEN_STACK}>
                   {formatDayShort(n.createdAt, tz)}, {formatTime(n.createdAt, tz)}
                 </span>
                 <span className="min-w-0">

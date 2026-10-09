@@ -67,7 +67,7 @@ export function CallDetail({
     <div className="animate-mx-in flex flex-col gap-[18px]">
       <BackLink href="/app/calls">All calls</BackLink>
       <div className="flex flex-col gap-[10px]">
-        <h1 className="m-0 text-[26px] leading-[1.15] font-semibold tracking-[-0.03em]">
+        <h1 className="m-0 text-[22px] leading-[1.15] lg:text-[26px] font-semibold tracking-[-0.03em]">
           {formatDateLong(call.startedAt, tz)}, {formatTime(call.startedAt, tz)}
         </h1>
         <div className="text-muted flex flex-wrap items-center gap-[8px] text-[13.5px]">

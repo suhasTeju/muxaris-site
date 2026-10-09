@@ -129,4 +129,13 @@ describe("CallDetail", () => {
       "/app/callbacks",
     );
   });
+  it("shrinks the title and stacks the summary under the transcript below 1024px", () => {
+    render(<CallDetail initialCall={call()} turns={turns} callbacks={[]} tz={TZ} />);
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1.className).toContain("text-[22px]");
+    expect(h1.className).toContain("lg:text-[26px]");
+    const grid = screen.getByRole("heading", { name: "Summary" }).closest(".grid")!;
+    expect(grid.className).toContain("lg:grid-cols-[minmax(0,1.5fr)_minmax(300px,1fr)]");
+    expect(grid.className).not.toMatch(/(^| )grid-cols-/);
+  });
 });

@@ -18,6 +18,7 @@ import {
 import { languageLabel } from "@/lib/dashboard";
 import { useCoreApi } from "./core/api";
 import { formatDayShort, initials } from "./core/format";
+import { PAGE_TITLE_MOBILE } from "./core/layout";
 import { PatientForm } from "./PatientForm";
 
 const PAGE = 50;
@@ -118,6 +119,7 @@ export function PatientsView({
   return (
     <div className="animate-mx-in flex flex-col gap-[18px]">
       <PageHeader
+        className={PAGE_TITLE_MOBILE}
         title="Patients"
         subtitle={`${initialTotal} ${initialTotal === 1 ? "patient" : "patients"}`}
         actions={

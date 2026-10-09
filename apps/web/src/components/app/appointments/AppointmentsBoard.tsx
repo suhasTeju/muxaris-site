@@ -16,6 +16,7 @@ import { addDays, dayRange, localDateKey } from "@/lib/dashboard";
 import { CancelDialog, NewAppointmentDialog, RescheduleDialog } from "../AppointmentDialogs";
 import { useCoreApi } from "../core/api";
 import { keyDateLong, keyDayShort, keyWeekdayIndex } from "../core/format";
+import { PAGE_TITLE_MOBILE } from "../core/layout";
 import { AppointmentDrawer } from "./AppointmentDrawer";
 import { DayTimeline } from "./DayTimeline";
 import { WeekGrid, mondayOf } from "./WeekGrid";
@@ -253,6 +254,7 @@ export function AppointmentsBoard({
   return (
     <div className="animate-mx-in flex flex-col gap-[18px]">
       <PageHeader
+        className={PAGE_TITLE_MOBILE}
         title="Appointments"
         subtitle={subtitle}
         actions={

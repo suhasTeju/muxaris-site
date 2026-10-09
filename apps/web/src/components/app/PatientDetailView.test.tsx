@@ -126,4 +126,22 @@ describe("PatientDetailView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByText("12 Mar 1994")).toBeTruthy();
   });
+
+  it("stacks the profile over the sections and puts each row's date on its own line on phones", () => {
+    render(
+      <PatientDetailView
+        detail={detail}
+        doctors={[{ id: "d1", name: "Dr. Rao" }]}
+        services={[{ id: "s1", name: "Cleaning" }]}
+        notifications={[note]}
+        tz="Asia/Kolkata"
+      />,
+    );
+    const visit = screen.getByText(/Cleaning/).closest("li")!;
+    expect(visit.className).toContain("grid-cols-[150px_minmax(0,1fr)_auto]");
+    expect(visit.className).toContain("max-sm:grid-cols-[minmax(0,1fr)_auto]");
+    expect(visit.firstElementChild!.className).toContain("max-sm:col-span-full");
+    const layout = screen.getByRole("heading", { level: 1 }).closest(".grid")!;
+    expect(layout.className).toContain("lg:grid-cols-[340px_minmax(0,1fr)]");
+  });
 });

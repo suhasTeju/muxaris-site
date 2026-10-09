@@ -99,4 +99,12 @@ describe("CallList design", () => {
       "/app/assistant/try",
     );
   });
+
+  it("scrolls the table sideways inside its card on narrow screens", () => {
+    render(<CallList calls={calls} tz="Asia/Kolkata" now={new Date("2026-10-09T08:40:00Z")} />);
+    const card = screen.getByLabelText("Calls");
+    const scroller = card.firstElementChild!;
+    expect(scroller.className).toContain("overflow-x-auto");
+    expect(scroller.firstElementChild!.className).toContain("min-w-[940px]");
+  });
 });

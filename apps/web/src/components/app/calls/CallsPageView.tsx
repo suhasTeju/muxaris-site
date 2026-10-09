@@ -1,6 +1,7 @@
 import { PhoneCall } from "lucide-react";
 import { ButtonLink, PageHeader } from "@/components/ui";
 import { CallFilters, type CallFilterValue } from "../CallFilters";
+import { PAGE_TITLE_MOBILE } from "../core/layout";
 
 /** Page frame from AppCalls.dc.html: title with the call count, test-call link, filters, list. */
 export function CallsPageView({
@@ -15,6 +16,7 @@ export function CallsPageView({
   return (
     <div className="animate-mx-in flex flex-col gap-[18px]">
       <PageHeader
+        className={PAGE_TITLE_MOBILE}
         title="Calls"
         subtitle={`${total} call${total === 1 ? "" : "s"}`}
         actions={
