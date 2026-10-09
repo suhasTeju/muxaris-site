@@ -1,9 +1,10 @@
 "use client";
 
+import { MailOpen } from "lucide-react";
 import { useState } from "react";
 import type { Notification, NotificationStatus } from "@muxaris/shared";
 import { useApi } from "@/lib/api-client";
-import { ghostBtn } from "./Modal";
+import { Button, ButtonLink, PageHeader, Tabs } from "@/components/ui";
 import { NotificationsTable } from "./NotificationsTable";
 
 const PAGE = 50;
@@ -25,17 +26,24 @@ const TABS: Array<[Tab, string]> = [
 export function NotificationsView({
   initial,
   initialTotal,
+  counts: initialCounts = {},
   tz,
+  designsHref,
 }: {
   initial: Notification[];
   initialTotal: number;
+  /** Totals per status, so every tab shows its count before it is opened. */
+  counts?: Partial<Record<NotificationStatus, number>>;
   tz: string;
+  /** Where the "Email designs" button goes; the button is hidden without one. */
+  designsHref?: string;
 }) {
   const api = useApi();
   const [tab, setTab] = useState<Tab>("all");
   const [buckets, setBuckets] = useState<Partial<Record<Tab, Bucket>>>({
     all: { items: initial, total: initialTotal },
   });
+  const [counts, setCounts] = useState<Partial<Record<Tab, number>>>(initialCounts);
   const [loading, setLoading] = useState<Partial<Record<Tab, boolean>>>({});
   const [errors, setErrors] = useState<Partial<Record<Tab, string>>>({});
 
@@ -74,6 +82,16 @@ export function NotificationsView({
 
   // Keyed off the row's new status, never the visible tab, so a late retry cannot hit the wrong bucket.
   function changed(updated: Notification) {
+    const before = Object.values(buckets)
+      .flatMap((b) => b?.items ?? [])
+      .find((n) => n.id === updated.id)?.status;
+    if (before && before !== updated.status) {
+      setCounts((c) => ({
+        ...c,
+        ...(c[before] !== undefined ? { [before]: Math.max(0, c[before] - 1) } : {}),
+        ...(c[updated.status] !== undefined ? { [updated.status]: c[updated.status]! + 1 } : {}),
+      }));
+    }
     setBuckets((prev) => {
       const next: Partial<Record<Tab, Bucket>> = {};
       for (const [key, b] of Object.entries(prev) as Array<[Tab, Bucket]>) {
@@ -101,35 +119,36 @@ export function NotificationsView({
   const error = errors[tab] ?? null;
   const bucket = buckets[tab];
   return (
-    <div>
-      <div role="tablist" aria-label="Message status" className="mb-4 flex flex-wrap gap-2">
-        {TABS.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            id={`ntf-tab-${key}`}
-            aria-selected={tab === key}
-            aria-controls="ntf-panel"
-            onClick={() => choose(key)}
-            className={`min-h-11 rounded-xl px-4 text-[15px] focus-visible:outline-2 focus-visible:outline-[var(--color-accent)] ${
-              tab === key ? "bg-accent text-on-accent" : "border-line text-muted border"
-            }`}
-          >
-            {label}
-            {buckets[key] ? (
-              <span className="ml-1.5 tabular-nums">({buckets[key].total})</span>
-            ) : null}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" id="ntf-panel" aria-labelledby={`ntf-tab-${tab}`}>
+    <div className="animate-mx-in flex flex-col gap-[18px]">
+      <PageHeader
+        title="Notifications"
+        subtitle="Confirmations and reminders go by email to patients with an email on file. SMS and WhatsApp are coming soon."
+        maxWidth={640}
+        actions={
+          designsHref ? (
+            <ButtonLink variant="secondary" size={36} icon={MailOpen} href={designsHref}>
+              Email designs
+            </ButtonLink>
+          ) : null
+        }
+      />
+      <Tabs
+        aria-label="Status"
+        value={tab}
+        onChange={(id) => choose(id as Tab)}
+        items={TABS.map(([id, label]) => ({
+          id,
+          label,
+          count: buckets[id]?.total ?? counts[id],
+        }))}
+      />
+      <div role="tabpanel" aria-label="Messages" className="flex flex-col gap-[18px]">
         {error ? (
-          <p role="alert" className="text-danger mb-3 text-sm">
+          <p role="alert" className="text-rose m-0 text-[13.5px]">
             {error}{" "}
             <button
               type="button"
-              className="underline"
+              className="cursor-pointer font-medium underline"
               onClick={() => load(tab, bucket?.items.length ?? 0)}
             >
               Retry
@@ -137,21 +156,24 @@ export function NotificationsView({
           </p>
         ) : null}
         {bucket === undefined ? (
-          <p className="text-muted" aria-live="polite">
-            {error ? null : "Loading…"}
-          </p>
+          error ? null : (
+            <p className="text-muted m-0 text-[14px]" aria-live="polite">
+              Loading…
+            </p>
+          )
         ) : (
           <NotificationsTable items={bucket.items} tz={tz} onChanged={changed} showPatientLink />
         )}
         {bucket && bucket.items.length < bucket.total ? (
-          <button
-            type="button"
-            className={`${ghostBtn} mt-4`}
+          <Button
+            variant="secondary"
+            size={36}
+            className="self-start"
             disabled={busy}
             onClick={() => load(tab, bucket.items.length)}
           >
             {busy ? "Loading…" : "Load more"}
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>

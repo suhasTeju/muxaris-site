@@ -60,6 +60,46 @@ describe("NotificationsView", () => {
     expect(api.mock.calls.filter((c) => String(c[0]).includes("status=sent"))).toHaveLength(1);
   });
 
+  it("renders the header, every tab's count and the optional Email designs link", () => {
+    const { rerender } = render(
+      <NotificationsView
+        initial={[mk("a", "queued"), mk("b", "failed")]}
+        initialTotal={2}
+        counts={{ queued: 1, sent: 0, failed: 1, skipped: 0 }}
+        tz="Asia/Kolkata"
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Notifications" })).toBeTruthy();
+    expect(screen.getByText(/SMS and WhatsApp are coming soon\./)).toBeTruthy();
+    const names = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(names).toEqual(["All2", "Queued1", "Sent0", "Failed1", "Not sent0"]);
+    expect(screen.queryByRole("link", { name: "Email designs" })).toBeNull();
+    rerender(
+      <NotificationsView initial={[]} initialTotal={0} tz="Asia/Kolkata" designsHref="/designs" />,
+    );
+    expect(screen.getByRole("link", { name: "Email designs" }).getAttribute("href")).toBe(
+      "/designs",
+    );
+  });
+
+  it("moves the counts of unopened tabs when a retry changes a row's status", async () => {
+    api.mockResolvedValue({ notification: mk("f1", "queued") });
+    render(
+      <NotificationsView
+        initial={[mk("f1", "failed")]}
+        initialTotal={1}
+        counts={{ queued: 0, sent: 0, failed: 1, skipped: 0 }}
+        tz="Asia/Kolkata"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /Queued/ }).textContent).toBe("Queued1"),
+    );
+    expect(screen.getByRole("tab", { name: /Failed/ }).textContent).toBe("Failed0");
+    expect(screen.getByRole("tab", { name: /All/ }).textContent).toBe("All1");
+  });
+
   it("a retry moves the row between buckets without corrupting another tab", async () => {
     api.mockImplementation((path: string, opts?: { method?: string }) => {
       if (opts?.method === "POST") return Promise.resolve({ notification: mk("f1", "queued") });
