@@ -18,7 +18,7 @@ const h = (weekday: number, startTime = "10:00", endTime = "20:00") => ({
 
 describe("settings format helpers", () => {
   it("formats phones, rupees, languages and the timezone", () => {
-    expect(formatPhone("+918041234567")).toBe("+91 80412 34567");
+    expect(formatPhone("+918041234567")).toBe("+91 80 4123 4567");
     expect(formatPhone("+14155550100")).toBe("+14155550100");
     expect(formatPhone(null)).toBe("");
     expect(rupee(150000)).toBe("₹1,50,000");

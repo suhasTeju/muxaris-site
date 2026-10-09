@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { formatIndianPhone } from "@/lib/phone";
 import {
   BULBUL_V3_SPEAKERS,
   LANGUAGES,
@@ -75,7 +76,7 @@ export function StepAssistant({
         if (a.greeting && Object.keys(a.greeting).length)
           setGreeting((g) => ({ ...g, ...a.greeting }));
         if (a.voices) setVoices(a.voices);
-        if (a.handoffNumber) setHandoff(a.handoffNumber);
+        if (a.handoffNumber) setHandoff(formatIndianPhone(a.handoffNumber));
         if (a.faq?.length) setFaq(a.faq);
       })
       .catch(() => undefined);

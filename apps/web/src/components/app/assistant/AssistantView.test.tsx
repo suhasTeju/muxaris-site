@@ -54,7 +54,7 @@ describe("AssistantView", () => {
     );
     expect(screen.getByText("53/300")).toBeTruthy();
     expect((screen.getByLabelText(/Handoff phone number/) as HTMLInputElement).value).toBe(
-      "+91 80412 34567",
+      "+91 80 4123 4567",
     );
     expect(screen.getByText("3/30")).toBeTruthy();
     expect(screen.getByText("What callers hear first")).toBeTruthy();

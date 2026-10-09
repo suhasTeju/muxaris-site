@@ -59,7 +59,7 @@ describe("SettingsView", () => {
       "Assistant",
       "Notifications",
     ]);
-    expect(within(section("Clinic")).getByText("+91 80412 34567")).toBeTruthy();
+    expect(within(section("Clinic")).getByText("+91 80 4123 4567")).toBeTruthy();
     expect(within(section("Clinic")).getByText("Asia/Kolkata (IST)")).toBeTruthy();
     expect(within(section("Doctors")).getAllByText(/Mon–Sat 10:00–20:00/)).toHaveLength(2);
     expect(within(section("Services")).getByText("₹1,500")).toBeTruthy();

@@ -1,6 +1,7 @@
 import { LANGUAGES } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
 import { DISPLAY_WEEKDAYS, WEEKDAY_NAMES, type WeekHours } from "@/lib/onboarding";
+import { formatIndianPhone } from "@/lib/phone";
 
 /** "kn-IN" → "Kannada" (the code itself when unknown). */
 export function languageName(code: string): string {
@@ -24,11 +25,9 @@ export function timezoneLabel(tz: string): string {
   }
 }
 
-/** E.164 Indian numbers read as "+91 98765 43210"; anything else is shown as stored. */
+/** "+91 98765 43210" for a mobile, "+91 80 4123 4567" for a landline; see lib/phone. */
 export function formatPhone(phone: string | null | undefined): string {
-  if (!phone) return "";
-  const m = /^\+91(\d{5})(\d{5})$/.exec(phone);
-  return m ? `+91 ${m[1]} ${m[2]}` : phone;
+  return formatIndianPhone(phone);
 }
 
 /** ₹1,500 (Indian grouping). */
