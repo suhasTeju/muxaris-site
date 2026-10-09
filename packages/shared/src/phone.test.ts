@@ -1,6 +1,6 @@
-import { maskPhone } from "@muxaris/shared";
 import { describe, expect, it } from "vitest";
-import { formatIndianPhone } from "./phone";
+import { clinicPhone, createClinicBody, maskPhone } from "./api.js";
+import { formatIndianPhone } from "./phone.js";
 
 describe("formatIndianPhone", () => {
   it("groups a mobile as 5 + 5", () => {
@@ -47,5 +47,46 @@ describe("formatIndianPhone", () => {
   it("leaves the masked form to maskPhone", () => {
     expect(maskPhone("+919876543210")).toBe("+91 •••• ••3210");
     expect(formatIndianPhone(maskPhone("+919876543210"))).toBe("+91 •••• ••3210");
+  });
+});
+
+describe("clinicPhone", () => {
+  const ok = (v: string) => clinicPhone.parse(v);
+
+  it("accepts a mobile or an STD landline and stores it as E.164", () => {
+    expect(ok("98765 43210")).toBe("+919876543210");
+    expect(ok("080 4123 4567")).toBe("+918041234567");
+    expect(ok("011-2345 6789")).toBe("+911123456789");
+    expect(ok("+91 22 2345 6789")).toBe("+912223456789");
+    expect(ok("0821 242 3456")).toBe("+918212423456");
+    expect(ok("(08182) 271234")).toBe("+918182271234");
+    expect(
+      createClinicBody.parse({ name: "Smile", city: "Delhi", phone: "011 2345 6789" }).phone,
+    ).toBe("+911123456789");
+  });
+
+  it("rejects numbers that are neither", () => {
+    for (const v of [
+      "12345",
+      "1234567890",
+      "+91 50 1234 5678",
+      "011 1234 5678",
+      "+1 415 555 0100",
+    ]) {
+      expect(clinicPhone.safeParse(v).success, v).toBe(false);
+    }
+  });
+
+  it("accepts only numbers the formatter can group", () => {
+    for (const v of [
+      "98765 43210",
+      "080 4123 4567",
+      "011 2345 6789",
+      "0821 242 3456",
+      "08182 271234",
+    ]) {
+      const e164 = ok(v);
+      expect(formatIndianPhone(e164)).not.toBe(e164);
+    }
   });
 });

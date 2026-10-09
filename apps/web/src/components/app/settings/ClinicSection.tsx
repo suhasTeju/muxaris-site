@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CITIES, LANGUAGES, indianPhone, type Clinic } from "@muxaris/shared";
+import { CITIES, LANGUAGES, clinicPhone, type Clinic } from "@muxaris/shared";
 import { Field, Input, Select, useToast } from "@/components/ui";
 import { useApi } from "@/lib/api-client";
 import { formatPhone, languageName, saveErrorText, timezoneLabel } from "./format";
@@ -59,7 +59,7 @@ export function ClinicSection({
     if (!draft) return;
     const next: Partial<Record<keyof Draft, string>> = {};
     if (!draft.name.trim()) next.name = "Enter the clinic's name";
-    const phone = draft.phone.trim() ? indianPhone.safeParse(draft.phone) : null;
+    const phone = draft.phone.trim() ? clinicPhone.safeParse(draft.phone) : null;
     if (phone && !phone.success) next.phone = "Enter a valid Indian phone number";
     if (!draft.languages.length) next.languages = "Pick at least one language";
     setErrors(next);

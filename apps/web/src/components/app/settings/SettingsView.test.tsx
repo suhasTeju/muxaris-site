@@ -175,6 +175,27 @@ describe("SettingsView", () => {
     expect(api).not.toHaveBeenCalled();
   });
 
+  it("clinic: a landline with its STD code saves, as the formatter shows it", async () => {
+    api.mockImplementation(async (_p: string, init: { body: object }) => ({
+      clinic: { ...clinic, ...init.body },
+    }));
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Edit clinic details" }));
+    fireEvent.change(within(section("Clinic")).getByLabelText("Phone"), {
+      target: { value: "011 2345 6789" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save clinic details" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/v1/clinic",
+        expect.objectContaining({ body: expect.objectContaining({ phone: "+911123456789" }) }),
+      ),
+    );
+    await waitFor(() =>
+      expect(within(section("Clinic")).getByText("+91 11 2345 6789")).toBeTruthy(),
+    );
+  });
+
   it("services: PATCHes changed rows, deactivates removed ones and POSTs new ones", async () => {
     api.mockImplementation(async (path: string, init: { method: string; body: object }) => {
       if (init.method === "POST") return { service: { ...services[0], id: "s_new", ...init.body } };
