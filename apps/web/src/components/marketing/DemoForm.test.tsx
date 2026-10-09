@@ -122,10 +122,14 @@ describe("DemoForm", () => {
 
 describe("validateDemo", () => {
   const ok = { name: "A", clinic: "B", city: "Bengaluru", phone: "", email: "a@b.in" };
-  it("accepts a 10-digit Indian mobile with or without +91", () => {
-    expect(validateDemo({ ...ok, phone: "98765 43210" })).toEqual({});
-    expect(validateDemo({ ...ok, phone: "+91 98765 43210" })).toEqual({});
-    expect(Object.keys(validateDemo({ ...ok, phone: "58765 43210" }))).toEqual(["phone"]);
+  it.each(["98765 43210", "+91 98765 43210", "919876543210", "098765 43210", "(0) 98765-43210"])(
+    "accepts %s, as the server's indianPhone does",
+    (phone) => {
+      expect(validateDemo({ ...ok, phone })).toEqual({});
+    },
+  );
+  it.each(["58765 43210", "98765", "02212345678", "+44 98765 43210"])("rejects %s", (phone) => {
+    expect(Object.keys(validateDemo({ ...ok, phone }))).toEqual(["phone"]);
   });
   it("rejects a malformed email", () => {
     expect(Object.keys(validateDemo({ ...ok, phone: "9876543210", email: "nope" }))).toEqual([

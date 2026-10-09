@@ -1,5 +1,7 @@
 /** Copy, client-side checks and states for the demo request form (shared with dev previews). */
 
+import { demoRequestBody } from "@muxaris/shared";
+
 export type DemoStatus = "idle" | "sending" | "done" | "error";
 
 /** A state the form can open in (dev previews show the error and success states this way). */
@@ -36,17 +38,21 @@ export function checkMessage(fields: string[]): string {
   return `Please check: ${fields.map((k) => FIELD_LABELS[k] ?? k).join(", ")}.`;
 }
 
-/** The checks the design runs before sending; the API validates the same rules again. */
+/**
+ * The checks the design runs before sending. Phone and email use the API's own schema
+ * (`demoRequestBody`), so the form never rejects what the server would accept.
+ */
 export function validateDemo(data: Record<string, FormDataEntryValue>): Record<string, string> {
   const text = (k: string) => String(data[k] ?? "").trim();
   const errors: Record<string, string> = {};
   if (!text("name")) errors.name = "Enter your name.";
   if (!text("clinic")) errors.clinic = "Enter your clinic’s name.";
   if (!text("city")) errors.city = "Select a city.";
-  const digits = text("phone")
-    .replace(/\D/g, "")
-    .replace(/^91(?=\d{10}$)/, "");
-  if (!/^[6-9]\d{9}$/.test(digits)) errors.phone = FIELD_HINTS.phone!;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text("email"))) errors.email = FIELD_HINTS.email!;
+  if (!demoRequestBody.shape.phone.safeParse(text("phone")).success) {
+    errors.phone = FIELD_HINTS.phone!;
+  }
+  if (!demoRequestBody.shape.email.safeParse(text("email")).success) {
+    errors.email = FIELD_HINTS.email!;
+  }
   return errors;
 }
