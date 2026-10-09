@@ -32,7 +32,7 @@ export {
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { Spinner } from "./Spinner";
 export { Notice, type NoticeProps, type NoticeTone } from "./Notice";
-export { TableHead, TableRow, TableGroup, type TableRowProps } from "./Table";
+export { TableHead, TableRow, TableGroup, TableScroll, type TableRowProps } from "./Table";
 export { Tabs, type TabsProps, type TabItem } from "./Tabs";
 export { Segmented, type SegmentedProps, type SegmentedItem } from "./Segmented";
 export { Modal, type ModalProps } from "./Modal";

@@ -91,3 +91,28 @@ export function TableGroup({
     </div>
   );
 }
+
+/**
+ * Lets a grid table scroll sideways inside its card instead of squeezing or overflowing the page.
+ * Wrap the TableHead and rows; `minWidth` is the narrowest the columns read well at (usually the
+ * sum of the fixed columns plus room for the flexible ones). At desktop widths, where the card is
+ * wider than `minWidth`, nothing changes.
+ */
+export function TableScroll({
+  minWidth,
+  className,
+  children,
+}: {
+  minWidth: number;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    // inline-size containment: the table's width never widens the card or the page column.
+    <div
+      className={cn("w-full overflow-x-auto overscroll-x-contain [contain:inline-size]", className)}
+    >
+      <div style={{ minWidth }}>{children}</div>
+    </div>
+  );
+}

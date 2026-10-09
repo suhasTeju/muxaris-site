@@ -41,12 +41,14 @@ export function Segmented({
   const asLinks = items.some((i) => i.href);
   const wrap = cn(
     "inline-flex rounded-11 p-[3px]",
+    // Narrow screens: never wider than the column; extra segments scroll sideways.
+    "max-lg:max-w-full max-lg:overflow-x-auto max-lg:[scrollbar-width:none] max-lg:[&::-webkit-scrollbar]:hidden",
     track === "bordered" ? "bg-track border-line border" : "bg-chip",
     className,
   );
   const seg = (on: boolean) =>
     cn(
-      "text-ink hover:text-ink inline-flex cursor-pointer items-center rounded-8 border-0 px-[14px] text-[13.5px] font-medium whitespace-nowrap",
+      "text-ink hover:text-ink inline-flex shrink-0 cursor-pointer items-center rounded-8 border-0 px-[14px] text-[13.5px] font-medium whitespace-nowrap",
       size === 30 ? "h-[30px]" : "h-[34px]",
       on
         ? cn(

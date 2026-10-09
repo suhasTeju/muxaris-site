@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { cn } from "./cn";
 
 export interface TabItem {
@@ -30,6 +30,18 @@ export interface TabsProps {
  */
 export function Tabs({ items, value, onChange, className, ...aria }: TabsProps) {
   const refs = useRef<Array<HTMLElement | null>>([]);
+  const listRef = useRef<HTMLDivElement>(null);
+  // Below 1024px the row scrolls sideways when it overflows; keep the selected tab in view.
+  const selected = items.findIndex((i) => i.id === value);
+  useEffect(() => {
+    const list = listRef.current;
+    const tab = refs.current[selected];
+    if (!list || !tab || list.scrollWidth <= list.clientWidth) return;
+    const l = list.getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    if (t.left < l.left) list.scrollLeft -= l.left - t.left + 16;
+    else if (t.right > l.right) list.scrollLeft += t.right - l.right + 16;
+  }, [selected]);
   function onKeyDown(e: React.KeyboardEvent, index: number) {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
     e.preventDefault();
@@ -39,12 +51,24 @@ export function Tabs({ items, value, onChange, className, ...aria }: TabsProps) 
     if (item && !item.href) onChange?.(item.id);
   }
   return (
-    <div role="tablist" {...aria} className={cn("border-line flex gap-[4px] border-b", className)}>
+    <div
+      ref={listRef}
+      role="tablist"
+      {...aria}
+      className={cn(
+        "border-line flex gap-[4px] border-b",
+        // Narrow screens: scroll sideways. The rule moves to an inset shadow so the scroll box
+        // does not clip the selected tab's 2px underline, and inline-size containment keeps a long
+        // row from widening the column it sits in.
+        "max-lg:w-full max-lg:overflow-x-auto max-lg:border-b-0 max-lg:shadow-[inset_0_-1px_0_#e2e7ee] max-lg:[contain:inline-size] max-lg:[scrollbar-width:none] max-lg:[&::-webkit-scrollbar]:hidden",
+        className,
+      )}
+    >
       {items.map((item, i) => {
         const on = item.id === value;
         const Icon = item.icon;
         const cls = cn(
-          "-mb-px inline-flex h-[40px] cursor-pointer items-center gap-[8px] border-0 border-b-2 bg-transparent px-[14px] text-[14px] whitespace-nowrap",
+          "-mb-px inline-flex h-[40px] shrink-0 cursor-pointer items-center gap-[8px] border-0 border-b-2 bg-transparent px-[14px] text-[14px] whitespace-nowrap max-lg:mb-0",
           on
             ? "border-ink text-ink hover:text-ink font-semibold"
             : "text-muted hover:text-ink border-transparent font-medium",

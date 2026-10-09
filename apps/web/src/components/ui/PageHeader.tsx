@@ -13,15 +13,27 @@ export interface PageHeaderProps {
   className?: string;
 }
 
-/** Page title block every app page opens with: 26px/600, -0.03em, line-height 1.15. */
+/**
+ * Page title block every app page opens with: 26px/600, -0.03em, line-height 1.15. Under 640px the
+ * title drops to 22px and the actions move below it and wrap.
+ */
 export function PageHeader({ title, subtitle, actions, maxWidth, className }: PageHeaderProps) {
   return (
-    <div className={cn("flex items-end justify-between gap-[16px]", className)}>
-      <div className="flex flex-col gap-[4px]" style={maxWidth ? { maxWidth } : undefined}>
-        <h1 className="m-0 text-[26px] leading-[1.15] font-semibold tracking-[-0.03em]">{title}</h1>
+    <div
+      className={cn(
+        "flex items-end justify-between gap-[16px] max-sm:flex-col max-sm:items-stretch max-sm:gap-[14px]",
+        className,
+      )}
+    >
+      <div className="flex min-w-0 flex-col gap-[4px]" style={maxWidth ? { maxWidth } : undefined}>
+        <h1 className="m-0 text-[26px] leading-[1.15] font-semibold tracking-[-0.03em] max-sm:text-[22px]">
+          {title}
+        </h1>
         {subtitle ? <span className="text-muted text-[14px] leading-[1.5]">{subtitle}</span> : null}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-[8px]">{actions}</div> : null}
+      {actions ? (
+        <div className="flex shrink-0 items-center gap-[8px] max-sm:flex-wrap">{actions}</div>
+      ) : null}
     </div>
   );
 }
