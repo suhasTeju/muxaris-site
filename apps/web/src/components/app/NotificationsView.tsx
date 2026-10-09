@@ -124,6 +124,7 @@ export function NotificationsView({
         title="Notifications"
         subtitle="Confirmations and reminders go by email to patients with an email on file. SMS and WhatsApp are coming soon."
         maxWidth={640}
+        className="max-sm:flex-wrap max-sm:[&_h1]:text-[22px]"
         actions={
           designsHref ? (
             <ButtonLink variant="secondary" size={36} icon={MailOpen} href={designsHref}>
@@ -132,16 +133,20 @@ export function NotificationsView({
           ) : null
         }
       />
-      <Tabs
-        aria-label="Status"
-        value={tab}
-        onChange={(id) => choose(id as Tab)}
-        items={TABS.map(([id, label]) => ({
-          id,
-          label,
-          count: buckets[id]?.total ?? counts[id],
-        }))}
-      />
+      {/* Below 1024px the five tabs scroll sideways in their own strip instead of the page. */}
+      <div data-tabs-scroll className="max-lg:overflow-x-auto">
+        <Tabs
+          aria-label="Status"
+          value={tab}
+          onChange={(id) => choose(id as Tab)}
+          className="max-lg:w-max max-lg:min-w-full"
+          items={TABS.map(([id, label]) => ({
+            id,
+            label,
+            count: buckets[id]?.total ?? counts[id],
+          }))}
+        />
+      </div>
       <div role="tabpanel" aria-label="Messages" className="flex flex-col gap-[18px]">
         {error ? (
           <p role="alert" className="text-rose m-0 text-[13.5px]">

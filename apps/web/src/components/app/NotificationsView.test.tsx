@@ -82,6 +82,16 @@ describe("NotificationsView", () => {
     );
   });
 
+  it("scrolls the tabs and the table inside their own boxes on narrow screens", () => {
+    render(<NotificationsView initial={[mk("a", "sent")]} initialTotal={1} tz="Asia/Kolkata" />);
+    const tablist = screen.getByRole("tablist", { name: "Status" });
+    expect(tablist.className).toContain("max-lg:w-max");
+    expect(tablist.parentElement!.className).toContain("max-lg:overflow-x-auto");
+    const table = screen.getByRole("table", { name: "Messages" });
+    expect(table.className).toContain("min-w-[1100px]");
+    expect(table.parentElement!.className).toContain("overflow-x-auto");
+  });
+
   it("moves the counts of unopened tabs when a retry changes a row's status", async () => {
     api.mockResolvedValue({ notification: mk("f1", "queued") });
     render(
