@@ -104,7 +104,10 @@ describe("NotificationsTable", () => {
     api.mockRejectedValue(new Error("the appointment time has passed"));
     render(<NotificationsTable items={[base]} tz="Asia/Kolkata" onChanged={() => undefined} />);
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
-    expect((await screen.findByRole("alert")).textContent).toBe("the appointment time has passed");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("the appointment time has passed");
+    // Inside the table it sits in a cell of its own row.
+    expect(alert.closest("[role='cell']")?.parentElement?.getAttribute("role")).toBe("row");
   });
 
   it("shows no retry for superseded rows", () => {

@@ -120,7 +120,7 @@ function Row({
           <div
             role="cell"
             id={panelId}
-            className="border-chip bg-subtle mx-[18px] mb-[14px] flex animate-[mxIn_.2s_ease_both] flex-col gap-[8px] rounded-12 border px-[18px] py-[16px]"
+            className="border-chip bg-subtle mx-[18px] mb-[14px] flex animate-[mxIn_.2s_ease_both] flex-col motion-reduce:animate-none gap-[8px] rounded-12 border px-[18px] py-[16px]"
           >
             {n.payload.subject ? (
               <>
@@ -136,9 +136,11 @@ function Row({
       ) : null}
       {error ? (
         <div role="row">
-          <p role="alert" className="text-rose m-0 px-[18px] pb-[12px] text-[13px]">
-            {error}
-          </p>
+          <div role="cell" className="px-[18px] pb-[12px]">
+            <p role="alert" className="text-rose m-0 text-[13px]">
+              {error}
+            </p>
+          </div>
         </div>
       ) : null}
     </Fragment>

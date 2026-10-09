@@ -119,7 +119,7 @@ export function NotificationsView({
   const error = errors[tab] ?? null;
   const bucket = buckets[tab];
   return (
-    <div className="animate-mx-in flex flex-col gap-[18px]">
+    <div className="animate-mx-in flex flex-col gap-[18px] motion-reduce:animate-none">
       <PageHeader
         title="Notifications"
         subtitle="Confirmations and reminders go by email to patients with an email on file. SMS and WhatsApp are coming soon."

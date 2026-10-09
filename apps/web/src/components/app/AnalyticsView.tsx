@@ -171,7 +171,7 @@ export function AnalyticsView({
   const maxHour = a ? Math.max(0, ...a.byHour) : 0;
 
   return (
-    <div className="animate-mx-in flex flex-col gap-[18px]">
+    <div className="animate-mx-in flex flex-col gap-[18px] motion-reduce:animate-none">
       <PageHeader
         title="Analytics"
         className="max-sm:flex-wrap max-sm:[&_h1]:text-[22px]"
