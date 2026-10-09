@@ -86,6 +86,29 @@ describe("NewAppointmentDialog", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Monthly booking limit reached");
   });
 
+  it("is a form whose submit button is Book, so Enter in a field books", async () => {
+    api.mockImplementation(async (path: string) =>
+      path.startsWith("/v1/slots") ? { slots: [slot] } : { appointment: {} },
+    );
+    const onDone = renderNew();
+    fireEvent.change(screen.getByLabelText("Service"), { target: { value: "s1" } });
+    fireEvent.click(await screen.findByRole("option", { name: /9:30 am/ }));
+    fireEvent.change(screen.getByLabelText("Patient phone"), {
+      target: { value: "+919876543210" },
+    });
+    const book = screen.getByRole("button", { name: "Book appointment" });
+    expect(book.getAttribute("type")).toBe("submit");
+    const form = document.getElementById(book.getAttribute("form")!) as HTMLFormElement;
+    expect(form.tagName).toBe("FORM");
+    expect(form.contains(screen.getByLabelText("Patient phone"))).toBe(true);
+    fireEvent.submit(form);
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith("2099-01-01"));
+    expect(api).toHaveBeenCalledWith(
+      "/v1/appointments",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("shows the 'slot just taken' message on a 409 conflict and keeps the dialog open", async () => {
     api.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path.startsWith("/v1/slots")) return { slots: [slot] };

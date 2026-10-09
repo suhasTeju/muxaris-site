@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Call } from "@muxaris/shared";
 import { CallList } from "./CallList";
@@ -76,8 +76,9 @@ describe("CallList design", () => {
 
   it("names known patients over their masked number and labels test calls", () => {
     render(<CallList calls={calls} tz="Asia/Kolkata" now={new Date("2026-10-09T08:40:00Z")} />);
-    const row = screen.getByText("Priya Venkatesh").closest("a")!;
-    expect(row.getAttribute("href")).toBe("/app/calls/c9");
+    const link = screen.getByRole("link", { name: /Priya Venkatesh/ });
+    expect(link.getAttribute("href")).toBe("/app/calls/c9");
+    const row = link.closest('[role="row"]')!;
     expect(row.textContent).toContain("+91 •••• ••0192");
     expect(row.textContent).toContain("1:52 pm");
     expect(row.textContent).toContain("0m 41s");
@@ -101,9 +102,28 @@ describe("CallList design", () => {
 
   it("scrolls the table sideways inside its card on narrow screens", () => {
     render(<CallList calls={calls} tz="Asia/Kolkata" now={new Date("2026-10-09T08:40:00Z")} />);
-    const card = screen.getByLabelText("Calls");
-    const scroller = card.firstElementChild!;
-    expect(scroller.className).toContain("overflow-x-auto");
-    expect(scroller.firstElementChild!.className).toContain("min-w-[940px]");
+    const table = screen.getByRole("table", { name: "Calls" });
+    expect(table.className).toContain("min-w-[940px]");
+    expect(table.parentElement!.className).toContain("overflow-x-auto");
+  });
+
+  it("exposes table semantics: headers, a row per call and a link in each row", () => {
+    render(<CallList calls={calls} tz="Asia/Kolkata" now={new Date("2026-10-09T08:40:00Z")} />);
+    const table = screen.getByRole("table", { name: "Calls" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["When", "Caller", "Duration", "Language", "Outcome", "Status", ""]);
+    // Header + 3 day groups + 4 calls.
+    expect(within(table).getAllByRole("row")).toHaveLength(8);
+    const group = within(table).getByText("Today · Fri, 9 Oct 2026");
+    expect(group.getAttribute("role")).toBe("cell");
+    expect(group.getAttribute("aria-colspan")).toBe("7");
+    const row = within(table)
+      .getByRole("link", { name: /Test call/ })
+      .closest('[role="row"]')!;
+    expect(within(row as HTMLElement).getAllByRole("cell")).toHaveLength(7);
+    expect(within(table).getAllByRole("link")).toHaveLength(4);
   });
 });
