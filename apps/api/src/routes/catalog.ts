@@ -9,6 +9,9 @@ import {
   listDoctors,
   listServices,
   setWorkingHours,
+  updateClinicProfile,
+  updateDoctor,
+  updateService,
   updateSlotRules,
   CoreError,
 } from "@muxaris/core";
@@ -17,6 +20,7 @@ import {
   LANGUAGE_CODES,
   assistantProfileBody,
   doctorBody,
+  indianPhone,
   serviceBody,
   slotRulesBody,
   workingHoursBody,
@@ -38,6 +42,24 @@ const previewBody = z.object({
   language: z.enum(LANGUAGE_CODES),
   speaker: z.enum(BULBUL_V3_SPEAKERS),
 });
+
+const someField = (b: object) => Object.keys(b).length > 0;
+const NOTHING = "Provide at least one field";
+/** Settings edits in place: any subset of the create fields. */
+const doctorPatchBody = doctorBody.partial().strict().refine(someField, NOTHING);
+const servicePatchBody = serviceBody.partial().strict().refine(someField, NOTHING);
+/** The clinic's own details (Settings → Clinic). Slug, timezone, plan and settings stay put. */
+const clinicProfileBody = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    city: z.string().trim().min(1).max(120),
+    address: z.string().trim().max(2000).nullable(),
+    phone: indianPhone.nullable(),
+    languages: z.array(z.enum(LANGUAGE_CODES)).min(1).max(20),
+  })
+  .partial()
+  .strict()
+  .refine(someField, NOTHING);
 
 const PREVIEW_WINDOW_MS = 60 * 60 * 1000;
 const PREVIEW_MAX = 30;
@@ -117,6 +139,15 @@ export function catalogRoutes(db: Db, opts: CatalogOptions = {}) {
     });
     return c.json({ doctor }, 201);
   });
+  r.patch("/doctors/:id", owner, v("json", doctorPatchBody), async (c) => {
+    const doctor = await updateDoctor(db, {
+      clinicId: c.get("clinic").id,
+      doctorId: c.req.param("id"),
+      actorUserId: c.get("user").id,
+      patch: stripUndefined(c.req.valid("json")),
+    });
+    return c.json({ doctor });
+  });
   r.put("/doctors/:id/hours", owner, v("json", workingHoursBody), async (c) => {
     const rows = await setWorkingHours(
       db,
@@ -144,6 +175,25 @@ export function catalogRoutes(db: Db, opts: CatalogOptions = {}) {
       ...(b.active !== undefined ? { active: b.active } : {}),
     });
     return c.json({ service }, 201);
+  });
+
+  r.patch("/services/:id", owner, v("json", servicePatchBody), async (c) => {
+    const service = await updateService(db, {
+      clinicId: c.get("clinic").id,
+      serviceId: c.req.param("id"),
+      actorUserId: c.get("user").id,
+      patch: stripUndefined(c.req.valid("json")),
+    });
+    return c.json({ service });
+  });
+
+  r.patch("/clinic", owner, v("json", clinicProfileBody), async (c) => {
+    const clinic = await updateClinicProfile(db, {
+      clinicId: c.get("clinic").id,
+      actorUserId: c.get("user").id,
+      patch: stripUndefined(c.req.valid("json")),
+    });
+    return c.json({ clinic });
   });
 
   r.get("/slot-rules", member, async (c) =>
