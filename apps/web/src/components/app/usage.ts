@@ -7,7 +7,7 @@ export function isUsageSummary(v: unknown): v is UsageSummary {
 }
 
 /** "25 Oct 2026" in the clinic's zone (Indian clinics: Asia/Kolkata), as the design writes dates. */
-export function formatPlanDate(iso: string, tz = "Asia/Kolkata"): string {
+function formatPlanDate(iso: string, tz = "Asia/Kolkata"): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
     day: "numeric",

@@ -403,28 +403,4 @@
         var(--color-ink-deep) 100%
       );
   }
-
-  /* Reveal: short, subtle, and never blocks reading. */
-  .mx-reveal {
-    opacity: 0;
-    transform: translateY(10px);
-    transition:
-      opacity 220ms ease-out,
-      transform 220ms ease-out;
-  }
-  .mx-reveal[data-in] {
-    opacity: 1;
-    transform: none;
-  }
-  .mx-reveal[data-instant] {
-    transition: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mx-reveal {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
 }
