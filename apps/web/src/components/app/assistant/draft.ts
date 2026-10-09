@@ -8,7 +8,7 @@ import {
   type LanguageCode,
 } from "@muxaris/shared";
 import { DEFAULT_SPEAKER } from "@/lib/onboarding";
-import { formatPhone } from "../settings/format";
+import { formatPhone } from "../format";
 
 export const TONES: ReadonlyArray<{ id: string; label: string }> = [
   { id: "warm", label: "Warm" },

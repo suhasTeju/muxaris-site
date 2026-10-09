@@ -6,7 +6,7 @@ import type { Call } from "@muxaris/shared";
 import { Button, Card, Spinner } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useCoreApi } from "./core/api";
-import { formatClock } from "./core/format";
+import { formatClock } from "./format";
 
 const POLL_MS = 5_000;
 const POLL_MAX_MS = 120_000;

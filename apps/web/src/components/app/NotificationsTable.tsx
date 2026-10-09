@@ -6,7 +6,7 @@ import { NOTIFICATION_KIND_LABEL, type Notification } from "@muxaris/shared";
 import { useApi } from "@/lib/api-client";
 import { CHANNEL_LABEL, notificationErrorText } from "@/lib/dashboard";
 import { Badge, Button, ButtonLink, Card, EmptyState, badgeFor, useToast } from "@/components/ui";
-import { shortWhen } from "./ops/format";
+import { shortDateTime } from "./format";
 
 /**
  * The prototype's grid: Time, Type, Channel, To, Status, Details, Actions, 12px gaps, 11px 18px
@@ -75,7 +75,7 @@ function Row({
         className={`${GRID} border-line-soft text-ink items-center border-t text-[13.5px]`}
       >
         <span role="cell" className="text-ink-2 font-mono text-[12.5px]">
-          {shortWhen(n.createdAt, tz)}
+          {shortDateTime(n.createdAt, tz)}
         </span>
         <span role="cell" className="font-medium">
           {NOTIFICATION_KIND_LABEL[n.template] ?? n.template}

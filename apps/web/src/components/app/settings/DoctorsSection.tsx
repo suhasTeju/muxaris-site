@@ -5,7 +5,8 @@ import { Plus } from "lucide-react";
 import type { Doctor } from "@muxaris/shared";
 import { Button } from "@/components/ui";
 import { DoctorDrawer } from "./DoctorDrawer";
-import { hoursSummary, languageName } from "./format";
+import { languageLabel } from "@/lib/dashboard";
+import { hoursSummary } from "./format";
 import { OwnerOnlyNote, SectionEmpty, SettingsSection } from "./settings-ui";
 
 /** "Dr. Meera Rao" → "MR". */
@@ -51,7 +52,7 @@ export function DoctorsSection({
       {doctors.map((d) => {
         const sub = [
           d.specialties.join(", "),
-          d.languages.map(languageName).join(", "),
+          d.languages.map(languageLabel).join(", "),
           hoursSummary(d.workingHours),
         ]
           .filter(Boolean)

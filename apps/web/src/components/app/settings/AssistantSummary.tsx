@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { AssistantProfile } from "@muxaris/shared";
-import { formatPhone } from "./format";
+import { formatPhone } from "../format";
 import { DefList, SectionEmpty, SettingsSection } from "./settings-ui";
 
 const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);

@@ -11,7 +11,7 @@ import { CallPlayer } from "./CallPlayer";
 import { OutcomeEditor } from "./OutcomeEditor";
 import { SyncedTranscript } from "./SyncedTranscript";
 import { StatusBadge } from "./core/StatusBadge";
-import { formatDateLong, formatDur } from "./core/format";
+import { formatDateLong, formatDur } from "./format";
 
 function Dot() {
   return <span aria-hidden className="bg-line-strong size-[3px] shrink-0 rounded-full" />;

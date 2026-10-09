@@ -1,23 +1,14 @@
 /**
- * Display formats from the design's App script (`h.date`, `h.dateLong`, `h.dayShort`, `h.dur`,
- * `h.clock`, `h.mask`), applied to API values: ISO instants are read in the clinic's timezone,
- * `YYYY-MM-DD` keys are calendar dates.
+ * Display formats shared by every app page, from the design's App script (`h.date`, `h.dateLong`,
+ * `h.dayShort`, `h.time`, `h.dur`, `h.clock`), applied to API values: ISO instants are read in the
+ * clinic's timezone, `YYYY-MM-DD` keys are calendar dates. Months are the design's three-letter
+ * names ("Sep", where `Intl` in en-IN writes "Sept").
  */
-import { DEFAULT_TZ } from "@/lib/dashboard";
+import { formatTime, safeTz } from "@/lib/dashboard";
 import { formatIndianPhone } from "@/lib/phone";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function zone(tz: string | undefined): string {
-  const z = tz || DEFAULT_TZ;
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: z });
-    return z;
-  } catch {
-    return DEFAULT_TZ;
-  }
-}
 
 export interface LocalParts {
   /** `YYYY-MM-DD` in the zone. */
@@ -35,7 +26,7 @@ export interface LocalParts {
 /** Wall-clock parts of an instant in the clinic's timezone. */
 export function localParts(iso: string | Date, tz?: string): LocalParts {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone(tz),
+    timeZone: safeTz(tz),
     hourCycle: "h23",
     year: "numeric",
     month: "2-digit",
@@ -121,6 +112,16 @@ export function formatDayShort(iso: string, tz?: string): string {
   return keyDayShort(localParts(iso, tz).key);
 }
 
+/** "25 Oct 2026" for an instant in the clinic's zone (plan dates: dateLong without the weekday). */
+export function formatDate(iso: string, tz?: string): string {
+  return keyDob(localParts(iso, tz).key);
+}
+
+/** "Oct" for a `YYYY-MM` month key (the month itself when it is not one). */
+export function monthShort(month: string): string {
+  return MON[Number(month.slice(5, 7)) - 1] ?? month;
+}
+
 /** "4:30 pm" from minutes since midnight (`h.time`). */
 export function clockTime(minutes: number): string {
   const hh = Math.floor(minutes / 60) % 24;
@@ -142,10 +143,10 @@ export function formatClock(seconds: number): string {
 }
 
 /**
- * A revealed number as the design prints it: "+91 98451 23210" for a mobile, "+91 80 4123 4567" for
- * a landline (`formatIndianPhone` in @muxaris/shared); anything else is shown as given.
+ * A number as the design prints it: "+91 98451 23210" for a mobile, "+91 80 4123 4567" for a
+ * landline (`formatIndianPhone` in @muxaris/shared); "" without one, anything else as given.
  */
-export function formatPhone(raw: string): string {
+export function formatPhone(raw: string | null | undefined): string {
   return formatIndianPhone(raw);
 }
 
@@ -164,4 +165,14 @@ export function initials(name: string | null | undefined): string {
 export function relativeDay(iso: string, todayKey: string, tz?: string): string {
   const key = localParts(iso, tz).key;
   return key === todayKey ? "Today" : keyDate(key);
+}
+
+/** "Today, 10:44 am", otherwise "Thu, 8 Oct, 4:05 pm" (`h.date` + `h.time`; calls, callbacks). */
+export function relativeDateTime(iso: string, todayKey: string, tz?: string): string {
+  return `${relativeDay(iso, todayKey, tz)}, ${formatTime(iso, tz)}`;
+}
+
+/** "9 Oct, 2:30 pm" (`h.dayShort` + `h.time`; notifications and messages). */
+export function shortDateTime(iso: string, tz?: string): string {
+  return `${formatDayShort(iso, tz)}, ${formatTime(iso, tz)}`;
 }

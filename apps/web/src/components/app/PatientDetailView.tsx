@@ -11,7 +11,7 @@ import { PatientForm } from "./PatientForm";
 import { MessageRow } from "./patients/MessageRow";
 import { RevealPhone } from "./RevealPhone";
 import { StatusBadge } from "./core/StatusBadge";
-import { initials, keyDob } from "./core/format";
+import { initials, keyDob } from "./format";
 
 const ROW =
   "border-line-soft grid items-center gap-[12px] border-t px-[18px] py-[11px] text-[14px]";

@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api";
 import {
-  formatPhone,
   hoursForSave,
   hoursSummary,
-  languageName,
+  languageNative,
   rupee,
   saveErrorText,
   timezoneLabel,
@@ -18,13 +17,10 @@ const h = (weekday: number, startTime = "10:00", endTime = "20:00") => ({
 });
 
 describe("settings format helpers", () => {
-  it("formats phones, rupees, languages and the timezone", () => {
-    expect(formatPhone("+918041234567")).toBe("+91 80 4123 4567");
-    expect(formatPhone("+14155550100")).toBe("+14155550100");
-    expect(formatPhone(null)).toBe("");
+  it("formats rupees, native language names and the timezone", () => {
     expect(rupee(150000)).toBe("₹1,50,000");
-    expect(languageName("kn-IN")).toBe("Kannada");
-    expect(languageName("xx-XX")).toBe("xx-XX");
+    expect(languageNative("kn-IN")).toBe("ಕನ್ನಡ");
+    expect(languageNative("xx-XX")).toBe("xx-XX");
     expect(timezoneLabel("Asia/Kolkata")).toMatch(/^Asia\/Kolkata( \(.+\))?$/);
     expect(timezoneLabel("Not/AZone")).toBe("Not/AZone");
   });

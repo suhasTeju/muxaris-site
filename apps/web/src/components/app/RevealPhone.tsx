@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Eye } from "lucide-react";
 import { Button, cn } from "@/components/ui";
 import { useCoreApi } from "./core/api";
-import { formatPhone } from "./core/format";
+import { formatPhone } from "./format";
 
 const SHOW_MS = 60_000;
 export const REVEAL_NOTE = "Visible for 60 seconds. This view is logged.";

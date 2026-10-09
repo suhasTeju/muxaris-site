@@ -4,7 +4,6 @@ import type { Appointment, Call, Doctor, Service } from "@muxaris/shared";
 import { Badge, Card, KpiCard, PageHeader, SectionHeader, badgeFor } from "@/components/ui";
 import {
   formatDuration,
-  formatTime,
   languageLabel,
   localDateKey,
   type OverviewStats,
@@ -13,7 +12,7 @@ import {
 } from "@/lib/dashboard";
 import { TodayAppointmentList } from "./overview/TodayAppointmentList";
 import { callIcon, callerOf } from "./core/calls";
-import { formatDateLong, formatDur, relativeDay } from "./core/format";
+import { formatDateLong, formatDur, relativeDateTime } from "./format";
 import { PAGE_TITLE_MOBILE } from "./core/layout";
 import { usageCard } from "./usage";
 
@@ -161,7 +160,7 @@ export function OverviewView({
               const { icon: Icon, tile } = callIcon(c);
               const b = badgeFor("outcome", c.outcome);
               const meta = [
-                `${relativeDay(c.startedAt, todayKey, tz)}, ${formatTime(c.startedAt, tz)}`,
+                relativeDateTime(c.startedAt, todayKey, tz),
                 formatDur(c.durationS),
                 c.languageDetected ? languageLabel(c.languageDetected) : null,
               ]

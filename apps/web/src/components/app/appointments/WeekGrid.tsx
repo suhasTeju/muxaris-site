@@ -3,7 +3,7 @@
 import type { Appointment } from "@muxaris/shared";
 import { addDays, localDateKey } from "@/lib/dashboard";
 import { cn } from "@/components/ui";
-import { keyDayShort, keyWeekday } from "../core/format";
+import { keyDayShort, keyWeekday } from "../format";
 import { doctorColor, patientName, timeRange, type CalendarDoctor } from "./shared";
 
 /** Monday of the week holding `date` (YYYY-MM-DD), as the design's week view starts. */

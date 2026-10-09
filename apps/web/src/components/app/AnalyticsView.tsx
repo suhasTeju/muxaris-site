@@ -13,13 +13,12 @@ import {
   TONES,
   badgeFor,
 } from "@/components/ui";
+import { keyDate, keyDateLong, keyDayShort, monthShort } from "./format";
 
 export const RANGES = [7, 30, 90] as const;
 export type RangeDays = (typeof RANGES)[number];
 
 const DASH = "–";
-const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /** The design's outcome order: booked first, then the rest as the prototype lists them. */
 const OUTCOMES = [
   "booked",
@@ -32,27 +31,6 @@ const OUTCOMES = [
   "unknown",
 ];
 
-/** "YYYY-MM-DD" → parts, read as a calendar date (no timezone shift). */
-function cal(key: string) {
-  const [y, m, d] = key.split("-").map(Number) as [number, number, number];
-  return { y, m, d, wd: new Date(Date.UTC(y, m - 1, d)).getUTCDay() };
-}
-/** "Thu, 10 Sep 2026" */
-const dateLong = (key: string) => {
-  const c = cal(key);
-  return `${WD[c.wd]}, ${c.d} ${MON[c.m - 1]} ${c.y}`;
-};
-/** "Thu, 10 Sep" */
-const dateMid = (key: string) => {
-  const c = cal(key);
-  return `${WD[c.wd]}, ${c.d} ${MON[c.m - 1]}`;
-};
-/** "10 Sep" */
-const dayShort = (key: string) => {
-  const c = cal(key);
-  return `${c.d} ${MON[c.m - 1]}`;
-};
-const monthShort = (month: string) => MON[Number(month.slice(5, 7)) - 1] ?? month;
 const num = (n: number) => n.toLocaleString("en-IN");
 
 function ChartCard({
@@ -175,7 +153,7 @@ export function AnalyticsView({
       <PageHeader
         title="Analytics"
         className="max-sm:flex-wrap max-sm:[&_h1]:text-[22px]"
-        subtitle={start && end ? `${dateLong(start)} – ${dateLong(end)}` : undefined}
+        subtitle={start && end ? `${keyDateLong(start)} – ${keyDateLong(end)}` : undefined}
         actions={
           <Segmented
             aria-label="Range"
@@ -220,17 +198,17 @@ export function AnalyticsView({
             <BarChart
               title="Calls per day"
               summary={`Calls per day, ${a.totalCalls} calls and ${a.bookedCalls} booked`}
-              categories={byDay.map((d) => dateMid(d.date))}
+              categories={byDay.map((d) => keyDate(d.date))}
               series={{ name: "Calls", values: byDay.map((d) => d.calls) }}
               overlay={{ name: "Booked", values: byDay.map((d) => d.booked) }}
               height={200}
               gap={n > 30 ? 2 : n > 7 ? 4 : 10}
               gridStep={50}
               className="pt-[8px]"
-              ticks={tickIdx.map((i) => dayShort(byDay[i]!.date))}
+              ticks={tickIdx.map((i) => keyDayShort(byDay[i]!.date))}
               barClassName={() => "bg-[#c9e9e6] hover:bg-[#a8dcd7]"}
               barTitle={(i) =>
-                `${dateMid(byDay[i]!.date)}: ${byDay[i]!.calls} calls, ${byDay[i]!.booked} booked`
+                `${keyDate(byDay[i]!.date)}: ${byDay[i]!.calls} calls, ${byDay[i]!.booked} booked`
               }
             />
           </ChartCard>

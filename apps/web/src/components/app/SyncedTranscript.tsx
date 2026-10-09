@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Check, TriangleAlert } from "lucide-react";
 import type { CallTurn } from "@muxaris/shared";
 import { cn } from "@/components/ui";
-import { formatClock } from "./core/format";
+import { formatClock } from "./format";
 
 interface Row {
   turn: CallTurn;

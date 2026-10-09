@@ -15,7 +15,7 @@ import {
 import { addDays, dayRange, localDateKey } from "@/lib/dashboard";
 import { CancelDialog, NewAppointmentDialog, RescheduleDialog } from "../AppointmentDialogs";
 import { useCoreApi } from "../core/api";
-import { keyDateLong, keyDayShort, keyWeekdayIndex } from "../core/format";
+import { keyDateLong, keyDayShort, keyWeekdayIndex } from "../format";
 import { PAGE_TITLE_MOBILE } from "../core/layout";
 import { AppointmentDrawer } from "./AppointmentDrawer";
 import { DayTimeline } from "./DayTimeline";

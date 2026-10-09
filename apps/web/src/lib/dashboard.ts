@@ -13,7 +13,8 @@ import {
 export const DEFAULT_TZ = "Asia/Kolkata";
 export const CALLS_PAGE_SIZE = 50;
 
-function safeTz(tz: string | undefined): string {
+/** `tz` when the runtime knows it, else the default zone. */
+export function safeTz(tz: string | undefined): string {
   const zone = tz || DEFAULT_TZ;
   try {
     new Intl.DateTimeFormat("en-IN", { timeZone: zone });

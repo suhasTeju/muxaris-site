@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { NOTIFICATION_KIND_LABEL, type Notification } from "@muxaris/shared";
 import { Button, useToast } from "@/components/ui";
-import { CHANNEL_LABEL, formatTime, notificationErrorText } from "@/lib/dashboard";
+import { CHANNEL_LABEL, notificationErrorText } from "@/lib/dashboard";
 import { useCoreApi } from "../core/api";
 import { StatusBadge } from "../core/StatusBadge";
-import { formatDayShort } from "../core/format";
+import { shortDateTime } from "../format";
 
 /**
  * One message on the patient page: when, kind and channel, the masked recipient, why it was not
@@ -62,9 +62,7 @@ export function MessageRow({
   return (
     <li>
       <div className={rowClass}>
-        <span className={whenClass}>
-          {formatDayShort(n.createdAt, tz)}, {formatTime(n.createdAt, tz)}
-        </span>
+        <span className={whenClass}>{shortDateTime(n.createdAt, tz)}</span>
         <span className="flex min-w-0 flex-col gap-[2px]">
           <span>
             {NOTIFICATION_KIND_LABEL[n.template] ?? n.template}{" "}

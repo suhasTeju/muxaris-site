@@ -5,7 +5,7 @@ import type { Call } from "@muxaris/shared";
 import { Badge, ButtonLink, Card, EmptyState, badgeFor } from "@/components/ui";
 import { addDays, formatTime, languageLabel, localDateKey } from "@/lib/dashboard";
 import { callIcon, callerOf } from "./core/calls";
-import { formatDur, keyDateLong } from "./core/format";
+import { formatDur, keyDateLong } from "./format";
 import { CALLS_TABLE_MIN_W } from "./core/layout";
 import { BodyRow, GroupRow, HeadRow, ROW_LINK } from "./core/table";
 

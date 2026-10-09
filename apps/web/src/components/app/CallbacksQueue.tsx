@@ -20,7 +20,7 @@ import {
   cn,
   useToast,
 } from "@/components/ui";
-import { callbackWhen, displayPhone } from "./ops/format";
+import { formatPhone, relativeDateTime } from "./format";
 import { useRevealPhone } from "./ops/useRevealPhone";
 
 const PAGE = 50;
@@ -124,7 +124,7 @@ function CallbackCard({
               href={`tel:${reveal.phone}`}
               className="text-ink hover:text-ink font-mono text-[14px] font-medium"
             >
-              {displayPhone(reveal.phone)}
+              {formatPhone(reveal.phone)}
             </a>
           ) : (
             <span className="font-mono text-[14px] font-medium">{cb.phoneMasked}</span>
@@ -151,7 +151,9 @@ function CallbackCard({
           ) : null}
         </div>
         <div className="text-muted flex items-center gap-[14px] text-[13px]">
-          <span className="font-mono text-[12.5px]">{callbackWhen(cb.createdAt, tz, today)}</span>
+          <span className="font-mono text-[12.5px]">
+            {relativeDateTime(cb.createdAt, today, tz)}
+          </span>
           {cb.callId ? (
             <Link
               href={`/app/calls/${cb.callId}`}
@@ -223,7 +225,7 @@ function CallbackCard({
           {cb.doneAt ? (
             <span className="text-green-ink flex items-center gap-[6px]">
               <CircleCheck size={14} aria-hidden="true" />
-              Done {callbackWhen(cb.doneAt, tz, today)}
+              Done {relativeDateTime(cb.doneAt, today, tz)}
             </span>
           ) : null}
           {cb.assignedTo ? <span>Assigned to {cb.assignedTo}</span> : null}

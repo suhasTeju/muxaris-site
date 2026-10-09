@@ -1,5 +1,5 @@
 import { AppointmentsView } from "@/components/app/AppointmentsView";
-import { validDateKey } from "@/components/app/core/format";
+import { validDateKey } from "@/components/app/format";
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 

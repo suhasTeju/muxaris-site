@@ -26,7 +26,8 @@ import {
 import { useApi } from "@/lib/api-client";
 import { DEFAULT_SPEAKER } from "@/lib/onboarding";
 import { RecordCallsToggle } from "../RecordCallsToggle";
-import { languageName, languageNative, saveErrorText } from "../settings/format";
+import { languageLabel } from "@/lib/dashboard";
+import { languageNative, saveErrorText } from "../settings/format";
 import { AssistantTabs } from "./AssistantTabs";
 import { CallerPreview } from "./CallerPreview";
 import {
@@ -219,7 +220,7 @@ export function AssistantView({
                       type="button"
                       role="tab"
                       aria-selected={on}
-                      aria-label={`${languageNative(code)} (${languageName(code)})`}
+                      aria-label={`${languageNative(code)} (${languageLabel(code)})`}
                       onClick={() => pickLanguage(code)}
                       className={cn(
                         "inline-flex h-[34px] cursor-pointer items-center gap-[8px] rounded-9 border px-[12px] text-[13.5px] font-medium",
@@ -236,7 +237,7 @@ export function AssistantView({
                 })}
               </div>
               <Field
-                label={`${languageName(lang)} greeting`}
+                label={`${languageLabel(lang)} greeting`}
                 counter={`${text.length}/${MAX_GREETING}`}
                 error={errors.greeting?.[lang]}
               >
@@ -252,7 +253,7 @@ export function AssistantView({
               </Field>
               <div className="flex flex-wrap items-center gap-[10px]">
                 <label className="text-muted flex items-center gap-[8px] text-[13px] whitespace-nowrap">
-                  {languageName(lang)} voice
+                  {languageLabel(lang)} voice
                   <Select
                     size={36}
                     value={voice}
@@ -431,7 +432,7 @@ export function AssistantView({
 
           <CallerPreview
             name={d.name}
-            languageLabel={languageName(lang)}
+            languageLabel={languageLabel(lang)}
             voiceLabel={VOICE_LABEL[voice]}
             greeting={text}
             playing={playing}

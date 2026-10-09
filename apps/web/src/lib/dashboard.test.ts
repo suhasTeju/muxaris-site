@@ -6,8 +6,10 @@ import {
   formatDuration,
   formatTime,
   groupByDoctor,
+  languageLabel,
   localDateKey,
   maskPhone,
+  safeTz,
   startOfLocalDay,
 } from "./dashboard";
 
@@ -22,6 +24,9 @@ describe("time formatting", () => {
   it("defaults to Asia/Kolkata and survives a bad timezone", () => {
     expect(formatTime("2026-10-06T04:00:00Z")).toBe("9:30 am");
     expect(formatTime("2026-10-06T04:00:00Z", "Bogus/Zone")).toBe("9:30 am");
+    expect(safeTz("America/Los_Angeles")).toBe("America/Los_Angeles");
+    expect(safeTz("Bogus/Zone")).toBe("Asia/Kolkata");
+    expect(safeTz(undefined)).toBe("Asia/Kolkata");
   });
   it("derives the local date and day boundaries", () => {
     expect(localDateKey("2026-10-05T20:00:00Z", "Asia/Kolkata")).toBe("2026-10-06");
@@ -39,6 +44,10 @@ describe("time formatting", () => {
     expect(formatDuration(42)).toBe("42s");
     expect(formatDuration(null)).toBe("-");
     expect(maskPhone("+919876543210")).toBe("+91 •••• ••3210");
+  });
+  it("names languages, or shows the code when unknown", () => {
+    expect(languageLabel("kn-IN")).toBe("Kannada");
+    expect(languageLabel("xx-XX")).toBe("xx-XX");
   });
 });
 

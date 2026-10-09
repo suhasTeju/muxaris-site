@@ -2,7 +2,7 @@
 
 import type { Appointment } from "@muxaris/shared";
 import { Card, cn } from "@/components/ui";
-import { clockTime, keyWeekdayIndex, minutesOfDay } from "../core/format";
+import { clockTime, keyWeekdayIndex, minutesOfDay } from "../format";
 import { StatusBadge } from "../core/StatusBadge";
 import {
   doctorColor,

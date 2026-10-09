@@ -1,12 +1,6 @@
 import { LANGUAGES } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
 import { DISPLAY_WEEKDAYS, WEEKDAY_NAMES, type WeekHours } from "@/lib/onboarding";
-import { formatIndianPhone } from "@/lib/phone";
-
-/** "kn-IN" → "Kannada" (the code itself when unknown). */
-export function languageName(code: string): string {
-  return LANGUAGES.find((l) => l.code === code)?.label ?? code;
-}
 
 /** "kn-IN" → "ಕನ್ನಡ". */
 export function languageNative(code: string): string {
@@ -23,11 +17,6 @@ export function timezoneLabel(tz: string): string {
   } catch {
     return tz;
   }
-}
-
-/** "+91 98765 43210" for a mobile, "+91 80 4123 4567" for a landline; see lib/phone. */
-export function formatPhone(phone: string | null | undefined): string {
-  return formatIndianPhone(phone);
 }
 
 /** ₹1,500 (Indian grouping). */

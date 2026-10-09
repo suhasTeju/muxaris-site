@@ -4,7 +4,9 @@ import { useState } from "react";
 import { CITIES, LANGUAGES, clinicPhone, type Clinic } from "@muxaris/shared";
 import { Field, Input, Select, useToast } from "@/components/ui";
 import { useApi } from "@/lib/api-client";
-import { formatPhone, languageName, saveErrorText, timezoneLabel } from "./format";
+import { languageLabel } from "@/lib/dashboard";
+import { formatPhone } from "../format";
+import { saveErrorText, timezoneLabel } from "./format";
 import {
   DefList,
   EditActions,
@@ -166,7 +168,7 @@ export function ClinicSection({
             ["Address", clinic.address || "-"],
             ["Phone", formatPhone(clinic.phone) || "-"],
             ["Timezone", timezoneLabel(clinic.timezone)],
-            ["Languages", clinic.languages.map(languageName).join(", ")],
+            ["Languages", clinic.languages.map(languageLabel).join(", ")],
           ]}
         />
       )}

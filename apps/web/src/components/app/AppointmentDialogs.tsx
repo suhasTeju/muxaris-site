@@ -6,7 +6,7 @@ import { Button, Field, Input, Modal, Notice, Select, useToast } from "@/compone
 import { ApiError } from "@/lib/api";
 import { formatDateTime, formatTime, localDateKey } from "@/lib/dashboard";
 import { useCoreApi } from "./core/api";
-import { keyDate } from "./core/format";
+import { keyDate } from "./format";
 import { PHONE_ERROR } from "./PatientForm";
 import { SlotPicker, type Slot } from "./SlotPicker";
 

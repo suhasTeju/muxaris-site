@@ -2,25 +2,11 @@
 import { Sparkles } from "lucide-react";
 import type { UsageSummary } from "@muxaris/shared";
 import { Button, UsageMeter } from "@/components/ui";
+import { formatDate } from "./format";
 import { DefList, SettingsSection } from "./settings/settings-ui";
 
 /** Latest subscription states where a new checkout would conflict with the stuck one. */
 const PAYMENT_STUCK = ["halted", "pending", "authenticated"];
-
-function formatDate(iso: string, tz: string): string {
-  let timeZone: string | undefined = tz;
-  try {
-    new Intl.DateTimeFormat("en-IN", { timeZone: tz });
-  } catch {
-    timeZone = undefined;
-  }
-  return new Intl.DateTimeFormat("en-IN", {
-    ...(timeZone ? { timeZone } : {}),
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(iso));
-}
 
 const n = (v: number) => v.toLocaleString("en-IN");
 

@@ -8,7 +8,7 @@ import type { Patient } from "@muxaris/shared";
 import { Button, Card, EmptyState, Input, PageHeader, cn, useToast } from "@/components/ui";
 import { languageLabel } from "@/lib/dashboard";
 import { useCoreApi } from "./core/api";
-import { formatDayShort, initials } from "./core/format";
+import { formatDayShort, initials } from "./format";
 import { PAGE_TITLE_MOBILE } from "./core/layout";
 import { BodyRow, HeadRow, ROW_LINK } from "./core/table";
 import { PatientForm } from "./PatientForm";

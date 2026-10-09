@@ -6,7 +6,7 @@ import { Button, Modal, Notice } from "@/components/ui";
 import { formatTime, localDateKey } from "@/lib/dashboard";
 import { RevealPhone } from "../RevealPhone";
 import { StatusBadge } from "../core/StatusBadge";
-import { keyDateLong } from "../core/format";
+import { keyDateLong } from "../format";
 import { FINAL, SOURCE_LABEL, isPast, patientName } from "./shared";
 
 function Row({
