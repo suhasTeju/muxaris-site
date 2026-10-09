@@ -27,6 +27,8 @@ import { PhoneCall } from "lucide-react";
    custom radius, shadow and animation scales), so `<Button className="px-[16px]">` replaces the size's
    padding instead of fighting it.
 6. Keep existing data wiring, roles, loading and error states; restyle, do not rewrite behaviour.
+7. **Every page works at 390 and 768 without horizontal scroll, and is unchanged at 1024 and above.**
+   Follow the responsive conventions below.
 
 ## The app shell already provides
 
@@ -38,8 +40,50 @@ import { PhoneCall } from "lucide-react";
 - Page background (paper `#f4f6f9` with a radial teal bloom). Pages do not paint a background.
 - Each prototype page root animates in with `animation:mxIn .25s ease both`: put `animate-mx-in` on
   your page root.
-- Below 1024px the sidebar is an off-canvas menu. The design has no mobile layout; keep pages usable
-  at small widths (stack grids, let tables scroll) but never invent a different desktop layout.
+- Below 1024px the sidebar is an off-canvas menu behind the header's menu button. The header fits 390:
+  the clinic name truncates, "Assistant live" hides under 640, the email hides under 768, and Sign out
+  always shows.
+
+## Responsive conventions (below 1024px)
+
+The prototypes are desktop-only. Below 1024px apply the design system, do not redesign. Every page
+uses the same breakpoints and gutters:
+
+- **Breakpoints.** `lg` (1024px) is the desktop line: at 1024 and above every design value
+  applies literally. Write narrow-screen changes as `max-lg:` (or base classes plus an `lg:` desktop
+  value) so the desktop CSS does not change. `sm` (640px) is the phone line: bottom sheets, stacked
+  page headers, 22px page titles, a 1-column KPI grid. `md` (768px) is used only by the header (the
+  email shows from 768). Do not introduce other breakpoints.
+- **Gutters.** The shell supplies them: 16px under 640, 24px from 640 to 1023, 32px from 1024. Pages
+  add no side padding of their own.
+- **Stacking.** Multi-column layouts become one column below 1024:
+  `grid grid-cols-1 gap-[14px] lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]`. **Always give the
+  base `grid-cols-1`** (Tailwind's is `minmax(0,1fr)`). A bare `grid` with only `lg:grid-cols-*` has
+  an `auto` column below 1024, which grows to its widest child (a table, a tab row, a long phone
+  number) and pushes the page sideways. In flex rows, give the child that should shrink `min-w-0`.
+- **KPI grids:** `grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-4` (use the design's
+  column count at `lg`). That is 1 column at 390 and 2 at 768.
+- **Type.** `PageHeader` drops the title to 22px under 640. Display type on public pages scales down
+  (landing h1 64 → 40px, section h2 → 30–32px) with the same weight, tracking ratio and colour. UI
+  and body sizes never change.
+- **Tables** scroll inside their card, never the page: wrap the head and rows in
+  `<TableScroll minWidth={…}>` and keep the card full width.
+- **Tabs and Segmented** scroll sideways below 1024 when they do not fit (scrollbar hidden; the
+  selected tab is kept in view). Tabs never widen their column. Segmented is inline: in a flex row
+  it shrinks and scrolls, and in a grid it needs a `grid-cols-1` column.
+- **Page headers.** Under 640, `PageHeader` puts its actions under the title and wraps them.
+- **Modals.** Dialogs and drawers become full-width bottom sheets under 640 (the `Modal` does this).
+  Do not build your own.
+- **Controls** keep their heights (tap targets of 40px or more where the design allows). Button rows
+  are `flex flex-wrap gap-[8px]`. Long mono strings (phones, ids) use `truncate` inside a `min-w-0`
+  parent, so they end in an ellipsis rather than overflow.
+- **No overflow guards.** Do not hide horizontal overflow with `overflow-x-hidden` on a page wrapper.
+  It clips content instead of fixing it. There is no global guard on `body`; fix the cause.
+- **Verify at 390 and 768** with real device emulation (CDP `Emulation.setDeviceMetricsOverride`,
+  `mobile: true`). Headless Chrome's `--window-size=390,…` lays out at 500px, Chrome's minimum window
+  width, so it cannot test 390. Pass when `document.documentElement.scrollWidth === innerWidth` and
+  `innerWidth` is the width you asked for: a mobile viewport silently widens to fit overflowing
+  content. At 1440 the page must be pixel-identical to before.
 
 ## Fonts
 
@@ -335,7 +379,8 @@ table head or tinted header must clip to the corners. `as` is `div | section | a
 
 `<PageHeader title="Calls" subtitle="Every call your assistant answered." actions={<Button…/>} />`:
 h1 26px, line-height 1.15, -0.03em, 600; subtitle 14px muted; actions bottom-aligned on the right.
-`maxWidth` caps the title block. `<BackLink href="/app/calls">All calls</BackLink>`: 13.5px 500
+`maxWidth` caps the title block. Under 640 the title drops to 22px and the actions move under it and
+wrap. `<BackLink href="/app/calls">All calls</BackLink>`: 13.5px 500
 `#4a5566` with a 14px arrow.
 
 `<SectionHeader title="Today's appointments" link={{href:"/app/appointments",label:"All appointments"}} />`:
@@ -378,7 +423,8 @@ h2 | h3 | dt.
 <KpiCard label="Open callbacks" value="3" href="/app/callbacks" hint="View the callback queue" hintTone="link" badge={<Badge tone="bad" size={20}>1 urgent</Badge>} />
 ```
 
-Card radius 16, padding 18 (16 at the bottom with a hint). Label 13px muted with a 14px icon; value
+Lay KPI cards out with `grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-4` (see Responsive
+conventions). Card radius 16, padding 18 (16 at the bottom with a hint). Label 13px muted with a 14px icon; value
 32px 600 -0.03em; `unit` 14px muted; `hint` 12.5px (`muted` | `bad` rose | `link` teal-ink 500 with an
 arrow); `meter` draws a 6px UsageMeter. With `href` the card is a link and hovers to a `#b9e3e0`
 border with `shadow-hover`.
@@ -418,17 +464,25 @@ Row: `#f1f4f7` top rule, 14px; with `href` (a Link) or `onClick` it hovers to `#
 prototype's row padding with `className` when it differs. `TableGroup` is the day/group header row
 (`#f8fafc`, 8px 18px, 12px 600 `#4a5566`).
 
+`<TableScroll minWidth={560}>` wraps the head and rows (inside the `Card`) so a table scrolls inside
+its card on narrow screens instead of crushing its columns. Set `minWidth` to the width at which the
+prototype's columns still fit. It has inline-size containment, so it never widens the card or the page;
+at desktop widths it changes nothing.
+
 ### `Tabs`, `Segmented`
 
 `<Tabs aria-label="Status" value={tab} onChange={setTab} items={[{id:"open",label:"Open",count:3}, …]} />`:
 underline tabs. 40px tall, 0 14px, 2px bottom border; on = ink border, ink 600; off = muted 500. Count
 pill is h19 mono 11px (ink/white on, chip/`#4a5566` off). Items may have `icon` or `href` (renders
-Links for URL-driven tabs). Arrow keys move between tabs. Render the panel yourself.
+Links for URL-driven tabs). Arrow keys move between tabs. Render the panel yourself. Below 1024 the row
+scrolls sideways when it overflows (the bottom rule becomes an inset shadow so the underline is not
+clipped) and keeps the selected tab in view.
 
 `<Segmented aria-label="Range" value={range} onChange={setRange} items={[{id:"7d",label:"7 days"}, …]} />`:
 pill switcher. Track 3px padding, radius 11; `track="bordered"` (default, `#e9eef3` + line border) or
 `"plain"` (`#eef2f6`). Segments `size` 30 or 34 (default), 14px padding, radius 8, 13.5px 500; selected
 is white with `shadow-seg`. `role` tablist (default) or radiogroup; items with `href` render as links.
+Below 1024 the track scrolls sideways when its container is narrower than the segments.
 
 ### `Modal`
 
