@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
+import { DEFAULT_SPEAKER } from "@/lib/onboarding";
 
 const h = vi.hoisted(() => ({
   api: vi.fn(),
@@ -261,6 +262,38 @@ describe("Wizard", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("Write a greeting first.");
     expect(alert.parentElement?.contains(previews[1]!)).toBe(true);
+  });
+
+  it("sends the clicked greeting to the voice preview and stops on a second click", async () => {
+    setApi({
+      "GET /v1/onboarding": { step: "assistant" },
+      "GET /v1/clinics/c1": {
+        clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN", "kn-IN"] },
+      },
+    });
+    const voicePreview = vi.fn(() => new Promise<Blob>(() => undefined));
+    render(
+      <Wizard
+        initialClinic={{ id: "c1", name: "Test Clinic" }}
+        cookieStale={false}
+        voicePreview={voicePreview}
+      />,
+    );
+    await heading("Meet your assistant");
+    fireEvent.change(screen.getByLabelText("Kannada greeting"), { target: { value: "Namaskara" } });
+    const kannada = screen.getAllByRole("button", { name: "Preview" })[1]!;
+    fireEvent.click(kannada);
+    await waitFor(() =>
+      expect(voicePreview).toHaveBeenCalledWith("c1", {
+        text: "Namaskara",
+        language: "kn-IN",
+        speaker: DEFAULT_SPEAKER,
+      }),
+    );
+    expect(kannada.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(kannada);
+    expect(kannada.getAttribute("aria-pressed")).toBe("false");
+    expect(voicePreview).toHaveBeenCalledTimes(1);
   });
 
   it("lists services on the review step with Indian number formatting", async () => {
