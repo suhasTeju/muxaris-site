@@ -18,6 +18,9 @@ export const HERO = {
   note: "Browser calls today; clinic phone numbers and WhatsApp confirmations coming soon.",
 } as const;
 
+/** Clip lengths in seconds, as the design shows them (the real clips, to one decimal). */
+const GREETING_SECONDS: Record<string, number> = { en: 3.0, hi: 3.7, kn: 4.4, ta: 4.0, te: 4.1 };
+
 /** Real greeting clips, generated with the clinic greeting per language. */
 export const GREETINGS = LANGUAGES.map((l) => {
   const short = l.code.slice(0, 2);
@@ -34,8 +37,18 @@ export const GREETINGS = LANGUAGES.map((l) => {
     native: l.native,
     greeting: greeting[short]!,
     audio: `/audio/greet-${short}.m4a`,
+    seconds: GREETING_SECONDS[short]!,
   };
 });
+
+/** The scrolling greeting band under the hero. */
+export const MARQUEE = [
+  "Hello, Sunrise Dental Care",
+  "नमस्ते, सनराइज़ डेंटल केयर",
+  "ನಮಸ್ಕಾರ, ಸನ್‌ರೈಸ್ ಡೆಂಟಲ್ ಕೇರ್",
+  "வணக்கம், சன்ரைஸ் டென்டல் கேர்",
+  "నమస్కారం, సన్‌రైజ్ డెంటల్ కేర్",
+] as const;
 
 export const PROBLEM = {
   title: "A missed call is a missed patient.",
@@ -93,6 +106,8 @@ export const DEMO_STAGES = [
 
 /** Timestamps (seconds) into /audio/sample-call.m4a (about 20.4 s). */
 export const SAMPLE_CALL_DURATION = 20.4;
+/** The silent replay holds the finished call for three seconds before it loops. */
+export const DEMO_LOOP_END = SAMPLE_CALL_DURATION + 3;
 export const TRANSCRIPT = [
   {
     at: 0,
@@ -116,42 +131,34 @@ export const CAPABILITIES = [
   {
     title: "Books against the real calendar",
     text: "Reads each doctor’s working hours, leave and existing appointments, and only offers slots that are genuinely free.",
-    span: "lg:col-span-2",
   },
   {
     title: "Five languages",
     text: "English, Hindi, Kannada, Tamil and Telugu, including callers who mix them mid-sentence.",
-    span: "",
   },
   {
     title: "Emergencies go to a human",
     text: "Severe pain, bleeding or trauma are transferred to your staff instead of being booked.",
-    span: "",
   },
   {
     title: "Reschedules and cancellations",
     text: "Patients can move or cancel an appointment by phone, and the slot goes back into the calendar.",
-    span: "",
   },
   {
     title: "Callbacks queue",
     text: "When a caller wants a person, or a question is outside what Muxaris knows, a callback request lands in your queue with the context.",
-    span: "lg:col-span-2",
   },
   {
     title: "Knows your clinic",
     text: "Services, fees, timings, directions and the answers you write: it only says what you have told it.",
-    span: "",
   },
   {
     title: "Every call logged",
     text: "Transcript, outcome and booking for each call, in your dashboard.",
-    span: "",
   },
   {
     title: "Consent at the start",
     text: "Every call opens with a short note that an AI assistant is answering and that the call may be recorded and transcribed.",
-    span: "",
   },
 ] as const;
 
@@ -247,39 +254,70 @@ export const PRICING_NOTE =
 export const FAQS = [
   {
     q: "Which languages does Muxaris speak?",
-    a: "English, Hindi, Kannada, Tamil and Telugu. The assistant greets in the language you set for your clinic and switches to whichever language the caller uses.",
+    a: "Kannada, Hindi, Tamil, Telugu, and English. Each clinic picks the languages its patients speak, and the assistant greets callers in the clinic’s own greeting for each one.",
   },
   {
     q: "Does it understand accents and mixed languages?",
-    a: "Yes. Callers in Bengaluru often speak Kannada and English in the same sentence, and Muxaris is built to follow that. Speech recognition is by Sarvam AI, trained on Indian languages and accents. It is not perfect, so anything it is unsure about is confirmed back to the caller or sent to your callbacks queue.",
+    a: "Yes. Speech is transcribed with a model built for code-mixed Indic speech, so callers who mix languages mid-sentence are understood. Callers can switch mid-call; Muxaris follows.",
   },
   {
     q: "What happens in an emergency?",
-    a: "If a caller describes severe pain, heavy bleeding, facial swelling or an accident, Muxaris does not try to book. It tells the caller it is connecting them to the clinic and transfers the call to the staff number you configure.",
+    a: "Severe pain, bleeding or trauma are transferred to your staff instead of being booked. Muxaris is a scheduling and information assistant and does not give medical advice.",
   },
   {
     q: "Where is our data stored?",
-    a: "Your clinic’s data is stored in India (AWS Mumbai). Speech recognition and synthesis run with Sarvam AI in India. The conversation model runs on Amazon Bedrock and may be processed in other AWS regions. Call recordings are stored encrypted in AWS Mumbai. Recordings, transcripts and call summaries are deleted 90 days after the call by default. Clinics can turn recording off in Settings, and then calls are transcribed but no audio is kept. Patient data belongs to your clinic, and we never sell it.",
+    a: "In India, in AWS Mumbai. Recordings, transcripts and summaries are deleted 90 days after the call. Every call opens with a notice that an AI assistant is answering and the call may be recorded.",
   },
   {
     q: "How does booking work with our calendar?",
-    a: "You set each doctor’s working hours, services and leave in Muxaris. During a call it reads those rules plus the existing appointments, offers only free slots, and writes the booking straight into the same calendar your front desk sees. Staff can move or cancel anything from the dashboard.",
+    a: "Muxaris reads each doctor’s working hours, leave and existing appointments, and only offers slots that are genuinely free. Bookings appear on your dashboard the moment they are made.",
   },
   {
     q: "How is pricing structured? What about overage?",
-    a: "The Pilot is free for 30 days for the first 10 Bengaluru clinics, up to 500 call-minutes. Standard is ₹4,999 per month and includes up to 3,000 call-minutes. If you go beyond that, we bill a per-minute rate agreed in advance and tell you before it happens. No lock-in, cancel any time.",
+    a: "The pilot is ₹0 for 30 days with up to 500 call-minutes. Standard is ₹4,999 per month with up to 3,000 call-minutes. Calls beyond your included minutes are billed at a per-minute rate we agree with you up front; you are never cut off mid-call.",
   },
   {
     q: "How long does set-up take?",
-    a: "Set-up takes about 30 minutes. You add your clinic, doctors, services and hours in a guided set-up, try a test call from your browser, and you are ready.",
+    a: "Creating an account takes about five minutes. Onboarding then walks you through your clinic, doctors, services and assistant, and pilot clinics get hands-on set-up with us.",
   },
   {
     q: "Can it answer our existing clinic phone number?",
-    a: "Phone numbers and number porting are coming soon. Today you can take calls from your browser, which is the best way to hear Muxaris set up for your own clinic. Join the pilot and we will tell you the day dedicated numbers are ready.",
+    a: "Not yet. Today the live product is a browser call. Clinic phone numbers, with number porting, are coming next.",
   },
 ] as const;
 
 export const FOOTER_LANGUAGES = "English · हिन्दी · ಕನ್ನಡ · தமிழ் · తెలుగు";
 
-export const COMING_NEXT =
-  "Coming next: WhatsApp confirmations, and clinic phone numbers with number porting.";
+/** Follows a "Coming next" pill under the capabilities grid. */
+export const COMING_NEXT = "WhatsApp confirmations, and clinic phone numbers with number porting.";
+
+/** "On this page" for the legal pages: each id is the id of an h2 on that page. */
+export const LEGAL_TOC = {
+  privacy: [
+    { id: "who", label: "Who is who" },
+    { id: "collect", label: "What we collect" },
+    { id: "consent", label: "Consent at the start of the call" },
+    { id: "use", label: "How we use it" },
+    { id: "stored", label: "Where it is stored" },
+    { id: "providers", label: "Service providers" },
+    { id: "retention", label: "Retention" },
+    { id: "rights", label: "Your rights and the DPDP Act, 2023" },
+    { id: "cookies", label: "Cookies" },
+    { id: "security", label: "Security" },
+    { id: "changes", label: "Changes" },
+  ],
+  terms: [
+    { id: "service", label: "The service" },
+    { id: "pilot", label: "Pilot" },
+    { id: "use", label: "Acceptable use" },
+    { id: "medical", label: "No medical advice" },
+    { id: "availability", label: "Availability" },
+    { id: "fees", label: "Fees and billing" },
+    { id: "data", label: "Your data" },
+    { id: "termination", label: "Termination" },
+    { id: "liability", label: "Liability" },
+    { id: "law", label: "Governing law" },
+    { id: "changes", label: "Changes" },
+  ],
+} as const;
+export type LegalPage = keyof typeof LEGAL_TOC;
