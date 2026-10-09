@@ -39,7 +39,7 @@ export function Hero() {
             <span aria-hidden="true" className={PULSE_DOT} />
             {HERO.eyebrow}
           </p>
-          <h1 className="m-0 text-[clamp(44px,5.6vw,80px)] leading-[0.98] font-semibold tracking-[-0.048em] text-balance">
+          <h1 className="m-0 text-[40px] sm:text-[clamp(48px,5.6vw,80px)] leading-[0.98] font-semibold tracking-[-0.048em] text-balance">
             Your front desk misses calls. <span className="text-teal">Muxaris doesn’t.</span>
           </h1>
           <p className="text-ink-3 m-0 max-w-[520px] text-[17px] leading-[1.55] text-pretty sm:text-[19px]">
@@ -106,7 +106,7 @@ export function Hero() {
 
           <div
             aria-hidden="true"
-            className="rounded-16 text-glass-text absolute top-[46%] left-[-8px] flex animate-[mxFloat_6s_ease-in-out_infinite] items-center gap-[12px] border border-[rgba(255,255,255,0.14)] bg-[rgba(12,18,32,0.72)] px-[16px] py-[12px] shadow-[0_20px_40px_-18px_rgba(12,18,32,0.6)] backdrop-blur-[16px] motion-reduce:animate-none"
+            className="rounded-16 text-glass-text absolute top-[46%] left-0 sm:left-[-8px] flex animate-[mxFloat_6s_ease-in-out_infinite] items-center gap-[12px] border border-[rgba(255,255,255,0.14)] bg-[rgba(12,18,32,0.72)] px-[16px] py-[12px] shadow-[0_20px_40px_-18px_rgba(12,18,32,0.6)] backdrop-blur-[16px] motion-reduce:animate-none"
           >
             <div className="flex h-[22px] items-center gap-[3px]">
               {BAR_DELAYS.map((d) => (
@@ -125,7 +125,7 @@ export function Hero() {
             </div>
           </div>
 
-          <div className="rounded-18 absolute right-[-12px] bottom-0 flex w-[min(290px,calc(100%-16px))] items-start gap-[12px] border border-[rgba(255,255,255,0.95)] bg-[rgba(255,255,255,0.82)] p-[16px] shadow-[0_24px_48px_-20px_rgba(12,18,32,0.4)] backdrop-blur-[18px]">
+          <div className="rounded-18 absolute right-0 bottom-0 sm:right-[-12px] flex w-[min(290px,calc(100%-16px))] items-start gap-[12px] border border-[rgba(255,255,255,0.95)] bg-[rgba(255,255,255,0.82)] p-[16px] shadow-[0_24px_48px_-20px_rgba(12,18,32,0.4)] backdrop-blur-[18px]">
             <span className="rounded-11 bg-green-soft text-green-ink grid size-[36px] flex-none place-items-center">
               <CalendarCheck size={18} aria-hidden />
             </span>
