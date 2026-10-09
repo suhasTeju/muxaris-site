@@ -43,6 +43,19 @@ function renderView(role: Role = "owner") {
 const section = (name: string) => screen.getByRole("region", { name });
 
 describe("SettingsView", () => {
+  it("below 1024 hides the jump list and gives the sections the full width", () => {
+    renderView();
+    const nav = screen.getByRole("navigation", { name: "Settings sections" });
+    expect(nav.className.split(" ")).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
+    expect(nav.parentElement!.className.split(" ")).toEqual(
+      expect.arrayContaining(["grid-cols-1", "lg:grid-cols-[190px_minmax(0,1fr)]"]),
+    );
+    // The services table scrolls inside its card instead of squeezing its columns.
+    const head = within(section("Services")).getByText("Duration");
+    expect(head.closest(".overflow-x-auto")).toBeTruthy();
+    expect(head.closest(".min-w-\\[640px\\]")).toBeTruthy();
+  });
+
   it("shows every section with a jump list", () => {
     renderView();
     const nav = screen.getByRole("navigation", { name: "Settings sections" });

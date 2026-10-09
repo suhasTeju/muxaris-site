@@ -215,7 +215,7 @@ export function DoctorDrawer({
             return (
               <div
                 key={day}
-                className="border-line-soft grid grid-cols-[120px_minmax(0,1fr)] items-center gap-[10px] border-t px-[12px] py-[7px]"
+                className="border-line-soft grid grid-cols-[120px_minmax(0,1fr)] items-center gap-[10px] border-t px-[12px] py-[7px] max-sm:grid-cols-1 max-sm:gap-[6px]"
               >
                 <Checkbox
                   label={name}
@@ -224,7 +224,7 @@ export function DoctorDrawer({
                   className="py-[2px]"
                 />
                 {d.open ? (
-                  <div className="flex items-center gap-[8px]">
+                  <div className="flex items-center gap-[8px] max-sm:pl-[26px]">
                     {(["start", "end"] as const).map((k, i) => (
                       <span key={k} className="contents">
                         {i === 1 ? <span className="text-muted-2">–</span> : null}
@@ -242,7 +242,7 @@ export function DoctorDrawer({
                     ))}
                   </div>
                 ) : (
-                  <span className="text-muted-2 text-[13px]">Closed</span>
+                  <span className="text-muted-2 text-[13px] max-sm:hidden">Closed</span>
                 )}
               </div>
             );
