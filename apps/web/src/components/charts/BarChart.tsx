@@ -1,108 +1,105 @@
+import { cn } from "@/components/ui";
+import { DataTable, pct } from "./DataTable";
+
 export interface BarSeries {
   name: string;
   values: number[];
-  className?: string;
 }
 
-const W = 640;
-const H = 220;
-const PAD_L = 36;
-const PAD_B = 28;
-const PAD_T = 8;
-const GAP = 0.2;
-
+/**
+ * Vertical bars drawn as CSS boxes, as the Analytics prototype draws them: each bar takes an equal
+ * share of the width (`flex: 1`), its height is a percentage of the largest value, and faint grid
+ * lines repeat every `gridStep` px. An optional `overlay` series draws inside each bar from the
+ * bottom as a share of that bar (Calls per day: booked out of calls). Ticks sit under the plot,
+ * spread edge to edge. A hidden table carries the numbers for screen readers.
+ */
 export function BarChart({
   title,
+  summary,
   categories,
   series,
-  valueLabel = (v) => String(v),
+  overlay,
+  height,
+  gap,
+  gridStep,
+  ticks,
+  barClassName,
+  overlayClassName = "bg-teal",
+  barTitle,
+  className,
 }: {
+  /** Names the hidden data table. */
   title: string;
+  /** Accessible name of the plot (defaults to the title). */
+  summary?: string;
   categories: string[];
-  series: BarSeries[];
-  valueLabel?: (v: number) => string;
+  series: BarSeries;
+  overlay?: BarSeries;
+  /** Plot height in px, including any top padding in `className`. */
+  height: number;
+  /** Gap between bars in px. */
+  gap: number;
+  /** Distance between grid lines in px. */
+  gridStep: number;
+  ticks: string[];
+  /** Fill (and hover) classes per bar. */
+  barClassName: (value: number, max: number, index: number) => string;
+  overlayClassName?: string;
+  /** Native tooltip per bar. */
+  barTitle?: (index: number) => string;
+  className?: string;
 }) {
-  const max = Math.max(0, ...series.flatMap((s) => s.values));
-  const groupW = (W - PAD_L) / Math.max(1, categories.length);
-  const barW = (groupW * (1 - GAP)) / Math.max(1, series.length);
-  const plotH = H - PAD_B - PAD_T;
-  const y = (v: number) => (max === 0 ? 0 : (v / max) * plotH);
-  const tickEvery = categories.length > 14 ? Math.ceil(categories.length / 7) : 1;
-  const fillOf = (s: BarSeries, j: number) =>
-    s.className ?? (j === 0 ? "fill-[var(--color-accent)]" : "fill-[var(--color-ink)]/40");
+  const max = Math.max(0, ...series.values);
   return (
-    <figure className="border-line bg-surface rounded-card border p-4">
-      <figcaption className="text-muted text-sm">{title}</figcaption>
-      <svg role="img" aria-label={title} viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full">
-        <line x1={PAD_L} x2={W} y1={H - PAD_B} y2={H - PAD_B} stroke="var(--color-line)" />
-        <text x={0} y={PAD_T + 10} fontSize="11" fill="var(--color-muted)">
-          {valueLabel(max)}
-        </text>
-        {categories.map((cat, i) => (
-          <g key={cat + i} transform={`translate(${PAD_L + i * groupW + (groupW * GAP) / 2},0)`}>
-            {series.map((s, j) => {
-              const v = s.values[i] ?? 0;
-              const h = y(v);
-              return (
-                <rect
-                  key={s.name}
-                  data-bar
-                  x={j * barW}
-                  y={H - PAD_B - h}
-                  width={Math.max(1, barW - 1)}
-                  height={h}
-                  className={fillOf(s, j)}
-                >
-                  <title>{`${cat} · ${s.name}: ${valueLabel(v)}`}</title>
-                </rect>
-              );
-            })}
-            {i % tickEvery === 0 && (
-              <text
-                x={(groupW * (1 - GAP)) / 2}
-                y={H - 8}
-                fontSize="11"
-                textAnchor="middle"
-                fill="var(--color-muted)"
-              >
-                {cat}
-              </text>
-            )}
-          </g>
+    <>
+      <div
+        role="img"
+        aria-label={summary ?? title}
+        className={cn("border-line relative flex items-end border-b", className)}
+        style={{
+          height,
+          gap,
+          backgroundImage: "linear-gradient(#f1f4f7 1px, transparent 1px)",
+          backgroundSize: `100% ${gridStep}px`,
+        }}
+      >
+        {series.values.map((v, i) => {
+          const o = overlay?.values[i] ?? 0;
+          return (
+            <div
+              key={`${categories[i]}-${i}`}
+              data-bar
+              title={barTitle?.(i)}
+              className={cn(
+                "relative min-w-[2px] flex-1 rounded-[4px_4px_0_0]",
+                barClassName(v, max, i),
+              )}
+              style={{ height: `${pct(v, max)}%` }}
+            >
+              {overlay ? (
+                <div
+                  data-overlay
+                  className={cn(
+                    "absolute inset-x-0 bottom-0 rounded-[4px_4px_0_0]",
+                    overlayClassName,
+                  )}
+                  style={{ height: `${v ? pct(o, v) : 0}%` }}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className="text-muted-2 flex justify-between font-mono text-[11px]" aria-hidden="true">
+        {ticks.map((t, i) => (
+          <span key={`${t}-${i}`}>{t}</span>
         ))}
-      </svg>
-      {series.length > 1 && (
-        <ul className="text-muted mt-1 flex gap-4 text-xs" aria-hidden="true">
-          {series.map((s, j) => (
-            <li key={s.name}>
-              <span
-                className={`mr-1 inline-block h-2 w-2 ${j === 0 ? "bg-[var(--color-accent)]" : "bg-[var(--color-ink)]/40"}`}
-              />
-              {s.name}
-            </li>
-          ))}
-        </ul>
-      )}
-      <table className="sr-only" aria-label={title}>
-        <thead>
-          <tr>
-            <th>Category</th>
-            {series.map((s) => (
-              <th key={s.name}>{s.name}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {categories.map((cat, i) => (
-            <tr key={cat + i}>
-              <th scope="row">{cat}</th>
-              {series.map((s) => (
-                <td key={s.name}>{valueLabel(s.values[i] ?? 0)}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </figure>
+      </div>
+      <DataTable
+        title={title}
+        categories={categories}
+        series={overlay ? [series, overlay] : [series]}
+      />
+    </>
   );
 }
