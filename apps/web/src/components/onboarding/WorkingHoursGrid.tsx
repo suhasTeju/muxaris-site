@@ -47,56 +47,58 @@ export function WorkingHoursGrid({
       <div
         role="group"
         aria-labelledby={labelId}
-        className="border-line bg-surface flex flex-col overflow-hidden rounded-14 border"
+        className="border-line bg-surface overflow-x-auto rounded-14 border"
       >
-        {DISPLAY_WEEKDAYS.map((day) => {
-          const d = value[day]!;
-          const err = errors[day];
-          const name = WEEKDAY_NAMES[day]!;
-          const errId = `${idPrefix}-${day}-err`;
-          const time = (edge: "start" | "end") => (
-            <Input
-              id={`${idPrefix}-${day}-${edge}`}
-              aria-label={`${name} ${edge === "start" ? "opens" : "closes"}`}
-              type="time"
-              size={36}
-              mono
-              invalid={Boolean(err)}
-              aria-describedby={err ? errId : undefined}
-              value={d[edge]}
-              onChange={(e) =>
-                patch(day, edge === "start" ? { start: e.target.value } : { end: e.target.value })
-              }
-              className="w-auto px-[10px] text-[13.5px]"
-            />
-          );
-          return (
-            <div
-              key={day}
-              className="border-chip grid grid-cols-[minmax(0,1fr)] items-center gap-x-[14px] gap-y-[6px] border-t px-[14px] py-[8px] sm:grid-cols-[150px_minmax(0,1fr)]"
-            >
-              <CheckRow on={d.open} onToggle={() => patch(day, { open: !d.open })}>
-                {name}
-              </CheckRow>
-              {d.open ? (
-                <div className="flex flex-wrap items-center gap-[10px]">
-                  {time("start")}
-                  <span className="text-muted-2" aria-hidden="true">
-                    –
-                  </span>
-                  {time("end")}
-                  {err ? (
-                    <span id={errId} role="alert" className="text-rose text-[12.5px]">
-                      {err}
+        <div className="flex min-w-[500px] flex-col">
+          {DISPLAY_WEEKDAYS.map((day) => {
+            const d = value[day]!;
+            const err = errors[day];
+            const name = WEEKDAY_NAMES[day]!;
+            const errId = `${idPrefix}-${day}-err`;
+            const time = (edge: "start" | "end") => (
+              <Input
+                id={`${idPrefix}-${day}-${edge}`}
+                aria-label={`${name} ${edge === "start" ? "opens" : "closes"}`}
+                type="time"
+                size={36}
+                mono
+                invalid={Boolean(err)}
+                aria-describedby={err ? errId : undefined}
+                value={d[edge]}
+                onChange={(e) =>
+                  patch(day, edge === "start" ? { start: e.target.value } : { end: e.target.value })
+                }
+                className="w-auto px-[10px] text-[13.5px]"
+              />
+            );
+            return (
+              <div
+                key={day}
+                className="border-chip grid grid-cols-[150px_minmax(0,1fr)] items-center gap-x-[14px] gap-y-[6px] border-t px-[14px] py-[8px]"
+              >
+                <CheckRow on={d.open} onToggle={() => patch(day, { open: !d.open })}>
+                  {name}
+                </CheckRow>
+                {d.open ? (
+                  <div className="flex flex-wrap items-center gap-[10px]">
+                    {time("start")}
+                    <span className="text-muted-2" aria-hidden="true">
+                      –
                     </span>
-                  ) : null}
-                </div>
-              ) : (
-                <span className="text-muted-2 text-[13.5px]">Closed</span>
-              )}
-            </div>
-          );
-        })}
+                    {time("end")}
+                    {err ? (
+                      <span id={errId} role="alert" className="text-rose text-[12.5px]">
+                        {err}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="text-muted-2 text-[13.5px]">Closed</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

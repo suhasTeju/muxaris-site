@@ -26,14 +26,14 @@ export function AuthShell({
 }) {
   return (
     <div className="bg-surface grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-      <div className="flex min-h-screen flex-col px-[20px] py-[28px] sm:px-[48px]">
+      <div className="flex min-h-screen flex-col px-[16px] py-[28px] sm:px-[48px]">
         <Link href="/" aria-label="Muxaris home" className="inline-flex self-start">
           <Wordmark width={120} />
         </Link>
         <main className="flex flex-1 items-center justify-center py-[48px]">
           <div className="flex w-full max-w-[400px] animate-[mxIn_.35s_ease_both] flex-col gap-[28px]">
             <div className="flex flex-col gap-[8px]">
-              <h1 className="m-0 text-[36px] leading-[1.1] font-semibold tracking-[-0.035em]">
+              <h1 className="m-0 text-[36px] leading-[1.1] font-semibold tracking-[-0.035em] max-sm:text-[30px]">
                 {title}
               </h1>
               <p className="text-muted m-0 text-[16px] italic">{aside}</p>

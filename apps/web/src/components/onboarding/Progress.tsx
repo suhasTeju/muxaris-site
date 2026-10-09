@@ -29,6 +29,7 @@ export function Progress({
       <div className="flex flex-col gap-[6px]">
         <MonoLabel className={current < 0 ? "invisible" : undefined}>
           Step {current + 1} of {total}
+          {step ? <span className="lg:hidden">: {STEP_LABELS[step]}</span> : null}
         </MonoLabel>
         <div className="bg-line h-[4px] overflow-hidden rounded-[4px]">
           <div
@@ -37,13 +38,13 @@ export function Progress({
           />
         </div>
       </div>
-      <ol className="m-0 flex list-none flex-col gap-[4px] p-0 max-lg:flex-row max-lg:overflow-x-auto">
+      <ol className="m-0 flex list-none flex-col gap-[4px] p-0 max-lg:hidden">
         {WIZARD_STEPS.map((s, i) => {
           const cur = i === current;
           const done = !cur && current >= 0 && (i < current || i < maxStep);
           const reachable = current >= 0 && i <= Math.max(maxStep, current);
           return (
-            <li key={s} className="max-lg:flex-none">
+            <li key={s}>
               <button
                 type="button"
                 disabled={!reachable}
@@ -52,7 +53,7 @@ export function Progress({
                   if (!cur && reachable) onGo?.(s);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-[12px] rounded-12 border px-[12px] py-[10px] text-left transition-all duration-200 max-lg:w-auto max-lg:whitespace-nowrap",
+                  "flex w-full items-center gap-[12px] rounded-12 border px-[12px] py-[10px] text-left transition-all duration-200",
                   cur ? "border-line bg-surface" : "border-transparent bg-transparent",
                   reachable ? "cursor-pointer" : "cursor-default",
                 )}
@@ -87,7 +88,7 @@ export function Progress({
           );
         })}
       </ol>
-      <p className="text-muted m-0 flex gap-[8px] text-[13px] leading-[1.5]">
+      <p className="text-muted m-0 flex gap-[8px] text-[13px] leading-[1.5] max-lg:hidden">
         <Save size={14} aria-hidden="true" className="mt-[2px] flex-none" />
         Progress is saved after every step, so you can leave and resume.
       </p>

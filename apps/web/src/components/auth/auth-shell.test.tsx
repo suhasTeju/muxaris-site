@@ -31,4 +31,18 @@ describe("AuthShell", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/Sign-in is not configured/);
     expect(screen.queryByRole("form")).toBeNull();
   });
+  it("stacks to one column with 16px gutters below 1024px and hides the image pane", () => {
+    const { container } = render(
+      <AuthShell title="Welcome back">
+        <form aria-label="Sign in" />
+      </AuthShell>,
+    );
+    const root = container.firstElementChild!;
+    expect(root.className).toContain("grid-cols-1");
+    expect(root.className).toContain("lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]");
+    const [form, pane] = Array.from(root.children);
+    expect(form!.className).toContain("px-[16px]");
+    expect(pane!.className).toMatch(/(^| )hidden( |$)/);
+    expect(pane!.className).toContain("lg:block");
+  });
 });

@@ -239,7 +239,7 @@ export function StepShell({
       <div className="flex flex-col gap-[6px] px-[20px] pt-[30px] pb-[6px] sm:px-[32px]">
         <h1
           tabIndex={-1}
-          className="m-0 text-[28px] leading-[1.15] font-semibold tracking-[-0.03em] outline-none"
+          className="m-0 text-[28px] leading-[1.15] font-semibold tracking-[-0.03em] outline-none max-sm:text-[24px]"
         >
           {title}
         </h1>

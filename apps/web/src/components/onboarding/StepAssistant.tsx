@@ -262,7 +262,7 @@ export function StepAssistant({
                     />
                   )}
                 </Field>
-                <div className="flex flex-wrap items-center gap-[10px]">
+                <div className="flex flex-wrap items-center gap-[10px] max-sm:flex-col max-sm:items-start">
                   <label className="text-muted flex items-center gap-[8px] text-[13px]">
                     {l.label} voice
                     <Select
@@ -280,20 +280,22 @@ export function StepAssistant({
                       ))}
                     </Select>
                   </label>
-                  <Button
-                    size={34}
-                    icon={playing ? Square : Play}
-                    iconSize={12}
-                    aria-pressed={playing}
-                    onClick={() => void preview(l.code)}
-                    className={cn(
-                      "gap-[8px] font-medium shadow-none",
-                      playing && "bg-teal hover:bg-teal",
-                    )}
-                  >
-                    Preview
-                  </Button>
-                  {playing ? <VoiceBars /> : null}
+                  <span className="contents max-sm:flex max-sm:items-center max-sm:gap-[10px]">
+                    <Button
+                      size={34}
+                      icon={playing ? Square : Play}
+                      iconSize={12}
+                      aria-pressed={playing}
+                      onClick={() => void preview(l.code)}
+                      className={cn(
+                        "gap-[8px] font-medium shadow-none",
+                        playing && "bg-teal hover:bg-teal",
+                      )}
+                    >
+                      Preview
+                    </Button>
+                    {playing ? <VoiceBars /> : null}
+                  </span>
                   {err ? (
                     <span role="alert" className="text-rose text-[12.5px]">
                       {err}
@@ -321,7 +323,7 @@ export function StepAssistant({
           {faq.map((f, i) => (
             <div
               key={i}
-              className="border-line bg-subtle grid grid-cols-[minmax(0,1fr)_auto] items-start gap-[10px] rounded-14 border p-[14px]"
+              className="border-line bg-subtle grid grid-cols-[minmax(0,1fr)_auto] items-start gap-[10px] rounded-14 border p-[14px] max-sm:grid-cols-[minmax(0,1fr)]"
             >
               <div className="flex flex-col gap-[8px]">
                 <Input
@@ -352,7 +354,7 @@ export function StepAssistant({
                 variant="danger-ghost"
                 size={32}
                 onClick={() => setFaq(faq.filter((_, j) => j !== i))}
-                className="rounded-9"
+                className="rounded-9 max-sm:justify-self-end"
               >
                 Remove<span className="sr-only"> question {i + 1}</span>
               </Button>
