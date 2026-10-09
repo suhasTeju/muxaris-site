@@ -1,5 +1,7 @@
 "use client";
 
+import { Copy } from "lucide-react";
+import { Button, Input } from "@/components/ui";
 import {
   DISPLAY_WEEKDAYS,
   WEEKDAY_NAMES,
@@ -8,11 +10,9 @@ import {
   type DayHours,
   type WeekHours,
 } from "@/lib/onboarding";
-import { Btn } from "./ui";
+import { CheckRow } from "./ui";
 
-const timeCls =
-  "border-line bg-paper text-ink focus:border-accent focus:ring-accent-soft min-h-11 rounded-lg border px-3 py-2 text-base outline-none focus:ring-4 disabled:opacity-40";
-
+/** Seven day rows (150px day toggle, then opens – closes or "Closed") under "Copy Monday to all". */
 export function WorkingHoursGrid({
   value,
   onChange,
@@ -26,67 +26,78 @@ export function WorkingHoursGrid({
   function patch(day: number, p: Partial<DayHours>) {
     onChange(value.map((d, i) => (i === day ? { ...d, ...p } : d)));
   }
+  const labelId = `${idPrefix}-hours`;
   return (
-    <fieldset>
-      <legend className="text-ink text-sm font-medium">Working hours</legend>
-      <div className="mt-1 flex justify-end">
-        <Btn variant="ghost" onClick={() => onChange(copyMondayToAll(value))}>
+    <div className="flex flex-col gap-[10px]">
+      <div className="flex items-center justify-between gap-[12px]">
+        <span id={labelId} className="text-ink-2 text-[13.5px] font-medium">
+          Working hours
+        </span>
+        <Button
+          variant="secondary"
+          size={30}
+          icon={Copy}
+          iconSize={13}
+          onClick={() => onChange(copyMondayToAll(value))}
+          className="px-[10px] text-[13px]"
+        >
           Copy Monday to all
-        </Btn>
+        </Button>
       </div>
-      <ul className="divide-line border-line mt-2 divide-y rounded-xl border">
+      <div
+        role="group"
+        aria-labelledby={labelId}
+        className="border-line bg-surface flex flex-col overflow-hidden rounded-14 border"
+      >
         {DISPLAY_WEEKDAYS.map((day) => {
           const d = value[day]!;
           const err = errors[day];
-          const base = `${idPrefix}-${day}`;
-          const errId = `${base}-err`;
+          const name = WEEKDAY_NAMES[day]!;
+          const errId = `${idPrefix}-${day}-err`;
+          const time = (edge: "start" | "end") => (
+            <Input
+              id={`${idPrefix}-${day}-${edge}`}
+              aria-label={`${name} ${edge === "start" ? "opens" : "closes"}`}
+              type="time"
+              size={36}
+              mono
+              invalid={Boolean(err)}
+              aria-describedby={err ? errId : undefined}
+              value={d[edge]}
+              onChange={(e) =>
+                patch(day, edge === "start" ? { start: e.target.value } : { end: e.target.value })
+              }
+              className="w-auto px-[10px] text-[13.5px]"
+            />
+          );
           return (
-            <li key={day} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2">
-              <label className="text-ink flex min-h-11 w-36 cursor-pointer items-center gap-2.5 text-sm">
-                <input
-                  type="checkbox"
-                  checked={d.open}
-                  onChange={(e) => patch(day, { open: e.target.checked })}
-                  className="accent-accent focus-visible:ring-accent-soft size-5 rounded outline-none focus-visible:ring-4"
-                />
-                {WEEKDAY_NAMES[day]}
-              </label>
+            <div
+              key={day}
+              className="border-chip grid grid-cols-[minmax(0,1fr)] items-center gap-x-[14px] gap-y-[6px] border-t px-[14px] py-[8px] sm:grid-cols-[150px_minmax(0,1fr)]"
+            >
+              <CheckRow on={d.open} onToggle={() => patch(day, { open: !d.open })}>
+                {name}
+              </CheckRow>
               {d.open ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    id={`${base}-start`}
-                    aria-label={`${WEEKDAY_NAMES[day]} opens`}
-                    type="time"
-                    value={d.start}
-                    aria-invalid={Boolean(err)}
-                    aria-describedby={err ? errId : undefined}
-                    onChange={(e) => patch(day, { start: e.target.value })}
-                    className={timeCls}
-                  />
-                  <span className="text-muted text-sm">to</span>
-                  <input
-                    id={`${base}-end`}
-                    aria-label={`${WEEKDAY_NAMES[day]} closes`}
-                    type="time"
-                    value={d.end}
-                    aria-invalid={Boolean(err)}
-                    aria-describedby={err ? errId : undefined}
-                    onChange={(e) => patch(day, { end: e.target.value })}
-                    className={timeCls}
-                  />
+                <div className="flex flex-wrap items-center gap-[10px]">
+                  {time("start")}
+                  <span className="text-muted-2" aria-hidden="true">
+                    –
+                  </span>
+                  {time("end")}
+                  {err ? (
+                    <span id={errId} role="alert" className="text-rose text-[12.5px]">
+                      {err}
+                    </span>
+                  ) : null}
                 </div>
               ) : (
-                <span className="text-muted text-sm">Closed</span>
+                <span className="text-muted-2 text-[13.5px]">Closed</span>
               )}
-              {err ? (
-                <p id={errId} role="alert" className="text-danger basis-full text-sm">
-                  {err}
-                </p>
-              ) : null}
-            </li>
+            </div>
           );
         })}
-      </ul>
-    </fieldset>
+      </div>
+    </div>
   );
 }

@@ -8,7 +8,9 @@ import {
   weekHoursPayload,
   type WeekHours,
 } from "@/lib/onboarding";
-import { Btn, Check, ErrorNote, StepShell, TextField, errMsg, type Call } from "./ui";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui";
+import { LangChip, StepFooter, StepShell, TextField, errMsg, type Call } from "./ui";
 import { WorkingHoursGrid } from "./WorkingHoursGrid";
 
 interface Draft {
@@ -45,7 +47,9 @@ export function StepDoctors({
   const [existing, setExisting] = useState<Array<{ id: string; name: string }>>([]);
   const [drafts, setDrafts] = useState<Draft[]>(() => [blank(clinicLanguages)]);
   const [error, setError] = useState<string | null>(null);
-  const [fieldErr, setFieldErr] = useState<Record<number, string>>({});
+  // Per draft: which field to mark ("name" or "languages").
+  const [fieldErr, setFieldErr] = useState<Record<number, "name" | "languages">>({});
+  const [stepErr, setStepErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -66,25 +70,26 @@ export function StepDoctors({
     setError(null);
     const active = drafts.filter((d) => d.id || d.name.trim() || d.title.trim());
     if (active.length === 0 && existing.length === 0) {
-      setFieldErr({ [drafts[0]!.key]: "Add at least one doctor" });
+      setFieldErr({ [drafts[0]!.key]: "name" });
+      setStepErr("Add at least one doctor");
       return;
     }
-    const errs: Record<number, string> = {};
+    const errs: Record<number, "name" | "languages"> = {};
+    let badHours = false;
     for (const d of active) {
       const doc = doctorBody.safeParse({
         name: d.name,
         ...(d.title.trim() ? { title: d.title } : {}),
         languages: d.languages,
       });
-      if (!doc.success)
-        errs[d.key] = d.languages.length ? "Enter the doctor's name" : "Pick at least one language";
-      else if (Object.keys(validateWeekHours(d.week)).length)
-        errs[d.key] = "Fix the working hours below";
+      if (!doc.success) errs[d.key] = d.languages.length ? "name" : "languages";
+      else if (Object.keys(validateWeekHours(d.week)).length) badHours = true;
       else if (!workingHoursBody.safeParse({ hours: weekHoursPayload(d.week) }).success)
-        errs[d.key] = "Fix the working hours below";
+        badHours = true;
     }
     setFieldErr(errs);
-    if (Object.keys(errs).length) return;
+    setStepErr(badHours ? "Fix the working hours below" : null);
+    if (Object.keys(errs).length || badHours) return;
 
     setBusy(true);
     try {
@@ -123,87 +128,101 @@ export function StepDoctors({
       <StepShell
         title="Who sees patients?"
         lead="Add each doctor and when they are in. The assistant only books inside these hours."
-        footer={
-          <>
-            <Btn variant="ghost" onClick={() => void onBack()}>
-              Back
-            </Btn>
-            <Btn type="submit" busy={busy}>
-              Continue
-            </Btn>
-          </>
-        }
+        error={error ?? stepErr}
+        gap="gap-[18px]"
+        footer={<StepFooter onBack={() => void onBack()} busy={busy} />}
       >
         {existing.length ? (
-          <p className="text-muted text-sm">
-            Already added: {existing.map((d) => d.name).join(", ")}.
+          <p className="text-muted m-0 text-[13.5px]">
+            Already added: {existing.map((d) => d.name).join(", ")}
           </p>
         ) : null}
-        {drafts.map((d, i) => (
-          <fieldset
-            key={d.key}
-            disabled={busy || Boolean(d.id && d.hoursSaved)}
-            className="border-line space-y-5 rounded-xl border p-4 sm:p-5"
-          >
-            <legend className="text-ink px-1 text-sm font-medium">
-              Doctor {existing.length + i + 1}
-            </legend>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <TextField
-                label="Name"
-                value={d.name}
-                onChange={(e) => patch(d.key, { name: e.target.value })}
-              />
-              <TextField
-                label="Title (optional)"
-                placeholder="BDS, MDS"
-                value={d.title}
-                onChange={(e) => patch(d.key, { title: e.target.value })}
-              />
-            </div>
-            <div>
-              <p className="text-ink text-sm font-medium">Languages spoken</p>
-              <div className="mt-1 grid gap-x-6 sm:grid-cols-2">
-                {LANGUAGES.map((l) => (
-                  <Check
-                    key={l.code}
-                    label={l.label}
-                    checked={d.languages.includes(l.code)}
-                    onChange={() =>
-                      patch(d.key, {
-                        languages: d.languages.includes(l.code)
-                          ? d.languages.filter((c) => c !== l.code)
-                          : [...d.languages, l.code],
-                      })
-                    }
-                  />
-                ))}
+        {drafts.map((d, i) => {
+          const labelId = `doc-${d.key}-label`;
+          const langsId = `doc-${d.key}-langs`;
+          return (
+            <fieldset
+              key={d.key}
+              aria-labelledby={labelId}
+              disabled={busy || Boolean(d.id && d.hoursSaved)}
+              className="border-line bg-subtle m-0 flex min-w-0 flex-col gap-[18px] rounded-18 border p-[16px] sm:p-[22px]"
+            >
+              <div className="flex items-center justify-between">
+                <span
+                  id={labelId}
+                  className="text-teal-ink font-mono text-[11.5px] tracking-[0.1em] uppercase"
+                >
+                  Doctor {existing.length + i + 1}
+                </span>
+                {drafts.length > 1 && !d.id ? (
+                  <Button
+                    variant="danger-ghost"
+                    size={32}
+                    onClick={() => setDrafts((ds) => ds.filter((x) => x.key !== d.key))}
+                    className="rounded-9 text-[13.5px]"
+                  >
+                    Remove doctor
+                  </Button>
+                ) : null}
               </div>
-            </div>
-            <WorkingHoursGrid
-              idPrefix={`doc-${d.key}`}
-              value={d.week}
-              onChange={(week) => patch(d.key, { week, hoursSaved: false })}
-            />
-            {fieldErr[d.key] ? (
-              <p role="alert" className="text-danger text-sm">
-                {fieldErr[d.key]}
-              </p>
-            ) : null}
-            {drafts.length > 1 && !d.id ? (
-              <Btn
-                variant="ghost"
-                onClick={() => setDrafts((ds) => ds.filter((x) => x.key !== d.key))}
-              >
-                Remove doctor
-              </Btn>
-            ) : null}
-          </fieldset>
-        ))}
-        <Btn variant="secondary" onClick={() => setDrafts((ds) => [...ds, blank(clinicLanguages)])}>
+              <div className="grid gap-[14px] sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+                <TextField
+                  label="Name"
+                  value={d.name}
+                  error={fieldErr[d.key] === "name" ? "Enter the doctor's name" : undefined}
+                  onChange={(e) => patch(d.key, { name: e.target.value })}
+                />
+                <TextField
+                  label="Title (optional)"
+                  placeholder="BDS, MDS"
+                  value={d.title}
+                  onChange={(e) => patch(d.key, { title: e.target.value })}
+                />
+              </div>
+              <div role="group" aria-labelledby={langsId} className="flex flex-col gap-[10px]">
+                <span id={langsId} className="text-ink-2 text-[13.5px] font-medium">
+                  Languages spoken
+                </span>
+                <div className="flex flex-wrap gap-[8px]">
+                  {LANGUAGES.map((l) => (
+                    <LangChip
+                      key={l.code}
+                      size={34}
+                      label={`${l.label} (${l.native})`}
+                      on={d.languages.includes(l.code)}
+                      onToggle={() =>
+                        patch(d.key, {
+                          languages: d.languages.includes(l.code)
+                            ? d.languages.filter((c) => c !== l.code)
+                            : [...d.languages, l.code],
+                        })
+                      }
+                    />
+                  ))}
+                </div>
+                {fieldErr[d.key] === "languages" ? (
+                  <span className="text-rose text-[12.5px]">Pick at least one language</span>
+                ) : null}
+              </div>
+              <WorkingHoursGrid
+                idPrefix={`doc-${d.key}`}
+                value={d.week}
+                onChange={(week) => patch(d.key, { week, hoursSaved: false })}
+              />
+            </fieldset>
+          );
+        })}
+        <Button
+          variant="dashed"
+          size={44}
+          block
+          icon={Plus}
+          iconSize={15}
+          onClick={() => setDrafts((ds) => [...ds, blank(clinicLanguages)])}
+          className="text-ink-2 h-[46px] rounded-14 border-[1.5px] border-[#c6d0db] text-[14.5px] hover:bg-[#f3fafa]"
+        >
           Add another doctor
-        </Btn>
-        <ErrorNote message={error} />
+        </Button>
       </StepShell>
     </form>
   );

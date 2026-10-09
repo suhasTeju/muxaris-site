@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 
@@ -172,5 +172,135 @@ describe("Wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await heading("Tell us about your clinic");
     expect(screen.queryByText(/Could not save/)).toBeNull();
+  });
+
+  it("lets the rail jump back to a reached step and locks steps not reached yet", async () => {
+    setApi({
+      "GET /v1/onboarding": { step: "services" },
+      "GET /v1/clinics/c1": { clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN"] } },
+    });
+    render(<Wizard initialClinic={{ id: "c1", name: "Test Clinic" }} cookieStale={false} />);
+    await heading("What do you offer?");
+    const rail = within(screen.getByRole("complementary", { name: "Onboarding progress" }));
+    expect(rail.getByText("Step 3 of 5")).toBeTruthy();
+    const current = rail.getByRole("button", { current: "step" });
+    expect(current.textContent).toMatch(/Services/);
+    expect((rail.getByRole("button", { name: /Assistant/ }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((rail.getByRole("button", { name: /Review/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(rail.getByRole("button", { name: /Doctors \(completed\)/ }));
+    await heading("Who sees patients?");
+    expect(calls).toContain("PUT /v1/onboarding/step");
+    // Services (the furthest step reached) stays reachable after stepping back.
+    expect((rail.getByRole("button", { name: /Services/ }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect((rail.getByRole("button", { name: /Assistant/ }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("shows step errors in the card, under the heading", async () => {
+    setApi({
+      "GET /v1/onboarding": { step: "doctors" },
+      "GET /v1/clinics/c1": { clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN"] } },
+    });
+    render(<Wizard initialClinic={{ id: "c1", name: "Test Clinic" }} cookieStale={false} />);
+    await heading("Who sees patients?");
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Add at least one doctor");
+    expect(alert.closest("section")?.querySelector("h1")?.textContent).toBe("Who sees patients?");
+    expect(calls).not.toContain("POST /v1/doctors");
+  });
+
+  it("asks for at least one service when every row is unticked", async () => {
+    setApi({
+      "GET /v1/onboarding": { step: "services" },
+      "GET /v1/clinics/c1": { clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN"] } },
+    });
+    render(<Wizard initialClinic={{ id: "c1", name: "Test Clinic" }} cookieStale={false} />);
+    await heading("What do you offer?");
+    for (const box of screen.getAllByRole("checkbox", { name: "Offer" })) fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Pick at least one service.");
+    expect(calls).not.toContain("POST /v1/services");
+  });
+
+  it("starts the assistant step with one empty question and drops blank ones on save", async () => {
+    const saved: unknown[] = [];
+    setApi({
+      "GET /v1/onboarding": { step: "assistant" },
+      "GET /v1/clinics/c1": { clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN"] } },
+      "PUT /v1/assistant": (_: string, init?: { body?: unknown }) => {
+        saved.push(init?.body);
+        return {};
+      },
+    });
+    render(<Wizard initialClinic={{ id: "c1", name: "Test Clinic" }} cookieStale={false} />);
+    await heading("Meet your assistant");
+    expect(screen.getAllByRole("textbox", { name: "Question" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await heading("Ready to go");
+    expect((saved[0] as { faq: unknown[] }).faq).toEqual([]);
+  });
+
+  it("asks for a greeting before previewing, on that language's card", async () => {
+    setApi({
+      "GET /v1/onboarding": { step: "assistant" },
+      "GET /v1/clinics/c1": {
+        clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN", "kn-IN"] },
+      },
+    });
+    render(<Wizard initialClinic={{ id: "c1", name: "Test Clinic" }} cookieStale={false} />);
+    await heading("Meet your assistant");
+    fireEvent.change(screen.getByLabelText("Kannada greeting"), { target: { value: " " } });
+    const previews = screen.getAllByRole("button", { name: "Preview" });
+    fireEvent.click(previews[1]!);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Write a greeting first.");
+    expect(alert.parentElement?.contains(previews[1]!)).toBe(true);
+  });
+
+  it("lists services on the review step with Indian number formatting", async () => {
+    setApi({
+      "GET /v1/onboarding": { step: "review" },
+      "GET /v1/clinics/c1": { clinic: { id: "c1", name: "Test Clinic", languages: ["en-IN"] } },
+      "GET /v1/doctors": { doctors: [{ name: "Dr. Meera Rao" }] },
+      "GET /v1/services": {
+        services: [
+          { name: "Cleaning", durationMin: 30, priceInr: 1500 },
+          { name: "Check-up", durationMin: 15, priceInr: null },
+        ],
+      },
+    });
+    render(<Wizard initialClinic={{ id: "c1", name: "Test Clinic" }} cookieStale={false} />);
+    await heading("Ready to go");
+    expect(await screen.findByText("Cleaning (30 min, ₹1,500)")).toBeTruthy();
+    expect(screen.getByText("Check-up (15 min)")).toBeTruthy();
+    expect(screen.getByText("Dr. Meera Rao")).toBeTruthy();
+    expect(screen.getByText("Here is what Test Clinic is set up with.")).toBeTruthy();
+  });
+
+  it("uses an injected API client instead of the signed-in one", async () => {
+    setApi();
+    const injected = vi.fn(async (path: string) =>
+      path === "/v1/onboarding"
+        ? { step: "doctors" }
+        : path.startsWith("/v1/clinics/")
+          ? { clinic: { id: "c1", name: "Injected", languages: ["en-IN"] } }
+          : { doctors: [] },
+    );
+    render(
+      <Wizard
+        initialClinic={{ id: "c1", name: "Injected" }}
+        cookieStale={false}
+        api={injected as never}
+      />,
+    );
+    await heading("Who sees patients?");
+    expect(injected).toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
   });
 });

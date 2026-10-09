@@ -3,7 +3,18 @@
 import { useEffect, useState } from "react";
 import { serviceBody, slotRulesBody } from "@muxaris/shared";
 import { DENTAL_SERVICE_DEFAULTS, type ServiceDraft } from "@/lib/onboarding";
-import { Btn, Check, ErrorNote, StepShell, TextField, errMsg, type Call } from "./ui";
+import { Plus } from "lucide-react";
+import { Button, Input, Switch, TableHead, TableRow, cn } from "@/components/ui";
+import {
+  CheckBox,
+  CheckRow,
+  StepFooter,
+  StepShell,
+  StepSubheading,
+  TextField,
+  errMsg,
+  type Call,
+} from "./ui";
 
 interface Row extends ServiceDraft {
   key: number;
@@ -13,6 +24,13 @@ interface Row extends ServiceDraft {
 
 let seq = 0;
 const num = (v: string) => (v === "" ? Number.NaN : Number(v));
+const shown = (n: number) => (Number.isNaN(n) ? "" : n);
+
+/** Offer · Service name · Minutes · Buffer · Price · Assistant can book this. */
+const COLUMNS = "56px minmax(0,1fr) 84px 92px 100px 110px";
+const ROW_ERROR = "Name, a positive duration, and non-negative buffer and price are required";
+const RULES_ERROR =
+  "Check the booking rules: grain 5 to 60, lead time up to 1440, days ahead 1 to 365";
 
 export function StepServices({
   call,
@@ -33,7 +51,7 @@ export function StepServices({
     maxDaysAhead: 60,
     allowSameDay: true,
   });
-  const [rowErr, setRowErr] = useState<Record<number, string>>({});
+  const [rowErr, setRowErr] = useState<Record<number, true>>({});
   const [ruleErr, setRuleErr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -73,7 +91,7 @@ export function StepServices({
       setError("Pick at least one service.");
       return;
     }
-    const errs: Record<number, string> = {};
+    const errs: Record<number, true> = {};
     for (const r of chosen) {
       const p = serviceBody.safeParse({
         name: r.name,
@@ -82,16 +100,11 @@ export function StepServices({
         priceInr: r.priceInr,
         bookableByAi: r.bookableByAi,
       });
-      if (!p.success)
-        errs[r.key] = "Name, a positive duration, and non-negative buffer and price are required";
+      if (!p.success) errs[r.key] = true;
     }
     setRowErr(errs);
     const rp = slotRulesBody.safeParse(rules);
-    setRuleErr(
-      rp.success
-        ? null
-        : "Check the booking rules: grain 5 to 60, lead time up to 1440, days ahead 1 to 365",
-    );
+    setRuleErr(rp.success ? null : RULES_ERROR);
     if (Object.keys(errs).length || !rp.success) return;
 
     setBusy(true);
@@ -119,90 +132,128 @@ export function StepServices({
     }
   }
 
+  const anySaved = rows.some((r) => r.saved);
+  const stepError = error ?? (Object.keys(rowErr).length ? ROW_ERROR : ruleErr);
+
   return (
     <form onSubmit={submit} noValidate>
       <StepShell
         title="What do you offer?"
         lead="Tick what you provide. The assistant quotes these durations and prices."
-        footer={
-          <>
-            <Btn variant="ghost" onClick={() => void onBack()}>
-              Back
-            </Btn>
-            <Btn type="submit" busy={busy}>
-              Continue
-            </Btn>
-          </>
-        }
+        error={stepError}
+        gap="gap-[24px]"
+        footer={<StepFooter onBack={() => void onBack()} busy={busy} />}
       >
         {existing.length ? (
-          <p className="text-muted text-sm">Already added: {existing.join(", ")}.</p>
+          <p className="text-muted m-0 text-[13.5px]">Already added: {existing.join(", ")}</p>
         ) : null}
-        <ul className="space-y-3">
-          {rows.map((r) => (
-            <li key={r.key} className="border-line rounded-xl border p-4">
-              <div className="grid items-end gap-3 sm:grid-cols-[1.4fr_repeat(3,minmax(0,1fr))]">
-                <div>
-                  <Check
-                    label="Offer"
-                    checked={r.selected}
+        <div className="border-line overflow-x-auto rounded-16 border">
+          <div className="min-w-[620px]">
+            <TableHead
+              columns={COLUMNS}
+              gap={10}
+              className="bg-subtle items-center px-[14px] py-[10px]"
+            >
+              <span>Offer</span>
+              <span>Service name</span>
+              <span>Minutes</span>
+              <span>Buffer (min)</span>
+              <span>Price (₹)</span>
+              <span>Assistant can book this</span>
+            </TableHead>
+            {rows.map((r) => {
+              const locked = !r.selected || Boolean(r.saved);
+              const bad = Boolean(rowErr[r.key]);
+              // Unticked rows fade as a whole (opacity .6); only saved rows dim their own controls.
+              const still = r.saved ? undefined : "disabled:opacity-100";
+              return (
+                <TableRow
+                  key={r.key}
+                  columns={COLUMNS}
+                  gap={10}
+                  className={cn(
+                    "border-chip px-[14px] py-[8px]",
+                    r.selected ? "bg-surface" : "bg-surface-2 opacity-60",
+                  )}
+                >
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={r.selected}
+                    aria-label="Offer"
                     disabled={Boolean(r.saved)}
-                    onChange={(e) => patch(r.key, { selected: e.target.checked })}
-                  />
-                  <TextField
-                    label="Service"
+                    onClick={() => patch(r.key, { selected: !r.selected })}
+                    className="w-fit cursor-pointer border-0 bg-transparent p-0 disabled:cursor-default"
+                  >
+                    <CheckBox on={r.selected} size={20} />
+                  </button>
+                  <Input
+                    size={36}
+                    aria-label="Service name"
+                    invalid={bad}
+                    disabled={locked}
                     value={r.name}
-                    disabled={!r.selected || Boolean(r.saved)}
                     onChange={(e) => patch(r.key, { name: e.target.value })}
+                    className={cn("px-[10px] text-[14px]", still)}
                   />
-                </div>
-                <TextField
-                  label="Minutes"
-                  type="number"
-                  inputMode="numeric"
-                  min={5}
-                  value={Number.isNaN(r.durationMin) ? "" : r.durationMin}
-                  disabled={!r.selected || Boolean(r.saved)}
-                  onChange={(e) => patch(r.key, { durationMin: num(e.target.value) })}
-                />
-                <TextField
-                  label="Buffer (min)"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={Number.isNaN(r.bufferMin) ? "" : r.bufferMin}
-                  disabled={!r.selected || Boolean(r.saved)}
-                  onChange={(e) => patch(r.key, { bufferMin: num(e.target.value) })}
-                />
-                <TextField
-                  label="Price (₹)"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={Number.isNaN(r.priceInr) ? "" : r.priceInr}
-                  disabled={!r.selected || Boolean(r.saved)}
-                  onChange={(e) => patch(r.key, { priceInr: num(e.target.value) })}
-                />
-              </div>
-              <Check
-                label="Assistant can book this"
-                checked={r.bookableByAi}
-                disabled={!r.selected || Boolean(r.saved)}
-                onChange={(e) => patch(r.key, { bookableByAi: e.target.checked })}
-              />
-              {r.saved ? (
-                <p className="text-muted text-sm">Saved. Edit later in Settings.</p>
-              ) : null}
-              {rowErr[r.key] ? (
-                <p role="alert" className="text-danger text-sm">
-                  {rowErr[r.key]}
-                </p>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-        <Btn
+                  <Input
+                    size={36}
+                    mono
+                    type="number"
+                    inputMode="numeric"
+                    min={5}
+                    aria-label="Minutes"
+                    invalid={bad}
+                    disabled={locked}
+                    value={shown(r.durationMin)}
+                    onChange={(e) => patch(r.key, { durationMin: num(e.target.value) })}
+                    className={cn("text-[13.5px]", still)}
+                  />
+                  <Input
+                    size={36}
+                    mono
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    aria-label="Buffer (min)"
+                    invalid={bad}
+                    disabled={locked}
+                    value={shown(r.bufferMin)}
+                    onChange={(e) => patch(r.key, { bufferMin: num(e.target.value) })}
+                    className={cn("text-[13.5px]", still)}
+                  />
+                  <Input
+                    size={36}
+                    mono
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    aria-label="Price (₹)"
+                    invalid={bad}
+                    disabled={locked}
+                    value={shown(r.priceInr)}
+                    onChange={(e) => patch(r.key, { priceInr: num(e.target.value) })}
+                    className={cn("text-[13.5px]", still)}
+                  />
+                  <Switch
+                    size={22}
+                    aria-label="Assistant can book this"
+                    checked={r.bookableByAi}
+                    disabled={locked}
+                    onCheckedChange={(v) => patch(r.key, { bookableByAi: v })}
+                    className={still}
+                  />
+                </TableRow>
+              );
+            })}
+          </div>
+        </div>
+        <Button
           variant="secondary"
+          size={38}
+          icon={Plus}
+          iconSize={14}
+          className="self-start"
           onClick={() =>
             setRows((rs) => [
               ...rs,
@@ -219,45 +270,50 @@ export function StepServices({
           }
         >
           Add a service
-        </Btn>
+        </Button>
+        {anySaved ? (
+          <p className="text-muted m-0 mt-[-12px] text-[13px]">Saved. Edit later in Settings.</p>
+        ) : null}
 
-        <fieldset className="border-line space-y-5 rounded-xl border p-4 sm:p-5">
-          <legend className="text-ink px-1 text-sm font-medium">Booking rules</legend>
-          <div className="grid gap-5 sm:grid-cols-3">
+        <div className="border-line flex flex-col gap-[14px] border-t pt-[22px]">
+          <StepSubheading>Booking rules</StepSubheading>
+          <div className="grid gap-[14px] sm:grid-cols-3">
             <TextField
               label="Slot length (min)"
               type="number"
               inputMode="numeric"
-              value={Number.isNaN(rules.slotGrainMin) ? "" : rules.slotGrainMin}
+              mono
+              invalid={Boolean(ruleErr)}
+              value={shown(rules.slotGrainMin)}
               onChange={(e) => setRules({ ...rules, slotGrainMin: num(e.target.value) })}
             />
             <TextField
               label="Notice needed (min)"
               type="number"
               inputMode="numeric"
-              value={Number.isNaN(rules.leadTimeMin) ? "" : rules.leadTimeMin}
+              mono
+              invalid={Boolean(ruleErr)}
+              value={shown(rules.leadTimeMin)}
               onChange={(e) => setRules({ ...rules, leadTimeMin: num(e.target.value) })}
             />
             <TextField
               label="Book up to (days ahead)"
               type="number"
               inputMode="numeric"
-              value={Number.isNaN(rules.maxDaysAhead) ? "" : rules.maxDaysAhead}
+              mono
+              invalid={Boolean(ruleErr)}
+              value={shown(rules.maxDaysAhead)}
               onChange={(e) => setRules({ ...rules, maxDaysAhead: num(e.target.value) })}
             />
           </div>
-          <Check
-            label="Allow same-day bookings"
-            checked={rules.allowSameDay}
-            onChange={(e) => setRules({ ...rules, allowSameDay: e.target.checked })}
-          />
-          {ruleErr ? (
-            <p role="alert" className="text-danger text-sm">
-              {ruleErr}
-            </p>
-          ) : null}
-        </fieldset>
-        <ErrorNote message={error} />
+          <CheckRow
+            on={rules.allowSameDay}
+            onToggle={() => setRules({ ...rules, allowSameDay: !rules.allowSameDay })}
+            className="self-start text-[14.5px]"
+          >
+            Allow same-day bookings
+          </CheckRow>
+        </div>
       </StepShell>
     </form>
   );

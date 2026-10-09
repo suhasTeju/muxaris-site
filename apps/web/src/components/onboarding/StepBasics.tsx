@@ -9,11 +9,12 @@ import {
   createClinicBody,
   type LanguageCode,
 } from "@muxaris/shared";
+import { Lock, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui";
 import {
-  Btn,
-  Check,
-  ErrorNote,
+  LangChip,
   SelectField,
+  StepFooter,
   StepShell,
   TextField,
   errMsg,
@@ -121,49 +122,37 @@ export function StepBasics({
       <StepShell
         title="Tell us about your clinic"
         lead="This is what your assistant will introduce itself with."
+        error={error}
+        gap="gap-[22px]"
         footer={
-          <>
-            <span />
-            <Btn type="submit" busy={pending === "create"} disabled={pending !== null}>
-              {demoFailed ? "Continue manually" : "Continue"}
-            </Btn>
-          </>
+          <StepFooter
+            busy={pending === "create"}
+            disabled={pending !== null}
+            label={demoFailed ? "Continue manually" : "Continue"}
+          />
         }
       >
         {!locked ? (
-          <div className="border-line bg-paper rounded-xl border p-4">
-            <p className="text-sm">
-              Just exploring? Fill in a ready-made dental clinic and skip ahead.
-            </p>
-            <Btn
-              variant="secondary"
-              className="mt-3"
-              busy={pending === "demo"}
-              disabled={pending !== null}
-              onClick={() => run("demo", onDemo)}
-            >
-              Load demo clinic
-            </Btn>
-          </div>
+          <DemoBox
+            text="Just exploring? Fill in a ready-made dental clinic and skip ahead."
+            action="Load demo clinic"
+            busy={pending === "demo"}
+            disabled={pending !== null}
+            onClick={() => run("demo", onDemo)}
+          />
         ) : demoFailed ? (
-          <div className="border-line bg-paper rounded-xl border p-4">
-            <p className="text-sm">
-              Your clinic was created, but the demo data did not finish loading.
-            </p>
-            <Btn
-              variant="secondary"
-              className="mt-3"
-              busy={pending === "retry"}
-              disabled={pending !== null}
-              onClick={() => run("retry", onRetryDemo)}
-            >
-              Retry loading demo data
-            </Btn>
-          </div>
+          <DemoBox
+            text="Your clinic was created, but the demo data did not finish loading."
+            action="Retry loading demo data"
+            busy={pending === "retry"}
+            disabled={pending !== null}
+            onClick={() => run("retry", onRetryDemo)}
+          />
         ) : (
-          <p className="text-muted text-sm">
+          <div className="flex items-center gap-[10px] rounded-12 border border-[#bfe5cb] bg-[#f0faf3] px-[14px] py-[12px] text-[14px] text-[#14532d]">
+            <Lock size={16} aria-hidden="true" className="flex-none" />
             Your clinic is created. You can edit these details later in settings.
-          </p>
+          </div>
         )}
         <TextField
           label="Clinic name"
@@ -173,7 +162,7 @@ export function StepBasics({
           autoComplete="organization"
           onChange={(e) => setName(e.target.value)}
         />
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-[16px] sm:grid-cols-2">
           <SelectField
             label="Specialty"
             value={specialty}
@@ -189,22 +178,27 @@ export function StepBasics({
             options={CITIES.map((c) => ({ value: c, label: c }))}
           />
         </div>
-        <fieldset disabled={locked}>
-          <legend className="text-ink text-sm font-medium">Languages your patients speak</legend>
-          <div className="mt-1 grid gap-x-6 sm:grid-cols-2">
+        <fieldset disabled={locked} className="m-0 flex min-w-0 flex-col gap-[10px] border-0 p-0">
+          <legend className="text-ink-2 mb-[10px] p-0 text-[13.5px] font-medium">
+            Languages your patients speak
+          </legend>
+          <div className="flex flex-wrap gap-[8px]">
             {LANGUAGES.map((l) => (
-              <Check
+              <LangChip
                 key={l.code}
                 label={`${l.label} (${l.native})`}
-                checked={langs.includes(l.code)}
-                onChange={() => toggle(l.code)}
+                on={langs.includes(l.code)}
+                onToggle={() => toggle(l.code)}
               />
             ))}
           </div>
-          {errors.languages ? <p className="text-danger mt-1 text-sm">{errors.languages}</p> : null}
+          {errors.languages ? (
+            <span className="text-rose text-[12.5px]">{errors.languages}</span>
+          ) : null}
         </fieldset>
         <TextField
           label="Clinic phone (optional)"
+          className="max-w-[360px]"
           type="tel"
           inputMode="tel"
           autoComplete="tel"
@@ -214,8 +208,41 @@ export function StepBasics({
           hint="Indian mobile number, for example 98765 43210"
           onChange={(e) => setPhone(e.target.value)}
         />
-        <ErrorNote message={error} />
       </StepShell>
     </form>
+  );
+}
+
+/** Teal "Just exploring?" panel; also the retry panel when demo data failed to load. */
+function DemoBox({
+  text,
+  action,
+  busy,
+  disabled,
+  onClick,
+}: {
+  text: string;
+  action: string;
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="border-teal-line flex items-center justify-between gap-[20px] rounded-16 border bg-[linear-gradient(90deg,#e9f6f5,#f3f8fa)] px-[18px] py-[16px] max-sm:flex-col max-sm:items-start">
+      <div className="flex items-center gap-[12px]">
+        <span className="bg-surface text-teal-ink border-teal-line grid size-[34px] flex-none place-items-center rounded-10 border">
+          <Sparkles size={16} aria-hidden="true" />
+        </span>
+        <span className="text-teal-deep text-[14.5px]">{text}</span>
+      </div>
+      <Button
+        size={38}
+        disabled={disabled}
+        onClick={onClick}
+        className="bg-teal shadow-none hover:bg-[#0b7f7c]"
+      >
+        {busy ? "One moment…" : action}
+      </Button>
+    </div>
   );
 }
