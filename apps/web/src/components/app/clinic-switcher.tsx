@@ -7,7 +7,7 @@ export function ClinicSwitcher() {
   const { clinics, activeClinic, setActiveClinic } = useClinic();
   if (clinics.length < 2) {
     return (
-      <span className="truncate text-[14.5px] font-semibold whitespace-nowrap">
+      <span className="block truncate text-[14.5px] font-semibold whitespace-nowrap">
         {activeClinic.name}
       </span>
     );
