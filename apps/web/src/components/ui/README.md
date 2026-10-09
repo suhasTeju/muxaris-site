@@ -42,7 +42,12 @@ import { PhoneCall } from "lucide-react";
   your page root.
 - Below 1024px the sidebar is an off-canvas menu behind the header's menu button. The header fits 390:
   the clinic name truncates, "Assistant live" hides under 640, the email hides under 768, and Sign out
-  always shows.
+  always shows. The open menu takes focus, keeps Tab inside it and makes the page inert; Escape or
+  the backdrop closes it and returns focus to the menu button.
+- The sidebar's Callbacks badge and minutes card. The layout streams them, and a client navigation
+  refetches them once they are a minute old (and always when leaving the Try page). **After a
+  change that moves them (closing a callback, a test call), call `router.refresh()`**: the layout
+  sends fresh values and the sidebar shows them at once.
 
 ## Responsive conventions (below 1024px)
 
@@ -566,17 +571,19 @@ Start the dev server and open `/dev` for the index.
 | `/dev/site`, `/dev/auth`, `/dev/onboarding`, `/dev/core`, `/dev/ops`, `/dev/assistant` | One folder per page area; each implementer adds their own |
 
 **`DevAppFrame`** (`@/components/dev/DevAppFrame`) is the real `AppShell` around fixture clinic
-context: Sunrise Dental Care (Bengaluru), owner@sunrisedental.in, Callbacks badge 3, minutes
-1,842 / 3,000. It makes no network calls: it passes fixture values through the same props the
-`(app)` layout passes and turns off the sidebar's API refresh. Props: `role` (`"owner"` default or
-`"front_desk"`, which also switches the email to frontdesk@sunrisedental.in), `plan` (`"standard"`
+context: Sunrise Dental Care (Bengaluru), owner@example.com, Callbacks badge 3, minutes 1,842 /
+3,000. It makes no network calls: it passes fixture values through the same props the `(app)`
+layout passes (the layout streams them as promises; the sidebar refetches only on a client
+navigation a minute later, and its links leave the preview). Props: `role` (`"owner"` default or
+`"front_desk"`, which also switches the email to frontdesk@example.com), `plan` (`"standard"`
 default or `"pilot"`: 462 / 500, "Pilot ends 25 Oct 2026", meter in its hot state), `multiClinic`
-(shows the "Switch clinic" select), `openCallbacks`, `usage` (`null` shows the load-error state).
+(shows the "Switch clinic" select), `openCallbacks`, `usage` (`null` shows the load-error state),
+`streamDelayMs` (streams the minutes and badge in after a delay; `/dev/shell?stream=1500`).
 
 **Fixtures** (`@/components/dev/fixtures`) are `seedDb()` from `Muxaris App.dc.html` typed as the
 API returns it (`@muxaris/shared` types): `clinic`, `secondClinic`, `doctors`, `services`,
 `slotRules`, `assistantProfile`, `patients`, `patientPhones` (raw numbers, for reveal-phone
-previews), `appointments`, `calls`, `callTurns` (by call id), `callbacks`, `notifications`,
+previews; fictitious: `+91 900000` plus the prototype's last four digits, emails `@example.com`), `appointments`, `calls`, `callTurns` (by call id), `callbacks`, `notifications`,
 `usageStandard` / `usagePilot` / `usageFor(plan)`, and `FIXTURE_TODAY` (`2026-10-09`) /
 `FIXTURE_NOW` (2:10 pm IST, the prototype's "now"). They follow the API shapes, not the prototype's:
 UTC ISO instants (use `ist(date, time)` to build one), `xx-IN` language codes, E.164 or masked phones,
