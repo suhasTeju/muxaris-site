@@ -14,13 +14,23 @@ export interface DevAppFrameProps {
   openCallbacks?: number;
   /** Override the sidebar usage; `null` shows the "Couldn't load usage" state. */
   usage?: UsageSummary | null;
+  /**
+   * Stream the minutes and the badge as promises that resolve after this many ms, the way the
+   * `(app)` layout does, to preview the loading state.
+   */
+  streamDelayMs?: number;
   children: React.ReactNode;
+}
+
+function later<T>(value: T, ms: number | undefined): T | Promise<T> {
+  return ms === undefined ? value : new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }
 
 /**
  * Development-only: the real signed-in shell (`AppShell`) around fixture clinic context, with no
- * network calls. It passes fixture values through the same props the `(app)` layout passes and
- * turns off the sidebar's API refresh. Use it in preview pages under `app/dev/*`:
+ * network calls. It passes fixture values through the same props the `(app)` layout passes (plain
+ * values where the layout streams promises); the sidebar only refetches on a client navigation a
+ * minute later, and its links leave the preview. Use it in preview pages under `app/dev/*`:
  *
  *   <DevAppFrame role="front_desk" plan="pilot"><CallsView calls={calls} … /></DevAppFrame>
  *
@@ -33,6 +43,7 @@ export function DevAppFrame({
   multiClinic = false,
   openCallbacks = openCallbacksCount,
   usage,
+  streamDelayMs,
   children,
 }: DevAppFrameProps) {
   const clinics: ClinicSummary[] = [clinic, ...(multiClinic ? [secondClinic] : [])].map((c) => ({
@@ -44,9 +55,8 @@ export function DevAppFrame({
     <ClinicProvider clinics={clinics} activeId={clinic.id} cookieStale={false}>
       <AppShell
         email={FIXTURE_EMAIL[role]}
-        usage={usage === undefined ? usageFor(plan) : usage}
-        openCallbacks={openCallbacks}
-        refresh={false}
+        usage={later(usage === undefined ? usageFor(plan) : usage, streamDelayMs)}
+        openCallbacks={later(openCallbacks, streamDelayMs)}
       >
         {children}
       </AppShell>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, use, useEffect, useRef, useState } from "react";
 import {
   AudioLines,
   CalendarDays,
@@ -76,79 +76,125 @@ export const NAV: ReadonlyArray<{
   },
 ];
 
+/** A value the layout streams as a promise, or a plain value (dev previews, tests). */
+export type Streamed<T> = T | Promise<T>;
+
+function isPromise<T>(v: Streamed<T>): v is Promise<T> {
+  return typeof (v as { then?: unknown } | null)?.then === "function";
+}
+
+/** Renders `children` with the value, suspending until a streamed one resolves. */
+function Resolve<T>({
+  value,
+  children,
+}: {
+  value: Streamed<T>;
+  children: (v: T) => React.ReactNode;
+}) {
+  return children(isPromise(value) ? use(value) : value);
+}
+
+/** Client navigations refresh the badge and minutes at most this often. */
+const REFRESH_AFTER_MS = 60_000;
+
+const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 /**
  * 244px app sidebar: wordmark, nine nav items, and the minutes card. Sticky full height from
- * 1024px; below that it is an off-canvas panel opened from the header's menu button.
+ * 1024px; below that it is an off-canvas panel opened from the header's menu button, which takes
+ * focus when it opens and keeps Tab inside it until it closes.
+ *
+ * The badge and minutes come from the layout (streamed, so pages never wait on them) and from
+ * router.refresh(). Client navigations refetch them only when they are a minute old, or when
+ * leaving the Try page, where test calls use minutes.
  */
 export function Sidebar({
   open,
   onNavigate,
-  initialUsage = null,
-  initialOpenCallbacks = 0,
-  refresh = true,
+  usage,
+  openCallbacks,
 }: {
   open: boolean;
   onNavigate: () => void;
-  /** Usage fetched by the layout; refreshed here on navigation. */
-  initialUsage?: UsageSummary | null;
-  /** Open-callback count to show before (or instead of) the fetch. */
-  initialOpenCallbacks?: number;
-  /**
-   * Fetch the open-callback count and refresh usage from the API on navigation (default). Off,
-   * the sidebar shows only the values it was given and makes no requests.
-   */
-  refresh?: boolean;
+  usage: Streamed<UsageSummary | null>;
+  openCallbacks: Streamed<number | null>;
 }) {
   const pathname = usePathname() ?? "";
   const api = useApi();
-  const [openCallbacks, setOpenCallbacks] = useState(initialOpenCallbacks);
+  const asideRef = useRef<HTMLElement>(null);
 
-  // A new server value (clinic switch, router.refresh) replaces whatever was fetched here.
-  const [usage, setUsage] = useState(initialUsage);
-  const [seenInitial, setSeenInitial] = useState(initialUsage);
-  if (initialUsage !== seenInitial) {
-    setSeenInitial(initialUsage);
-    setUsage(initialUsage);
+  // Values refetched here. New server values (router.refresh, clinic switch) replace them.
+  const [fetched, setFetched] = useState<{ usage?: UsageSummary; openCallbacks?: number }>({});
+  const [source, setSource] = useState({ usage, openCallbacks });
+  if (source.usage !== usage || source.openCallbacks !== openCallbacks) {
+    setSource({ usage, openCallbacks });
+    setFetched({});
   }
 
-  // Refreshed on navigation; a failure simply leaves no badge.
+  // The layout's values are fresh when they arrive.
+  const fetchedAt = useRef(0);
   useEffect(() => {
-    if (!refresh) return;
+    fetchedAt.current = Date.now();
+  }, [usage, openCallbacks]);
+
+  const lastPath = useRef(pathname);
+  useEffect(() => {
+    const from = lastPath.current;
+    lastPath.current = pathname;
+    if (from === pathname) return;
+    const leftTry = from.startsWith("/app/assistant/try");
+    if (!leftTry && Date.now() - fetchedAt.current < REFRESH_AFTER_MS) return;
+    // A failed refresh keeps the last good values.
     let live = true;
     api<{ total: number }>("/v1/callbacks?status=open&limit=1")
       .then((r) => {
-        if (live) setOpenCallbacks(r.total);
+        if (live && typeof r?.total === "number") {
+          fetchedAt.current = Date.now();
+          setFetched((f) => ({ ...f, openCallbacks: r.total }));
+        }
       })
-      .catch(() => {
-        if (live) setOpenCallbacks(0);
-      });
-    return () => {
-      live = false;
-    };
-  }, [api, pathname, refresh]);
-
-  // Minutes move after test calls, so refresh them on navigation too. The layout already fetched
-  // them for the first render; a failed refresh keeps the last good value.
-  const skipFirstUsage = useRef(initialUsage !== null);
-  useEffect(() => {
-    if (!refresh) return;
-    if (skipFirstUsage.current) {
-      skipFirstUsage.current = false;
-      return;
-    }
-    let live = true;
+      .catch(() => undefined);
     api<unknown>("/v1/usage")
       .then((r) => {
-        if (live && isUsageSummary(r)) setUsage(r);
+        if (live && isUsageSummary(r)) setFetched((f) => ({ ...f, usage: r }));
       })
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [api, pathname, refresh]);
+  }, [api, pathname]);
+
+  // Off-canvas menu: focus its first link on open and keep Tab inside the panel.
+  useEffect(() => {
+    const aside = asideRef.current;
+    if (!open || !aside) return;
+    const items = () => [...aside.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    items()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const list = items();
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (!first || !last) return;
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !aside.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !aside.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const shownUsage = fetched.usage ?? usage;
+  const shownCallbacks = fetched.openCallbacks ?? openCallbacks;
 
   return (
     <aside
+      ref={asideRef}
       id="app-sidebar"
       className={cn(
         "border-line flex-col gap-[22px] border-r px-[14px] pt-[18px] pb-[16px] backdrop-blur-[18px]",
@@ -166,7 +212,6 @@ export function Sidebar({
         {NAV.map((item) => {
           const active = item.match(pathname);
           const Icon = item.icon;
-          const count = item.href === "/app/callbacks" && openCallbacks > 0 ? openCallbacks : 0;
           return (
             <Link
               key={item.href}
@@ -182,25 +227,45 @@ export function Sidebar({
             >
               <Icon size={17} className={cn("shrink-0", active && "text-teal")} />
               <span className="flex-1">{item.label}</span>
-              {count > 0 ? (
-                <span
-                  aria-label={`${count} open`}
-                  className="bg-ink grid h-[20px] min-w-[22px] place-items-center rounded-pill px-[6px] font-mono text-[11px] text-white"
-                >
-                  {count}
-                </span>
+              {item.href === "/app/callbacks" ? (
+                <Suspense fallback={null}>
+                  <Resolve value={shownCallbacks}>{(n) => <OpenBadge count={n ?? 0} />}</Resolve>
+                </Suspense>
               ) : null}
             </Link>
           );
         })}
       </nav>
       <div className="flex-1" />
-      <UsageCard usage={usage} onNavigate={onNavigate} />
+      <Suspense fallback={<UsageCard usage={undefined} onNavigate={onNavigate} />}>
+        <Resolve value={shownUsage}>
+          {(u) => <UsageCard usage={u} onNavigate={onNavigate} />}
+        </Resolve>
+      </Suspense>
     </aside>
   );
 }
 
-function UsageCard({ usage, onNavigate }: { usage: UsageSummary | null; onNavigate: () => void }) {
+function OpenBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-label={`${count} open`}
+      className="bg-ink grid h-[20px] min-w-[22px] place-items-center rounded-pill px-[6px] font-mono text-[11px] text-white"
+    >
+      {count}
+    </span>
+  );
+}
+
+/** `usage` undefined while the layout's value is still on its way, null when it failed. */
+function UsageCard({
+  usage,
+  onNavigate,
+}: {
+  usage: UsageSummary | null | undefined;
+  onNavigate: () => void;
+}) {
   const card = usage ? usageCard(usage) : null;
   const pct = card ? usagePct(card.used, card.included) : 0;
   const colors = usageColors(pct);
@@ -217,7 +282,7 @@ function UsageCard({ usage, onNavigate }: { usage: UsageSummary | null; onNaviga
       </div>
       <UsageMeter used={card?.used ?? 0} included={card?.included ?? 0} />
       <span className="text-[12px]" style={{ color: card ? colors.hint : "#5f6b7c" }}>
-        {card ? card.hint : "Couldn't load usage"}
+        {card ? card.hint : usage === null ? "Couldn't load usage" : "\u00a0"}
       </span>
       <ButtonLink
         href="/app/assistant/try"

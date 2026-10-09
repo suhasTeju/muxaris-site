@@ -19,10 +19,13 @@ export function roleLabel(role: string): string {
 export function Topbar({
   open,
   onToggle,
+  menuButtonRef,
   email,
 }: {
   open: boolean;
   onToggle: () => void;
+  /** The menu button, so the shell can return focus to it when the menu closes. */
+  menuButtonRef?: React.Ref<HTMLButtonElement>;
   email: string;
 }) {
   const { activeClinic } = useClinic();
@@ -30,6 +33,7 @@ export function Topbar({
     <header className="border-line sticky top-0 z-30 flex h-[60px] items-center justify-between gap-[16px] border-b bg-[rgba(244,246,249,0.8)] px-[16px] backdrop-blur-[16px] sm:px-[24px] lg:px-[32px]">
       <div className="flex min-w-0 items-center gap-[10px]">
         <button
+          ref={menuButtonRef}
           type="button"
           onClick={onToggle}
           aria-expanded={open}
@@ -48,6 +52,7 @@ export function Topbar({
         <Chip className="shrink-0">{roleLabel(activeClinic.role)}</Chip>
       </div>
       <div className="flex shrink-0 items-center gap-[14px]">
+        {/* Static label from the design: not backed by a health check or the clinic's setup. */}
         <span className="text-muted hidden items-center gap-[8px] text-[13px] whitespace-nowrap sm:flex">
           <span className="bg-signal animate-mx-pulse size-[7px] rounded-full" />
           Assistant live

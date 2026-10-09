@@ -28,7 +28,7 @@ function renderShell(clinics: ClinicSummary[]) {
   api.mockResolvedValue({ callbacks: [], total: 0 });
   return render(
     <ClinicProvider clinics={clinics} activeId={clinics[0]!.id} cookieStale={false}>
-      <AppShell email="owner@sunrisedental.in" usage={null}>
+      <AppShell email="owner@example.com" usage={null} openCallbacks={0}>
         <Page />
       </AppShell>
     </ClinicProvider>,
@@ -42,7 +42,7 @@ describe("AppShell", () => {
     expect(header.getByText("Sunrise Dental Care")).toBeTruthy();
     expect(header.getByText("Owner")).toBeTruthy();
     expect(header.getByText("Assistant live")).toBeTruthy();
-    expect(header.getByText("owner@sunrisedental.in")).toBeTruthy();
+    expect(header.getByText("owner@example.com")).toBeTruthy();
     expect(header.getByRole("button", { name: "Sign out" })).toBeTruthy();
     expect(header.queryByRole("combobox", { name: "Switch clinic" })).toBeNull();
   });
@@ -55,6 +55,41 @@ describe("AppShell", () => {
     const header = within(screen.getByRole("banner"));
     expect(header.getByRole("combobox", { name: "Switch clinic" })).toBeTruthy();
     expect(header.getByText("Front desk")).toBeTruthy();
+  });
+
+  it("moves focus into the menu, makes the page inert, and hands focus back on Escape", () => {
+    renderShell([{ id: "c1", name: "Sunrise Dental Care", role: "owner" }]);
+    const toggle = screen.getByRole("button", { name: "Open menu" });
+    toggle.focus();
+    fireEvent.click(toggle);
+    const aside = document.getElementById("app-sidebar")!;
+    expect(aside.contains(document.activeElement)).toBe(true);
+    expect(document.getElementById("content")!.hasAttribute("inert")).toBe(true);
+    // The header stays reachable, so screen readers can find Close menu.
+    expect(screen.getByRole("banner").closest("[inert]")).toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open menu" }));
+    expect(document.getElementById("content")!.hasAttribute("inert")).toBe(false);
+  });
+
+  it("closes from the backdrop with focus on the menu button, and from a link without", () => {
+    renderShell([{ id: "c1", name: "Sunrise Dental Care", role: "owner" }]);
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+    fireEvent.click(document.querySelector(".fixed.inset-0")!);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open menu" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+    const calls = within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", {
+      name: "Calls",
+    });
+    calls.addEventListener("click", (e) => e.preventDefault()); // jsdom cannot navigate
+    calls.focus();
+    fireEvent.click(calls);
+    expect(screen.getByRole("button", { name: "Open menu" }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Open menu" }));
   });
 
   it("toggles the off-canvas menu and wires page toasts", () => {
