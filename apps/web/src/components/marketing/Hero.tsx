@@ -22,6 +22,17 @@ export function Hero() {
             </Link>
           </div>
           <p className="text-muted mt-5 max-w-md text-sm leading-relaxed">{HERO.note}</p>
+          <div className="mt-7 flex items-center gap-3">
+            <Image
+              src="/brand/nvidia-inception-program-badge.svg"
+              alt="NVIDIA Inception Program member badge"
+              width={104}
+              height={45}
+            />
+            <p className="text-muted text-sm leading-snug">
+              Member of the NVIDIA Inception Program
+            </p>
+          </div>
         </div>
         <div className="relative">
           <div className="shadow-card relative aspect-[3/2] overflow-hidden rounded-card">
