@@ -98,12 +98,12 @@ export default async function EmailsPreview({
                     <span className={key}>From</span>
                     <span className="shrink-0 font-semibold">Sunrise Dental Care</span>
                     <span className="text-muted min-w-0 truncate">
-                      &lt;appointments@sunrisedental.in&gt;
+                      &lt;appointments@example.com&gt;
                     </span>
                   </div>
                   <div className={row}>
                     <span className={key}>To</span>
-                    <span>ananya.k@gmail.com</span>
+                    <span>ananya.k@example.com</span>
                   </div>
                   <div className={row}>
                     <span className={key}>Subject</span>

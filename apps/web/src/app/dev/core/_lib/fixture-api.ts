@@ -278,7 +278,7 @@ export function createFixtureApi(opts: FixtureOptions = {}): ApiFetcher {
       }
       const p = patientOf(id!);
       if (!p) throw new ApiError(404, "not_found", "Patient not found");
-      if (sub === "reveal-phone") return { phone: patientPhones[p.id] ?? "+919876543210" };
+      if (sub === "reveal-phone") return { phone: patientPhones[p.id] ?? "+919000000000" };
       if (method === "PATCH") {
         Object.assign(p, body, { updatedAt: FIXTURE_NOW });
         return { patient: p };

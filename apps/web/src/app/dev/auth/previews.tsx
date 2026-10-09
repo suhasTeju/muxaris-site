@@ -64,7 +64,7 @@ function Drive({
   );
 }
 
-const EMAIL = "owner@sunrisedental.in";
+const EMAIL = "owner@example.com";
 
 export function SignInPreview({ state, google }: { state: string; google: boolean }) {
   const auth = useMemo<SignInAuth>(
