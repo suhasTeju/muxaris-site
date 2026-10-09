@@ -185,6 +185,62 @@ export async function getMembership(db: Db, input: { userId: string; clinicId: s
   return row ?? null;
 }
 
+export interface ClinicProfilePatch {
+  name?: string;
+  city?: string;
+  address?: string | null;
+  phone?: string | null;
+  languages?: string[];
+}
+
+/**
+ * Edits the clinic's own details (owner settings): name, city, address, phone, languages. The
+ * slug, timezone, plan and settings are not touched. Audited with the changed keys only.
+ */
+export async function updateClinicProfile(
+  db: Db,
+  input: { clinicId: string; actorUserId: string; patch: ClinicProfilePatch },
+) {
+  const p = input.patch;
+  const set: Partial<typeof clinics.$inferInsert> = {};
+  if (p.name !== undefined) {
+    const name = p.name.trim();
+    if (!name) throw new CoreError("validation", "clinic name is required");
+    set.name = name;
+  }
+  if (p.city !== undefined) {
+    const city = p.city.trim();
+    if (!city) throw new CoreError("validation", "city is required");
+    set.city = city;
+  }
+  if (p.address !== undefined) set.address = p.address?.trim() || null;
+  if (p.phone !== undefined) set.phone = p.phone || null;
+  if (p.languages !== undefined) {
+    if (!p.languages.length) throw new CoreError("validation", "pick at least one language");
+    set.languages = p.languages;
+  }
+  const keys = Object.keys(set);
+  if (!keys.length) throw new CoreError("validation", "nothing to change");
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(clinics)
+      .set({ ...set, updatedAt: new Date() })
+      .where(eq(clinics.id, input.clinicId))
+      .returning();
+    if (!row) throw new CoreError("not_found", "clinic not found");
+    await tx.insert(schema.auditLog).values({
+      id: newId("aud"),
+      clinicId: input.clinicId,
+      actorId: input.actorUserId,
+      action: "clinic.edit",
+      entity: "clinic",
+      entityId: row.id,
+      data: { keys },
+    });
+    return row;
+  });
+}
+
 export async function getClinicContext(db: Db, clinicId: string) {
   const [clinic] = await db.select().from(clinics).where(eq(clinics.id, clinicId));
   if (!clinic) throw new CoreError("not_found", "clinic not found");

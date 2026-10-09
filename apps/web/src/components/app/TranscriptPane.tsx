@@ -1,47 +1,72 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Card, cn } from "@/components/ui";
 
 export interface TranscriptLine {
   role: "user" | "assistant";
   text: string;
 }
 
-export function TranscriptPane({ lines, live }: { lines: TranscriptLine[]; live: boolean }) {
-  const end = useRef<HTMLDivElement>(null);
+/**
+ * Try your assistant → Conversation: final transcript lines as chat bubbles, the caller ("You")
+ * on the right and the assistant on the left. The newest line is scrolled into view.
+ */
+export function TranscriptPane({ lines, idle }: { lines: TranscriptLine[]; idle: boolean }) {
+  const last = useRef<HTMLLIElement>(null);
   useEffect(() => {
-    end.current?.scrollIntoView?.({ block: "end" });
+    last.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
   }, [lines.length]);
   return (
-    <section
-      aria-label="Transcript"
-      className="border-line bg-surface flex min-h-64 flex-col gap-2 overflow-y-auto rounded-card border p-4 lg:max-h-[28rem]"
-    >
-      {lines.length === 0 ? (
-        <p className="text-muted font-display m-auto text-center italic">
-          {live ? "Say hello. The conversation appears here." : "The conversation appears here."}
-        </p>
-      ) : (
-        <ol aria-live="polite" className="flex flex-col gap-2">
-          {lines.map((l, i) => (
-            <li
-              key={i}
-              data-role={l.role}
-              className={`max-w-[85%] rounded-2xl px-4 py-2 text-[15px] ${
-                l.role === "assistant"
-                  ? "bg-accent-soft self-start"
-                  : "border-line bg-paper self-end border"
-              }`}
-            >
-              <span className="text-muted block text-xs">
-                {l.role === "assistant" ? "Assistant" : "You"}
-              </span>
-              {l.text}
-            </li>
-          ))}
-        </ol>
-      )}
-      <div ref={end} />
-    </section>
+    <Card radius={18} aria-labelledby="try-conversation" className="overflow-hidden">
+      <div className="border-chip flex items-center justify-between gap-[12px] border-b px-[18px] py-[14px]">
+        <h2 id="try-conversation" className="m-0 text-[15px] font-semibold">
+          Conversation
+        </h2>
+      </div>
+      <div className="flex min-h-[440px] flex-col gap-[14px] px-[18px] py-[20px]">
+        {lines.length === 0 ? (
+          <div className="text-muted-2 grid min-h-[380px] flex-1 place-items-center text-center text-[15px] italic">
+            {idle ? "Say hello. The conversation appears here." : "The conversation appears here."}
+          </div>
+        ) : (
+          <ol aria-live="polite" className="m-0 flex list-none flex-col gap-[14px] p-0">
+            {lines.map((l, i) => {
+              const me = l.role === "user";
+              return (
+                <li
+                  key={i}
+                  ref={i === lines.length - 1 ? last : undefined}
+                  data-role={l.role}
+                  className={cn(
+                    "animate-mx-in flex max-w-[78%] flex-col gap-[5px]",
+                    me ? "items-end self-end" : "items-start self-start",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "font-mono text-[11px] tracking-[0.05em]",
+                      me ? "text-muted" : "text-teal-ink",
+                    )}
+                  >
+                    {me ? "You" : "Assistant"}
+                  </span>
+                  <p
+                    className={cn(
+                      "text-ink m-0 border px-[14px] py-[11px] text-[15px] leading-[1.5] break-words",
+                      me
+                        ? "border-field bg-surface rounded-[14px_14px_4px_14px]"
+                        : "border-teal-line bg-teal-tint rounded-[14px_14px_14px_4px]",
+                    )}
+                  >
+                    {l.text}
+                  </p>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
+    </Card>
   );
 }

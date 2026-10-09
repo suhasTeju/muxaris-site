@@ -32,6 +32,7 @@ vi.mock("@/lib/env", () => ({
 }));
 vi.mock("@/lib/api-client", () => ({ getAccessToken: () => getAccessToken() }));
 
+import { ToastProvider } from "@/components/ui";
 import { TryCall } from "./TryCall";
 
 const base = {
@@ -61,11 +62,20 @@ describe("TryCall", () => {
     render(<TryCall />);
     const select = screen.getByLabelText("Language") as HTMLSelectElement;
     expect([...select.options].map((o) => o.value)).toEqual(["en-IN", "kn-IN"]);
+    // The design's default: Kannada when the clinic offers it.
+    expect(select.value).toBe("kn-IN");
+    expect(screen.getByTestId("state-label").textContent).toBe("Ready");
+    expect(screen.getByText("Say hello. The conversation appears here.")).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "What the assistant is doing" })).getByText(
+        "Checks, bookings and transfers show here as they happen.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText(/microphone access/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Start call" })).toBeTruthy();
   });
 
-  it("shows the plan quota line only when the plan is the binding limit", () => {
+  it("shows the plan's minutes instead of the call cap when the plan is the binding limit", () => {
     hook.value = {
       ...base,
       phase: "live",
@@ -74,18 +84,18 @@ describe("TryCall", () => {
       planSecondsRemaining: 90,
     };
     render(<TryCall />);
-    expect(screen.getByText("1:30 left in this call")).toBeTruthy();
     expect(screen.getByText("Your plan has 1:30 of call time left this month")).toBeTruthy();
+    expect(screen.queryByText(/left in this call/)).toBeNull();
   });
 
   it("fetches a fresh token on Start, then starts the call with it", async () => {
     render(<TryCall />);
-    fireEvent.change(screen.getByLabelText("Language"), { target: { value: "kn-IN" } });
+    fireEvent.change(screen.getByLabelText("Language"), { target: { value: "en-IN" } });
     fireEvent.click(screen.getByRole("button", { name: "Start call" }));
     await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
     expect(getAccessToken).toHaveBeenCalledTimes(1);
     const last = hook.opts.at(-1)!;
-    expect(last).toMatchObject({ token: "tok-fresh", language: "kn-IN", clinicId: "clinic_1" });
+    expect(last).toMatchObject({ token: "tok-fresh", language: "en-IN", clinicId: "clinic_1" });
     expect(last.url).toMatch(/\/v1\/session$/);
   });
 
@@ -100,8 +110,8 @@ describe("TryCall", () => {
         { role: "assistant", text: "Sure, let me check." },
       ],
       tools: [
-        { name: "check_availability", status: "done", summary: "Checked Dr. Rao's slots" },
-        { name: "book_appointment", status: "started", summary: "Booking your appointment…" },
+        { name: "find_slots", status: "done", summary: "2 slots" },
+        { name: "book_appointment", status: "started", summary: "" },
       ],
       booking: {
         appointmentId: "a1",
@@ -112,12 +122,14 @@ describe("TryCall", () => {
     };
     render(<TryCall />);
     expect(screen.getByTestId("state-label").textContent).toBe("Thinking");
-    const transcript = screen.getByRole("region", { name: "Transcript" });
+    const transcript = screen.getByRole("region", { name: "Conversation" });
     const items = within(transcript).getAllByRole("listitem");
     expect(items.map((i) => i.getAttribute("data-role"))).toEqual(["user", "assistant"]);
     expect(within(transcript).getByText("I need a cleaning")).toBeTruthy();
-    const tools = screen.getByRole("region", { name: "Assistant actions" });
-    expect(within(tools).getByText("Checked Dr. Rao's slots")).toBeTruthy();
+    const tools = screen.getByRole("region", { name: "What the assistant is doing" });
+    expect(within(tools).getByText("2 slots")).toBeTruthy();
+    expect(within(tools).getByText("Checking free slots")).toBeTruthy();
+    expect(within(tools).getByText("Booking the slot")).toBeTruthy();
     expect(
       within(tools)
         .getAllByRole("listitem")
@@ -125,6 +137,8 @@ describe("TryCall", () => {
     ).toEqual(["done", "started"]);
     expect(screen.getByText("2:05 left in this call")).toBeTruthy();
     expect(screen.queryByText(/Your plan has/)).toBeNull();
+    expect(screen.queryByText(/microphone access/)).toBeNull();
+    expect((screen.getByLabelText("Language") as HTMLSelectElement).disabled).toBe(true);
     const card = screen.getByRole("region", { name: "Appointment booked" });
     expect(within(card).getByText(/Dr\. Rao · Tue, 6 Oct, 9:30 am/)).toBeTruthy();
     expect(
@@ -192,6 +206,74 @@ describe("TryCall", () => {
     expect(alert.textContent).toMatch(/misconfigured/);
     expect(getAccessToken).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
+  });
+
+  it("an expired session offers Sign in again, keeps the microphone hint and offers Start call", () => {
+    hook.value = { ...base, phase: "error", error: "invalid or expired token", errorCode: "auth" };
+    render(<TryCall />);
+    expect(
+      within(screen.getByRole("alert"))
+        .getByRole("link", { name: "Sign in again" })
+        .getAttribute("href"),
+    ).toBe("/sign-in?next=/app/assistant/try");
+    expect(screen.getByText(/microphone access/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start call" })).toBeTruthy();
+  });
+
+  it("a dropped call reads Connection lost", () => {
+    hook.value = {
+      ...base,
+      phase: "error",
+      error: "Connection lost",
+      errorCode: "network",
+      lines: [{ role: "assistant", text: "Hello" }],
+    };
+    render(<TryCall />);
+    expect(screen.getByTestId("state-label").textContent).toBe("Connection lost");
+    expect(within(screen.getByRole("alert")).getByText("The call could not start")).toBeTruthy();
+  });
+
+  it("after a call ends it offers Start another call with a fresh token", async () => {
+    const { rerender } = render(<TryCall />);
+    fireEvent.click(screen.getByRole("button", { name: "Start call" }));
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+    hook.value = { ...base, phase: "live", state: "speaking" };
+    rerender(<TryCall />);
+    hook.value = { ...base, phase: "ended" };
+    rerender(<TryCall />);
+    expect(hook.opts.at(-1)!.token).toBe("");
+    expect(screen.getByTestId("state-label").textContent).toBe("Call ended");
+    expect(screen.getByText("The conversation appears here.")).toBeTruthy();
+    getAccessToken.mockResolvedValueOnce("tok-second");
+    fireEvent.click(screen.getByRole("button", { name: "Start another call" }));
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+    expect(hook.opts.at(-1)!.token).toBe("tok-second");
+  });
+
+  it("announces a booking with a toast that links to the appointments", () => {
+    hook.value = {
+      ...base,
+      phase: "live",
+      state: "speaking",
+      booking: {
+        appointmentId: "a1",
+        doctorName: "Dr. Rao",
+        serviceName: "Cleaning",
+        startsAt: "2026-10-06T04:00:00Z",
+      },
+    };
+    render(
+      <ToastProvider>
+        <TryCall />
+      </ToastProvider>,
+    );
+    const toast = screen
+      .getAllByRole("status")
+      .find((s) => s.textContent?.includes("Appointment booked by your assistant"));
+    expect(toast).toBeTruthy();
+    expect(within(toast!).getByRole("link", { name: "View" }).getAttribute("href")).toBe(
+      "/app/appointments",
+    );
   });
 
   it("classifies a failure by the SDK errorCode before its wording", () => {
