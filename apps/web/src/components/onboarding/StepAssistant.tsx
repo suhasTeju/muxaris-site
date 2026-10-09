@@ -15,6 +15,33 @@ import { Play, Plus, Square, WandSparkles } from "lucide-react";
 import { Button, Input, Select, Textarea, cn } from "@/components/ui";
 import { Field, StepFooter, StepShell, StepSubheading, TextField, errMsg, type Call } from "./ui";
 
+/** Fetches the spoken greeting as audio. The wizard's previews inject their own. */
+export type VoicePreview = (
+  clinicId: string,
+  body: { text: string; language: LanguageCode; speaker: BulbulV3Speaker },
+) => Promise<Blob>;
+
+export const fetchGreetingAudio: VoicePreview = async (clinicId, body) => {
+  const req = buildRequest(
+    "/v1/assistant/preview",
+    { method: "POST", clinicId, body },
+    { token: await getAccessToken() },
+  );
+  const res = await fetch(req.url, req.init);
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      "preview_failed",
+      res.status === 503
+        ? "Voice preview is not available right now."
+        : res.status === 429
+          ? "Too many previews. Try again later."
+          : "Could not play the preview. Please try again.",
+    );
+  }
+  return res.blob();
+};
+
 interface Faq {
   q: string;
   a: string;
@@ -27,6 +54,7 @@ export function StepAssistant({
   languages,
   onBack,
   onContinue,
+  voicePreview = fetchGreetingAudio,
 }: {
   call: Call;
   clinicId: string;
@@ -34,6 +62,7 @@ export function StepAssistant({
   languages: LanguageCode[];
   onBack: () => Promise<void>;
   onContinue: () => Promise<void>;
+  voicePreview?: VoicePreview;
 }) {
   const langs = LANGUAGES.filter((l) => languages.includes(l.code));
   const [name, setName] = useState("Muxaris");
@@ -118,24 +147,7 @@ export function StepAssistant({
     const seq = ++previewSeq.current;
     setPreviewing(code);
     try {
-      const req = buildRequest(
-        "/v1/assistant/preview",
-        { method: "POST", clinicId, body: { text, language: code, speaker: voiceOf(code) } },
-        { token: await getAccessToken() },
-      );
-      const res = await fetch(req.url, req.init);
-      if (!res.ok) {
-        throw new ApiError(
-          res.status,
-          "preview_failed",
-          res.status === 503
-            ? "Voice preview is not available right now."
-            : res.status === 429
-              ? "Too many previews. Try again later."
-              : "Could not play the preview. Please try again.",
-        );
-      }
-      const blob = await res.blob();
+      const blob = await voicePreview(clinicId, { text, language: code, speaker: voiceOf(code) });
       if (seq !== previewSeq.current) return;
       const url = URL.createObjectURL(blob);
       urlRef.current = url;

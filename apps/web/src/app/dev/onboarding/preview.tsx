@@ -21,7 +21,10 @@ import { DENTAL_SERVICE_DEFAULTS, type OnboardingStep } from "@/lib/onboarding";
 export type WizardScenario = {
   step: OnboardingStep;
   demo: boolean;
-  /** "" · "error" (saves fail, Continue is pressed) · "loading" · "load-error" · "demo-failed" */
+  /**
+   * "" · "error" (saves fail, Continue is pressed) · "loading" · "load-error" · "demo-failed" ·
+   * "playing" (step 4: the first greeting's Preview is pressed and its audio never arrives)
+   */
   state: string;
 };
 
@@ -135,7 +138,9 @@ export function WizardPreview(scenario: WizardScenario) {
         ? step === "review"
           ? "Finish"
           : "Continue"
-        : null,
+        : state === "playing"
+          ? "Preview"
+          : null,
   );
   // A fresh first step has no clinic yet, so the wizard starts without one (no resume fetch).
   const fresh = step === "basics" && !demo && state !== "loading" && state !== "load-error";
@@ -144,6 +149,7 @@ export function WizardPreview(scenario: WizardScenario) {
       key={`${step}-${demo}-${state}`}
       api={api}
       cookieStale={false}
+      voicePreview={never}
       initialClinic={fresh ? null : { id: FIXTURE_CLINIC_ID, name: demoClinic.name }}
     />
   );

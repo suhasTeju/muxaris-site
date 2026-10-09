@@ -16,7 +16,7 @@ import {
 } from "@/lib/onboarding";
 import { WizardLayout, WizardLoading } from "./Frame";
 import { Progress } from "./Progress";
-import { StepAssistant } from "./StepAssistant";
+import { StepAssistant, type VoicePreview } from "./StepAssistant";
 import { StepBasics, SUNRISE_BASICS, type ClinicInfo } from "./StepBasics";
 import { StepDoctors } from "./StepDoctors";
 import { StepReview } from "./StepReview";
@@ -51,11 +51,14 @@ export function Wizard({
   initialClinic,
   cookieStale,
   api: injectedApi,
+  voicePreview,
 }: {
   initialClinic: { id: string; name: string } | null;
   cookieStale: boolean;
   /** The API client; defaults to the signed-in user's. Previews pass a fixture handler. */
   api?: Api;
+  /** The greeting audio fetcher; defaults to POST /v1/assistant/preview. */
+  voicePreview?: VoicePreview;
 }) {
   const router = useRouter();
   const signedInApi = useApi();
@@ -241,6 +244,7 @@ export function Wizard({
             languages={langs}
             onBack={back("assistant")}
             onContinue={advance("assistant")}
+            {...(voicePreview ? { voicePreview } : {})}
           />
         ) : null}
         {step === "review" && clinic ? (
