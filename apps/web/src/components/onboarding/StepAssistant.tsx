@@ -254,7 +254,7 @@ export function StepAssistant({
               <div
                 key={l.code}
                 className={cn(
-                  "bg-subtle flex flex-col gap-[10px] rounded-16 border p-[16px] transition-[border-color] duration-200",
+                  "bg-subtle flex flex-col gap-[10px] rounded-16 border p-[16px] transition-[border-color] duration-200 motion-reduce:transition-none",
                   playing ? "border-teal-border" : "border-line",
                 )}
               >
@@ -399,7 +399,7 @@ function VoiceBars() {
       {[0, 0.15, 0.3, 0.45].map((delay) => (
         <span
           key={delay}
-          className="bg-teal h-[16px] w-[3px] animate-[mxBar35_.9s_ease-in-out_infinite] rounded-[2px]"
+          className="bg-teal h-[16px] w-[3px] animate-[mxBar35_.9s_ease-in-out_infinite] rounded-[2px] motion-reduce:animate-none"
           style={{ animationDelay: `${delay}s` }}
         />
       ))}

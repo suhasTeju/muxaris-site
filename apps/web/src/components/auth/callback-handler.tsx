@@ -68,7 +68,7 @@ export function CallbackHandler({ auth = AMPLIFY }: { auth?: CallbackAuth }) {
     >
       <span
         aria-hidden="true"
-        className="border-teal-line border-t-teal animate-mx-spin size-[22px] flex-none rounded-full border-[2.5px]"
+        className="border-teal-line border-t-teal animate-mx-spin size-[22px] flex-none rounded-full border-[2.5px] motion-reduce:animate-none"
       />
       <span className="text-ink-2 text-[15px]">Signing you in…</span>
     </div>

@@ -36,7 +36,7 @@ export function Progress({
         </MonoLabel>
         <div className="bg-line h-[4px] overflow-hidden rounded-[4px]">
           <div
-            className="bg-teal h-[4px] rounded-[4px] transition-[width] duration-300 ease-in-out"
+            className="bg-teal h-[4px] rounded-[4px] transition-[width] duration-300 ease-in-out motion-reduce:transition-none"
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -56,7 +56,7 @@ export function Progress({
                   if (!cur && reachable && !locked) onGo?.(s);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-[12px] rounded-12 border px-[12px] py-[10px] text-left transition-all duration-200",
+                  "flex w-full items-center gap-[12px] rounded-12 border px-[12px] py-[10px] text-left transition-all duration-200 motion-reduce:transition-none",
                   cur ? "border-line bg-surface" : "border-transparent bg-transparent",
                   reachable ? "cursor-pointer" : "cursor-default",
                 )}

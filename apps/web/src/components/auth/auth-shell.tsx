@@ -31,7 +31,7 @@ export function AuthShell({
           <Wordmark width={120} />
         </Link>
         <main className="flex flex-1 items-center justify-center py-[48px]">
-          <div className="flex w-full max-w-[400px] animate-[mxIn_.35s_ease_both] flex-col gap-[28px]">
+          <div className="flex w-full max-w-[400px] animate-[mxIn_.35s_ease_both] flex-col gap-[28px] motion-reduce:animate-none">
             <div className="flex flex-col gap-[8px]">
               <h1 className="m-0 text-[36px] leading-[1.1] font-semibold tracking-[-0.035em] max-sm:text-[30px]">
                 {title}
@@ -92,7 +92,7 @@ function SampleCallPane() {
           className="absolute right-[24px] bottom-[24px] left-[24px] flex max-w-[460px] flex-col gap-[12px] rounded-[22px] border border-[rgba(255,255,255,0.95)] bg-[rgba(255,255,255,0.8)] p-[18px] shadow-[0_30px_60px_-30px_rgba(12,18,32,0.5)] backdrop-blur-[20px]"
         >
           <div className="text-muted flex items-center gap-[10px] font-mono text-[11px] tracking-[0.08em] uppercase">
-            <span className="bg-signal size-[8px] animate-[mxPulse10_2s_infinite] rounded-full" />
+            <span className="bg-signal size-[8px] animate-[mxPulse10_2s_infinite] rounded-full motion-reduce:animate-none" />
             Sample call · English
           </div>
           <p className="bg-chip m-0 max-w-[86%] self-end rounded-[14px_14px_4px_14px] px-[14px] py-[10px] text-[14px] leading-[1.5]">

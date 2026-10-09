@@ -177,7 +177,7 @@ export function LangChip({
       aria-checked={on}
       onClick={onToggle}
       className={cn(
-        "text-ink inline-flex cursor-pointer items-center gap-[8px] border transition-all duration-150 disabled:cursor-default",
+        "text-ink inline-flex cursor-pointer items-center gap-[8px] border transition-all duration-150 disabled:cursor-default motion-reduce:transition-none",
         size === 38
           ? "h-[38px] rounded-10 pr-[13px] pl-[9px] text-[14px]"
           : "h-[34px] rounded-9 pr-[12px] pl-[8px] text-[13.5px]",
@@ -258,7 +258,7 @@ export function StepShell({
   const navError = useContext(NavErrorContext);
   const shown = error || navError;
   return (
-    <section className="bg-surface border-line animate-[mxIn_.3s_ease_both] overflow-hidden rounded-[24px] border shadow-[0_1px_2px_rgba(12,18,32,0.04),0_24px_60px_-40px_rgba(12,18,32,0.25)]">
+    <section className="bg-surface border-line animate-[mxIn_.3s_ease_both] overflow-hidden motion-reduce:animate-none rounded-[24px] border shadow-[0_1px_2px_rgba(12,18,32,0.04),0_24px_60px_-40px_rgba(12,18,32,0.25)]">
       <div className="flex flex-col gap-[6px] px-[20px] pt-[30px] pb-[6px] sm:px-[32px]">
         <h1
           tabIndex={-1}

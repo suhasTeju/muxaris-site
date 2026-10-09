@@ -31,6 +31,16 @@ describe("AuthShell", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/Sign-in is not configured/);
     expect(screen.queryByRole("form")).toBeNull();
   });
+  it("drops its entrance and pulse animations under reduced motion", () => {
+    const { container } = render(
+      <AuthShell title="Welcome back">
+        <form aria-label="Sign in" />
+      </AuthShell>,
+    );
+    const animated = Array.from(container.querySelectorAll<HTMLElement>("[class*='animate-']"));
+    expect(animated.length).toBeGreaterThanOrEqual(2);
+    for (const el of animated) expect(el.className).toContain("motion-reduce:animate-none");
+  });
   it("stacks to one column with 16px gutters below 1024px and hides the image pane", () => {
     const { container } = render(
       <AuthShell title="Welcome back">
