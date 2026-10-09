@@ -14,6 +14,7 @@ export class ConsoleProvider implements NotificationProvider {
       channel: this.channel,
       subjectLength: msg.subject.length,
       bodyLength: msg.body.length,
+      htmlLength: msg.html?.length ?? 0,
     });
     return { providerId: `console:${this.channel}:${Date.now()}:${this.n}` };
   }

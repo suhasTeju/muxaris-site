@@ -15,7 +15,11 @@ export class SesEmailProvider implements NotificationProvider {
         Content: {
           Simple: {
             Subject: { Data: msg.subject, Charset: "UTF-8" },
-            Body: { Text: { Data: msg.body, Charset: "UTF-8" } },
+            // Clients that show HTML get the designed email; the rest read the text part.
+            Body: {
+              Text: { Data: msg.body, Charset: "UTF-8" },
+              ...(msg.html ? { Html: { Data: msg.html, Charset: "UTF-8" } } : {}),
+            },
           },
         },
       }),

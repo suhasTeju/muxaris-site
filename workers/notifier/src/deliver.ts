@@ -43,7 +43,7 @@ export async function deliverOnce(deps: DeliverDeps, limit = 20) {
       continue;
     }
     const provider = deps.providers[n.channel];
-    const payload = (n.payload ?? {}) as { subject?: string; body?: string };
+    const payload = (n.payload ?? {}) as { subject?: string; body?: string; html?: unknown };
     if (!provider || !n.to || !payload.body) {
       await markNotificationSkipped(deps.db, n.id, { reason: "channel_disabled" });
       r.skipped++;
@@ -59,6 +59,7 @@ export async function deliverOnce(deps: DeliverDeps, limit = 20) {
         to: n.to,
         subject: payload.subject ?? "",
         body: payload.body,
+        ...(typeof payload.html === "string" && payload.html ? { html: payload.html } : {}),
       });
       await markNotificationSent(deps.db, n.id, { providerId, now });
       r.sent++;
