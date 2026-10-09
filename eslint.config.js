@@ -51,6 +51,16 @@ export default tseslint.config(
           ],
         },
       ],
+      // Preview-only props on production components: dev previews and tests may pass them.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "JSXOpeningElement[name.name='AppointmentsBoard'] > JSXAttribute[name.name=/^(now|initialDialog)$/]",
+          message:
+            "`now` and `initialDialog` are preview-only AppointmentsBoard props; production uses the real clock and opens no dialog on load.",
+        },
+      ],
     },
   },
   prettier,

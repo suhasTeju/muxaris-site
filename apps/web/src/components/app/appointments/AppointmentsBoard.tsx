@@ -56,6 +56,11 @@ function Problem({ text, onRetry }: { text: string; onRetry: () => void }) {
  * Appointments page from AppAppointments.dc.html: Day / Week toggle, date navigation, the doctor
  * timeline or week grid, the appointment drawer and the New / Reschedule / Cancel dialogs.
  * `ready` is false until the clinic's timezone is known; nothing is fetched before then.
+ *
+ * `now` and `initialDialog` are injection points for the dev previews and tests only (a pinned
+ * clock, a dialog open on load). The production caller, AppointmentsView, never passes them (its
+ * props type has neither), and a lint rule in eslint.config.js rejects either attribute on
+ * `<AppointmentsBoard>` outside `app/dev`, `components/dev` and tests.
  */
 export function AppointmentsBoard({
   tz,
@@ -73,13 +78,16 @@ export function AppointmentsBoard({
   /** The clinic profile failed to load: show this with a Retry instead of loading forever. */
   profileError?: string | null;
   onRetryProfile?: () => void;
-  /** Pin "now" (dev previews); otherwise the clock, refreshed every minute. */
+  /** Preview/test only: pin "now". Production leaves it unset: the clock, refreshed every minute. */
   now?: Date;
   initialDate?: string;
   initialMode?: CalendarMode;
   /** Open this appointment's drawer once it is loaded (links from the Overview). */
   initialId?: string;
-  /** Open a dialog on load (dev previews): "new", or "reschedule" / "cancel" for initialId. */
+  /**
+   * Preview/test only: open a dialog once the data is loaded, "new", or "reschedule" / "cancel" for
+   * initialId. It is applied once, as a state adjustment during render, then cleared.
+   */
   initialDialog?: "new" | "reschedule" | "cancel";
 }) {
   const api = useCoreApi();
