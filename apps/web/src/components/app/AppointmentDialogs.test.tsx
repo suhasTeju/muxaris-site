@@ -39,7 +39,7 @@ describe("NewAppointmentDialog", () => {
       />,
     );
     fireEvent.change(screen.getByLabelText("Service"), { target: { value: "s1" } });
-    fireEvent.click(await screen.findByRole("button", { name: /9:30 am/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /9:30 am/ }));
     fireEvent.change(screen.getByLabelText("Patient phone"), {
       target: { value: "+919876543210" },
     });
@@ -75,7 +75,7 @@ describe("RescheduleDialog", () => {
         onDone={onDone}
       />,
     );
-    fireEvent.click(await screen.findByRole("button", { name: /9:30 am/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /9:30 am/ }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm new time" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(api).toHaveBeenCalledWith("/v1/appointments/a1/reschedule", {

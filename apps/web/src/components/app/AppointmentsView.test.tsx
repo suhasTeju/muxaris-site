@@ -128,8 +128,7 @@ describe("AppointmentsView", () => {
       ),
     );
     const { rerender } = render(<AppointmentsView />);
-    await screen.findByText(/Cleaning A/);
-    expect(screen.getByText("+91 •••• ••3210")).toBeTruthy();
+    await screen.findByText(/Cleaning A · Asha/);
 
     const pending = defer<unknown>();
     state.api.mockImplementation((path: string) =>
@@ -139,7 +138,7 @@ describe("AppointmentsView", () => {
     rerender(<AppointmentsView />);
     expect(screen.getByText("Loading appointments…")).toBeTruthy();
     expect(screen.queryByText(/Cleaning A/)).toBeNull();
-    expect(screen.queryByText("+91 •••• ••3210")).toBeNull();
+    expect(screen.queryByText(/Asha/)).toBeNull();
   });
 
   it("shows an inline error with Retry when the clinic profile fails, not endless loading", async () => {

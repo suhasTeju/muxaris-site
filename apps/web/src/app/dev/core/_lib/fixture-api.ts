@@ -30,6 +30,8 @@ export interface FixtureOptions {
   recording?: "ready" | "pending" | "missing" | "error";
   /** The first booking on the first slot fails with a conflict, as the prototype demonstrates. */
   conflictOnce?: boolean;
+  /** Start with no appointments (the empty calendar). */
+  empty?: boolean;
 }
 
 const TZ = clinic.timezone;
@@ -75,7 +77,7 @@ function silentWav(seconds: number): string {
 
 export function createFixtureApi(opts: FixtureOptions = {}): ApiFetcher {
   const db = {
-    appointments: clone(seedAppointments),
+    appointments: opts.empty ? [] : clone(seedAppointments),
     patients: clone(seedPatients),
     calls: clone(seedCalls),
   };

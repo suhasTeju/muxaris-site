@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useApi } from "@/lib/api-client";
+import { Spinner, cn } from "@/components/ui";
 import { formatTime } from "@/lib/dashboard";
+import { useCoreApi } from "./core/api";
 
 export interface Slot {
   doctorId: string;
@@ -10,7 +11,17 @@ export interface Slot {
   endsAt: string;
 }
 
-/** Fetches /v1/slots for a service + date and lets the user pick one. */
+interface Result {
+  key: string;
+  slots?: Slot[];
+  error?: string;
+}
+
+/**
+ * Free-slot grid from the appointment dialogs in AppAppointments.dc.html: fetches /v1/slots for a
+ * service + date (optionally one doctor) and shows four columns of time + doctor options.
+ * Bump `reloadKey` to fetch again (after a booking conflict, for example).
+ */
 export function SlotPicker({
   serviceId,
   date,
@@ -19,6 +30,7 @@ export function SlotPicker({
   doctorNames,
   value,
   onPick,
+  reloadKey = 0,
 }: {
   serviceId: string;
   date: string;
@@ -27,70 +39,93 @@ export function SlotPicker({
   doctorNames: Record<string, string>;
   value: Slot | null;
   onPick: (s: Slot) => void;
+  reloadKey?: number;
 }) {
-  const api = useApi();
-  const [slots, setSlots] = useState<Slot[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const api = useCoreApi();
+  const key = `${serviceId}|${date}|${doctorId ?? ""}|${reloadKey}`;
+  const [result, setResult] = useState<Result | null>(null);
+  // Only this request's answer counts; anything older reads as loading.
+  const current = result?.key === key ? result : null;
+
   useEffect(() => {
     if (!serviceId || !date) return;
     let live = true;
-    setSlots(null);
-    setError(null);
     const q = new URLSearchParams({ date, serviceId, ...(doctorId ? { doctorId } : {}) });
     api<{ slots: Slot[] }>(`/v1/slots?${q}`)
-      .then((r) => live && setSlots(r.slots))
-      .catch(
-        (e: unknown) => live && setError(e instanceof Error ? e.message : "Could not load slots"),
-      );
+      .then((r) => {
+        if (live) setResult({ key, slots: r.slots });
+      })
+      .catch((e: unknown) => {
+        if (live)
+          setResult({ key, error: e instanceof Error ? e.message : "Could not load slots" });
+      });
     return () => {
       live = false;
     };
-  }, [api, serviceId, date, doctorId]);
+  }, [api, serviceId, date, doctorId, key]);
 
-  if (error)
+  if (!serviceId) {
+    return <span className="text-muted-2 text-[13px]">Choose a service to see free times.</span>;
+  }
+  if (current?.error) {
     return (
-      <p role="alert" className="text-danger text-sm">
-        {error}
+      <p role="alert" className="text-rose m-0 text-[13.5px]">
+        {current.error}
       </p>
     );
-  if (!slots)
+  }
+  if (!current?.slots) {
     return (
-      <p role="status" className="text-muted text-sm">
+      <span role="status" className="text-muted flex items-center gap-[8px] text-[13.5px]">
+        <Spinner size={14} />
         Loading free slots…
-      </p>
+      </span>
     );
-  if (slots.length === 0)
+  }
+  if (current.slots.length === 0) {
     return (
-      <p role="status" className="text-muted text-sm">
+      <span
+        role="status"
+        className="border-field text-muted rounded-10 border border-dashed p-[12px] text-[13.5px] italic"
+      >
         No free slots on this day.
-      </p>
+      </span>
     );
+  }
   return (
-    <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-label="Available slots">
-      {slots.map((s) => {
+    <div
+      role="listbox"
+      aria-label="Free slots"
+      className="grid max-h-[190px] grid-cols-2 gap-[6px] overflow-auto sm:grid-cols-4"
+    >
+      {current.slots.map((s) => {
         const on = value?.startsAt === s.startsAt && value.doctorId === s.doctorId;
+        const doctor = (doctorNames[s.doctorId] ?? "").replace(/^Dr\. /, "Dr ");
         return (
-          <li key={`${s.doctorId}-${s.startsAt}`}>
-            <button
-              type="button"
-              aria-pressed={on}
-              onClick={() => onPick(s)}
-              className={`min-h-11 w-full rounded-xl border px-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-accent)] ${
-                on
-                  ? "border-accent bg-accent text-on-accent"
-                  : "border-line bg-surface hover:border-accent"
-              }`}
+          <button
+            key={`${s.doctorId}-${s.startsAt}`}
+            type="button"
+            role="option"
+            aria-selected={on}
+            onClick={() => onPick(s)}
+            className={cn(
+              "hover:border-teal flex cursor-pointer flex-col items-start gap-[1px] rounded-9 border px-[9px] py-[7px] text-left",
+              on ? "border-teal bg-teal" : "border-line bg-surface",
+            )}
+          >
+            <span
+              className={cn("font-mono text-[12.5px] font-medium", on ? "text-white" : "text-ink")}
             >
-              <span className="block font-medium tabular-nums">{formatTime(s.startsAt, tz)}</span>
-              {!doctorId && (
-                <span className="block truncate text-xs opacity-80">
-                  {doctorNames[s.doctorId] ?? ""}
-                </span>
-              )}
-            </button>
-          </li>
+              {formatTime(s.startsAt, tz)}
+            </span>
+            {doctor ? (
+              <span className={cn("text-[11px]", on ? "text-[#d9f5f2]" : "text-muted")}>
+                {doctor}
+              </span>
+            ) : null}
+          </button>
         );
       })}
-    </ul>
+    </div>
   );
 }

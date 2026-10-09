@@ -1,21 +1,75 @@
 "use client";
 
-import { useState } from "react";
-import type { Appointment, Doctor, Service } from "@muxaris/shared";
+import { useId, useState } from "react";
+import { indianPhone, type Appointment, type Doctor, type Service } from "@muxaris/shared";
+import { Button, Field, Input, Modal, Notice, Select, useToast } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { useApi } from "@/lib/api-client";
-import { formatDateTime, localDateKey } from "@/lib/dashboard";
-import { Modal, fieldClass, ghostBtn, primaryBtn } from "./Modal";
+import { formatDateTime, formatTime, localDateKey } from "@/lib/dashboard";
+import { useCoreApi } from "./core/api";
+import { keyDate } from "./core/format";
+import { PHONE_ERROR } from "./PatientForm";
 import { SlotPicker, type Slot } from "./SlotPicker";
+
+export const CONFLICT = "That slot was just taken. Pick another time.";
 
 function errText(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.code === "conflict") return "That slot was just taken. Pick another time.";
+    if (e.code === "conflict" || e.status === 409) return CONFLICT;
     return e.message;
   }
   return e instanceof Error ? e.message : "Something went wrong";
 }
 
+/** Controls sit inside 500-weight #2c3646 labels in the design and inherit both. */
+const control = "font-medium text-ink-2";
+
+/** The "Time" label and free-slot grid shared by New appointment and Reschedule. */
+function TimeField(props: React.ComponentProps<typeof SlotPicker>) {
+  const id = useId();
+  return (
+    <div role="group" aria-labelledby={id} className="flex flex-col gap-[8px]">
+      <span id={id} className="text-ink-2 text-[13.5px] font-medium">
+        Time
+      </span>
+      <SlotPicker {...props} />
+    </div>
+  );
+}
+
+function Footer({
+  secondary,
+  primary,
+  busy,
+  danger,
+  onClose,
+  onConfirm,
+}: {
+  secondary: string;
+  primary: string;
+  busy: boolean;
+  danger?: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <Button variant="secondary" size={40} onClick={onClose}>
+        {secondary}
+      </Button>
+      <Button
+        variant={danger ? "danger" : "primary"}
+        size={40}
+        className="shadow-none disabled:opacity-70"
+        disabled={busy}
+        onClick={onConfirm}
+      >
+        {primary}
+      </Button>
+    </>
+  );
+}
+
+/** New appointment dialog (560): service, date, free slot with doctor, patient phone and name. */
 export function NewAppointmentDialog({
   services,
   doctors,
@@ -25,26 +79,35 @@ export function NewAppointmentDialog({
   onDone,
 }: {
   services: Service[];
-  doctors: Doctor[];
+  doctors: Pick<Doctor, "id" | "name">[];
   tz: string;
   defaultDate: string;
   onClose: () => void;
-  onDone: () => void;
+  /** Called with the booked date (YYYY-MM-DD) so the calendar can show it. */
+  onDone: (date: string) => void;
 }) {
-  const api = useApi();
+  const api = useCoreApi();
+  const { toast } = useToast();
   const bookable = services.filter((s) => s.active);
   const [serviceId, setServiceId] = useState("");
   const [date, setDate] = useState(defaultDate);
   const [slot, setSlot] = useState<Slot | null>(null);
   const [phone, setPhone] = useState("");
+  const [phoneBad, setPhoneBad] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const names = Object.fromEntries(doctors.map((d) => [d.id, d.name]));
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!slot) return;
+  async function submit() {
+    if (!slot) return setError("Pick a time.");
+    const service = bookable.find((s) => s.id === serviceId);
+    if (!service) return setError("Choose a service.");
+    if (!indianPhone.safeParse(phone).success) {
+      setPhoneBad(true);
+      return setError(PHONE_ERROR);
+    }
     setBusy(true);
     setError(null);
     try {
@@ -57,123 +120,142 @@ export function NewAppointmentDialog({
           patient: { phone: phone.trim(), ...(name.trim() ? { name: name.trim() } : {}) },
         },
       });
-      onDone();
+      const day = localDateKey(slot.startsAt, tz);
+      toast(`Booked ${service.name} for ${keyDate(day)}, ${formatTime(slot.startsAt, tz)}`);
+      onDone(day);
     } catch (err) {
-      setError(errText(err));
+      const text = errText(err);
+      setError(text);
+      if (text === CONFLICT) {
+        // Someone else took it: drop the pick and show what is still free.
+        setSlot(null);
+        setReload((n) => n + 1);
+      }
       setBusy(false);
     }
   }
 
   return (
-    <Modal title="New appointment" onClose={onClose}>
-      <form onSubmit={submit} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm">
-          Service
-          <select
-            required
-            className={fieldClass}
-            value={serviceId}
-            onChange={(e) => {
-              setServiceId(e.target.value);
-              setSlot(null);
-            }}
-          >
-            <option value="">Choose a service</option>
-            {bookable.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.durationMin} min)
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Date
-          <input
-            type="date"
-            required
-            className={fieldClass}
-            value={date}
-            min={localDateKey(new Date(), tz)}
-            onChange={(e) => {
-              setDate(e.target.value);
-              setSlot(null);
-            }}
-          />
-        </label>
-        {serviceId && date ? (
-          <div>
-            <p className="mb-2 text-sm">Time</p>
-            <SlotPicker
-              serviceId={serviceId}
-              date={date}
-              tz={tz}
-              doctorNames={names}
-              value={slot}
-              onPick={setSlot}
-            />
-          </div>
-        ) : null}
-        <label className="flex flex-col gap-1 text-sm">
-          Patient phone
-          <input
-            required
+    <Modal
+      title="New appointment"
+      width={560}
+      onClose={onClose}
+      footer={
+        <Footer
+          secondary="Cancel"
+          primary={busy ? "Booking…" : "Book appointment"}
+          busy={busy}
+          onClose={onClose}
+          onConfirm={submit}
+        />
+      }
+    >
+      <Field label="Service" variant="lg">
+        <Select
+          size={42}
+          className={control}
+          value={serviceId}
+          onChange={(e) => {
+            setServiceId(e.target.value);
+            setSlot(null);
+            setError(null);
+          }}
+        >
+          <option value="">Choose a service</option>
+          {bookable.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} ({s.durationMin} min)
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Date" variant="lg">
+        <Input
+          type="date"
+          size={42}
+          mono
+          className={`${control} px-[10px]`}
+          value={date}
+          min={localDateKey(new Date(), tz)}
+          onChange={(e) => {
+            if (!e.target.value) return;
+            setDate(e.target.value);
+            setSlot(null);
+            setError(null);
+          }}
+        />
+      </Field>
+      <TimeField
+        serviceId={serviceId}
+        date={date}
+        tz={tz}
+        doctorNames={names}
+        value={slot}
+        reloadKey={reload}
+        onPick={(s) => {
+          setSlot(s);
+          setError(null);
+        }}
+      />
+      <div className="grid grid-cols-1 gap-[12px] sm:grid-cols-2">
+        <Field label="Patient phone" variant="lg">
+          <Input
             type="tel"
+            size={42}
             inputMode="tel"
             autoComplete="off"
             placeholder="+91 98765 43210"
-            className={fieldClass}
+            invalid={phoneBad}
+            className={control}
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              setPhoneBad(false);
+            }}
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Patient name (optional)
-          <input
-            className={fieldClass}
+        </Field>
+        <Field label="Patient name (optional)" variant="lg">
+          <Input
+            size={42}
+            autoComplete="off"
+            className={control}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            autoComplete="off"
           />
-        </label>
-        {error && (
-          <p role="alert" className="text-danger text-sm">
-            {error}
-          </p>
-        )}
-        <div className="flex justify-end gap-2">
-          <button type="button" className={ghostBtn} onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className={primaryBtn} disabled={!slot || !phone.trim() || busy}>
-            {busy ? "Booking…" : "Book appointment"}
-          </button>
-        </div>
-      </form>
+        </Field>
+      </div>
+      {error ? <Notice>{error}</Notice> : null}
     </Modal>
   );
 }
 
+/** Reschedule dialog (520): a new date and a free slot with the same doctor. */
 export function RescheduleDialog({
   appointment,
   tz,
   doctorName,
+  doctorNames = {},
   onClose,
   onDone,
 }: {
   appointment: Appointment;
   tz: string;
   doctorName: string;
+  /** Doctor names for the slot labels. */
+  doctorNames?: Record<string, string>;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (date: string) => void;
 }) {
-  const api = useApi();
+  const api = useCoreApi();
+  const { toast } = useToast();
   const [date, setDate] = useState(localDateKey(appointment.startsAt, tz));
   const [slot, setSlot] = useState<Slot | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   async function confirm() {
-    if (!slot) return;
+    if (!slot) return setError("Pick a time.");
     setBusy(true);
     setError(null);
     try {
@@ -181,57 +263,73 @@ export function RescheduleDialog({
         method: "PATCH",
         body: { startsAt: slot.startsAt },
       });
-      onDone();
+      const day = localDateKey(slot.startsAt, tz);
+      toast(`Moved to ${keyDate(day)}, ${formatTime(slot.startsAt, tz)}`);
+      onDone(day);
     } catch (err) {
-      setError(errText(err));
+      const text = errText(err);
+      setError(text);
+      if (text === CONFLICT) {
+        setSlot(null);
+        setReload((n) => n + 1);
+      }
       setBusy(false);
     }
   }
 
   return (
-    <Modal title="Reschedule appointment" onClose={onClose}>
-      <p className="text-muted mb-4 text-sm">
+    <Modal
+      title="Reschedule"
+      width={520}
+      onClose={onClose}
+      footer={
+        <Footer
+          secondary="Keep current time"
+          primary={busy ? "Saving…" : "Confirm new time"}
+          busy={busy}
+          onClose={onClose}
+          onConfirm={confirm}
+        />
+      }
+    >
+      <p className="bg-paper text-ink-2 m-0 rounded-10 px-[12px] py-[10px] text-[14px]">
         Currently {formatDateTime(appointment.startsAt, tz)} with {doctorName}.
       </p>
-      <label className="mb-4 flex flex-col gap-1 text-sm">
-        New date
-        <input
+      <Field label="New date" variant="lg">
+        <Input
           type="date"
-          className={fieldClass}
+          size={42}
+          mono
+          className={`${control} px-[10px]`}
           value={date}
           min={localDateKey(new Date(), tz)}
           onChange={(e) => {
+            if (!e.target.value) return;
             setDate(e.target.value);
             setSlot(null);
+            setError(null);
           }}
         />
-      </label>
-      <SlotPicker
+      </Field>
+      <TimeField
         serviceId={appointment.serviceId}
         date={date}
         doctorId={appointment.doctorId}
         tz={tz}
-        doctorNames={{}}
+        doctorNames={{ [appointment.doctorId]: doctorName, ...doctorNames }}
         value={slot}
-        onPick={setSlot}
+        reloadKey={reload}
+        onPick={(s) => {
+          setSlot(s);
+          setError(null);
+        }}
       />
-      {error && (
-        <p role="alert" className="text-danger mt-3 text-sm">
-          {error}
-        </p>
-      )}
-      <div className="mt-5 flex justify-end gap-2">
-        <button type="button" className={ghostBtn} onClick={onClose}>
-          Keep current time
-        </button>
-        <button type="button" className={primaryBtn} disabled={!slot || busy} onClick={confirm}>
-          {busy ? "Saving…" : "Confirm new time"}
-        </button>
-      </div>
+      {error ? <Notice>{error}</Notice> : null}
     </Modal>
   );
 }
 
+/** Cancel dialog (440). */
 export function CancelDialog({
   appointment,
   tz,
@@ -243,7 +341,8 @@ export function CancelDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const api = useApi();
+  const api = useCoreApi();
+  const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function confirm() {
@@ -251,6 +350,7 @@ export function CancelDialog({
     setError(null);
     try {
       await api(`/v1/appointments/${appointment.id}/cancel`, { method: "POST", body: {} });
+      toast("Appointment cancelled. The slot is free again.");
       onDone();
     } catch (err) {
       setError(errText(err));
@@ -258,29 +358,26 @@ export function CancelDialog({
     }
   }
   return (
-    <Modal title="Cancel appointment?" onClose={onClose}>
-      <p className="mb-4 text-[15px]">
+    <Modal
+      title="Cancel appointment?"
+      width={440}
+      onClose={onClose}
+      footer={
+        <Footer
+          secondary="Keep appointment"
+          primary={busy ? "Cancelling…" : "Cancel appointment"}
+          busy={busy}
+          danger
+          onClose={onClose}
+          onConfirm={confirm}
+        />
+      }
+    >
+      <p className="text-ink-2 m-0 text-[15px] leading-[1.55]">
         The {formatDateTime(appointment.startsAt, tz)} appointment will be cancelled and the slot
         freed.
       </p>
-      {error && (
-        <p role="alert" className="text-danger mb-3 text-sm">
-          {error}
-        </p>
-      )}
-      <div className="flex justify-end gap-2">
-        <button type="button" className={ghostBtn} onClick={onClose}>
-          Keep appointment
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={confirm}
-          className="bg-danger inline-flex min-h-11 items-center rounded-xl px-5 text-[15px] font-medium text-white disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-danger)]"
-        >
-          {busy ? "Cancelling…" : "Cancel appointment"}
-        </button>
-      </div>
+      {error ? <Notice>{error}</Notice> : null}
     </Modal>
   );
 }
