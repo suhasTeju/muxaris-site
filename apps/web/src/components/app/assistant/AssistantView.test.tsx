@@ -37,6 +37,19 @@ function renderView(role: Role = "owner", assistant = assistantProfile) {
 const bar = () => screen.queryByRole("region", { name: "Unsaved changes" });
 
 describe("AssistantView", () => {
+  it("below 1024 stacks the caller preview after the form; FAQ rows stack below 640", () => {
+    renderView();
+    const preview = screen.getByText("What callers hear first").closest("aside")!;
+    const grid = preview.parentElement!;
+    expect(grid.className.split(" ")).toEqual(
+      expect.arrayContaining(["grid-cols-1", "lg:grid-cols-[minmax(0,1fr)_340px]"]),
+    );
+    expect(grid.lastElementChild).toBe(preview);
+    expect(screen.getByRole("group", { name: "Question 1" }).className).toContain(
+      "max-sm:grid-cols-1",
+    );
+  });
+
   it("shows the saved profile, the Configure tab and the caller preview", () => {
     renderView();
     expect(screen.getByRole("tab", { name: /Configure/ }).getAttribute("aria-selected")).toBe(
@@ -54,7 +67,7 @@ describe("AssistantView", () => {
     );
     expect(screen.getByText("53/300")).toBeTruthy();
     expect((screen.getByLabelText(/Handoff phone number/) as HTMLInputElement).value).toBe(
-      "+91 80412 34567",
+      "+91 80 4123 4567",
     );
     expect(screen.getByText("3/30")).toBeTruthy();
     expect(screen.getByText("What callers hear first")).toBeTruthy();

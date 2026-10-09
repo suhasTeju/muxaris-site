@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { formatIndianPhone } from "@/lib/phone";
 import {
   CITIES,
   LANGUAGES,
@@ -60,7 +61,7 @@ export function StepBasics({
   const [name, setName] = useState(clinic?.name ?? "");
   const [specialty, setSpecialty] = useState(clinic?.specialty ?? "dental");
   const [city, setCity] = useState(clinic?.city ?? "Bengaluru");
-  const [phone, setPhone] = useState(clinic?.phone ?? "");
+  const [phone, setPhone] = useState(formatIndianPhone(clinic?.phone));
   const [langs, setLangs] = useState<LanguageCode[]>(clinic?.languages ?? ["en-IN", "kn-IN"]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);

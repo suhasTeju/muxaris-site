@@ -75,8 +75,16 @@ function SettingsNav() {
   );
 }
 
-/** /app/settings: the clinic's configuration, editable in place by the owner. */
+/**
+ * /app/settings: the clinic's configuration, editable in place by the owner. Keyed by clinic, so
+ * a clinic switch (a router refresh with the new clinic's props) starts from that clinic's data
+ * rather than keeping the previous clinic's edits and saving them to the new one.
+ */
 export function SettingsView(props: SettingsViewProps) {
+  return <ClinicSettings key={props.clinic.id} {...props} />;
+}
+
+function ClinicSettings(props: SettingsViewProps) {
   const router = useRouter();
   const isOwner = props.role === "owner";
   const [clinic, setClinic] = useState(props.clinic);

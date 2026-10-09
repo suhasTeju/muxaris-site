@@ -18,14 +18,17 @@ function formatPlanDate(iso: string, tz = "Asia/Kolkata"): string {
   return `${get("day")} ${get("month")} ${get("year")}`;
 }
 
-/** Sidebar usage card values, following the design's shell script. */
-export function usageCard(u: UsageSummary) {
+/**
+ * Sidebar usage card values, following the design's shell script. Pass the clinic's timezone so
+ * the pilot end date is that clinic's calendar day (Asia/Kolkata when it is not known).
+ */
+export function usageCard(u: UsageSummary, tz?: string) {
   const used = Math.ceil(u.callSeconds / 60);
   const included = u.includedCallMinutes;
   const hint =
     u.plan === "pilot"
       ? u.pilotEndsAt
-        ? `Pilot ends ${formatPlanDate(u.pilotEndsAt)}`
+        ? `Pilot ends ${formatPlanDate(u.pilotEndsAt, tz)}`
         : "Pilot plan"
       : "Standard plan";
   return {

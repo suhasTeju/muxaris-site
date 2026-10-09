@@ -19,8 +19,8 @@ import {
   BULBUL_V3_SPEAKERS,
   LANGUAGE_CODES,
   assistantProfileBody,
+  clinicPhone,
   doctorBody,
-  indianPhone,
   serviceBody,
   slotRulesBody,
   workingHoursBody,
@@ -54,7 +54,7 @@ const clinicProfileBody = z
     name: z.string().trim().min(1).max(120),
     city: z.string().trim().min(1).max(120),
     address: z.string().trim().max(2000).nullable(),
-    phone: indianPhone.nullable(),
+    phone: clinicPhone.nullable(),
     languages: z.array(z.enum(LANGUAGE_CODES)).min(1).max(20),
   })
   .partial()

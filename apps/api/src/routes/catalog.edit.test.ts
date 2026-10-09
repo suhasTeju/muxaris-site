@@ -127,12 +127,28 @@ describe("PATCH /clinic", () => {
     });
   });
 
+  it("accepts a landline with its STD code", async () => {
+    core.updateClinicProfile.mockResolvedValue({ id: "cl_1", name: "Sunrise Dental Care" });
+    for (const [phone, e164] of [
+      ["011 2345 6789", "+911123456789"],
+      ["0821 242 3456", "+918212423456"],
+    ]) {
+      expect((await patch("/clinic", { phone })).status).toBe(200);
+      expect(core.updateClinicProfile).toHaveBeenLastCalledWith(expect.anything(), {
+        clinicId: "cl_1",
+        actorUserId: "u1",
+        patch: { phone: e164 },
+      });
+    }
+  });
+
   it("refuses settings, timezone and plan here, empty bodies and non-owners", async () => {
     expect((await patch("/clinic", { settings: { recordCalls: false } })).status).toBe(400);
     expect((await patch("/clinic", { timezone: "UTC" })).status).toBe(400);
     expect((await patch("/clinic", { plan: "standard" })).status).toBe(400);
     expect((await patch("/clinic", { languages: [] })).status).toBe(400);
     expect((await patch("/clinic", { phone: "12345" })).status).toBe(400);
+    expect((await patch("/clinic", { phone: "011 1234 5678" })).status).toBe(400);
     expect((await patch("/clinic", {})).status).toBe(400);
     core.role = "front_desk";
     expect((await patch("/clinic", { name: "X" })).status).toBe(403);

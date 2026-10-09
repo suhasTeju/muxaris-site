@@ -43,6 +43,60 @@ function renderView(role: Role = "owner") {
 const section = (name: string) => screen.getByRole("region", { name });
 
 describe("SettingsView", () => {
+  it("a clinic switch shows and saves the new clinic's details, not the previous clinic's", async () => {
+    const other = {
+      ...clinic,
+      id: "cl_lake",
+      name: "Lakeside Clinic",
+      city: "Mysuru",
+      address: "12 Lake Road",
+      phone: "+918212423456",
+    };
+    const view = (c: typeof clinic, docs: typeof doctors) => (
+      <SettingsView
+        clinic={c}
+        role="owner"
+        doctors={docs}
+        services={services}
+        slotRules={slotRules}
+        assistant={assistantProfile}
+        usage={usageFor("standard")}
+        billing={{ enabled: true }}
+      />
+    );
+    const { rerender } = render(view(clinic, doctors));
+    expect(within(section("Clinic")).getByText("Sunrise Dental Care")).toBeTruthy();
+    // The shell switches clinic with a router refresh: same component, the new clinic's props.
+    rerender(view(other, []));
+    expect(within(section("Clinic")).getByText("Lakeside Clinic")).toBeTruthy();
+    expect(within(section("Clinic")).getByText("+91 821 242 3456")).toBeTruthy();
+    expect(within(section("Doctors")).queryByText(/Meera Rao/)).toBeNull();
+    api.mockResolvedValue({ clinic: other });
+    fireEvent.click(screen.getByRole("button", { name: "Edit clinic details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save clinic details" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/v1/clinic",
+        expect.objectContaining({
+          body: expect.objectContaining({ name: "Lakeside Clinic", phone: "+918212423456" }),
+        }),
+      ),
+    );
+  });
+
+  it("below 1024 hides the jump list and gives the sections the full width", () => {
+    renderView();
+    const nav = screen.getByRole("navigation", { name: "Settings sections" });
+    expect(nav.className.split(" ")).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
+    expect(nav.parentElement!.className.split(" ")).toEqual(
+      expect.arrayContaining(["grid-cols-1", "lg:grid-cols-[190px_minmax(0,1fr)]"]),
+    );
+    // The services table scrolls inside its card instead of squeezing its columns.
+    const head = within(section("Services")).getByText("Duration");
+    expect(head.closest(".overflow-x-auto")).toBeTruthy();
+    expect(head.closest(".min-w-\\[640px\\]")).toBeTruthy();
+  });
+
   it("shows every section with a jump list", () => {
     renderView();
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
@@ -59,7 +113,7 @@ describe("SettingsView", () => {
       "Assistant",
       "Notifications",
     ]);
-    expect(within(section("Clinic")).getByText("+91 80412 34567")).toBeTruthy();
+    expect(within(section("Clinic")).getByText("+91 80 4123 4567")).toBeTruthy();
     expect(within(section("Clinic")).getByText("Asia/Kolkata (IST)")).toBeTruthy();
     expect(within(section("Doctors")).getAllByText(/Mon–Sat 10:00–20:00/)).toHaveLength(2);
     expect(within(section("Services")).getByText("₹1,500")).toBeTruthy();
@@ -121,6 +175,27 @@ describe("SettingsView", () => {
     expect(api).not.toHaveBeenCalled();
   });
 
+  it("clinic: a landline with its STD code saves, as the formatter shows it", async () => {
+    api.mockImplementation(async (_p: string, init: { body: object }) => ({
+      clinic: { ...clinic, ...init.body },
+    }));
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Edit clinic details" }));
+    fireEvent.change(within(section("Clinic")).getByLabelText("Phone"), {
+      target: { value: "011 2345 6789" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save clinic details" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/v1/clinic",
+        expect.objectContaining({ body: expect.objectContaining({ phone: "+911123456789" }) }),
+      ),
+    );
+    await waitFor(() =>
+      expect(within(section("Clinic")).getByText("+91 11 2345 6789")).toBeTruthy(),
+    );
+  });
+
   it("services: PATCHes changed rows, deactivates removed ones and POSTs new ones", async () => {
     api.mockImplementation(async (path: string, init: { method: string; body: object }) => {
       if (init.method === "POST") return { service: { ...services[0], id: "s_new", ...init.body } };
@@ -136,6 +211,15 @@ describe("SettingsView", () => {
     fireEvent.click(within(table).getByRole("button", { name: "Add a service" }));
     const names = within(table).getAllByLabelText("Service");
     fireEvent.change(names[names.length - 1]!, { target: { value: "Braces review" } });
+    // A new row starts without a price, and Save asks for one rather than saving it as free.
+    const newPrice = within(table).getAllByLabelText("Price (₹)").at(-1)! as HTMLInputElement;
+    expect(newPrice.value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Save services" }));
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Braces review: enter a price in whole rupees.",
+    );
+    expect(api).not.toHaveBeenCalled();
+    fireEvent.change(newPrice, { target: { value: "1500" } });
     fireEvent.click(screen.getByRole("button", { name: "Save services" }));
     await waitFor(() => expect(api).toHaveBeenCalledTimes(3));
     expect(api).toHaveBeenNthCalledWith(1, "/v1/services/s4", {
@@ -152,7 +236,7 @@ describe("SettingsView", () => {
         name: "Braces review",
         durationMin: 30,
         bufferMin: 5,
-        priceInr: 0,
+        priceInr: 1500,
         bookableByAi: true,
       },
     });
@@ -271,6 +355,66 @@ describe("SettingsView", () => {
     expect(put[1].method).toBe("PUT");
     expect(put[1].body.hours.length).toBeGreaterThan(0);
     await waitFor(() => expect(within(section("Doctors")).getByText(/Dr\. Kavya N/)).toBeTruthy());
+  });
+
+  it("doctor drawer: a retry after a failed hours save re-sends the hours, not a second doctor", async () => {
+    let hoursFail = true;
+    api.mockImplementation(async (path: string, init: { method: string; body: object }) => {
+      if (path === "/v1/doctors")
+        return { doctor: { ...doctors[0], id: "d3", title: null, ...init.body, workingHours: [] } };
+      if (hoursFail) throw new ApiError(500, "internal", "Could not save the hours");
+      return { ok: true };
+    });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Add doctor" }));
+    const drawer = screen.getByRole("dialog", { name: "Add doctor" });
+    fireEvent.change(within(drawer).getByLabelText("Name"), { target: { value: "Dr. Kavya N" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save doctor" }));
+    await waitFor(() =>
+      expect(within(drawer).getByRole("alert").textContent).toBe("Could not save the hours"),
+    );
+    // The doctor exists now, so the list shows it while the drawer stays open.
+    expect(within(section("Doctors")).getByText(/Dr\. Kavya N/)).toBeTruthy();
+    hoursFail = false;
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save doctor" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.mock.calls.map(([path, init]) => `${init.method} ${path}`)).toEqual([
+      "POST /v1/doctors",
+      "PUT /v1/doctors/d3/hours",
+      "PUT /v1/doctors/d3/hours",
+    ]);
+    expect(within(section("Doctors")).getAllByText(/Dr\. Kavya N/)).toHaveLength(1);
+  });
+
+  it("doctor drawer: closing one day keeps the other days' split shifts and 24:00 closes", async () => {
+    const hours = [
+      { weekday: 1, startTime: "09:00", endTime: "13:00" },
+      { weekday: 1, startTime: "16:00", endTime: "20:00" },
+      { weekday: 2, startTime: "18:00", endTime: "24:00" },
+      { weekday: 6, startTime: "10:00", endTime: "14:00" },
+    ];
+    api.mockResolvedValue({ ok: true });
+    render(
+      <SettingsView
+        clinic={clinic}
+        role="owner"
+        doctors={[{ ...doctors[0]!, workingHours: hours }]}
+        services={services}
+        slotRules={slotRules}
+        assistant={assistantProfile}
+        usage={usageFor("standard")}
+        billing={{ enabled: true }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit Dr. Meera Rao" }));
+    const drawer = screen.getByRole("dialog", { name: "Edit doctor" });
+    fireEvent.click(within(drawer).getByRole("checkbox", { name: "Saturday" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save doctor" }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect(api).toHaveBeenCalledWith("/v1/doctors/d1/hours", {
+      method: "PUT",
+      body: { hours: hours.slice(0, 3) },
+    });
   });
 
   it("doctor drawer: a failed save keeps the drawer open with the error", async () => {

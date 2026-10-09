@@ -66,14 +66,15 @@ export function PlanSettings({
   const pilot = usage.plan === "pilot";
   const stuck = PAYMENT_STUCK.includes(subscriptionStatus ?? "");
   const canUpgrade = isOwner && pilot && billing.enabled && !stuck && !paid;
+  // The pre-redesign order: billing off, then role, then the plan's own state.
   const footer = paid
     ? "Payment received. Your plan updates within a minute."
-    : !isOwner
-      ? "Only the clinic owner can change the plan."
-      : !pilot
-        ? "You are on Standard. Cancel any time by writing to hello@muxaris.com."
-        : !billing.enabled
-          ? "Upgrading is handled by us for now. Write to hello@muxaris.com."
+    : !billing.enabled
+      ? "Upgrading is handled by us for now. Write to hello@muxaris.com."
+      : !isOwner
+        ? "Only the clinic owner can change the plan."
+        : !pilot
+          ? "You are on Standard. Cancel any time by writing to hello@muxaris.com."
           : stuck
             ? "Payment pending or failed. Update your payment method in Razorpay or contact support."
             : "";

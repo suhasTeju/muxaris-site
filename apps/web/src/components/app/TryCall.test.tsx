@@ -58,6 +58,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("TryCall", () => {
+  it("below 1024 stacks the call column above the conversation and the tool timeline", () => {
+    render(<TryCall />);
+    const call = screen.getByRole("button", { name: /Start call/ }).closest(".grid > *")!;
+    const grid = call.parentElement!;
+    expect(grid.className.split(" ")).toEqual(
+      expect.arrayContaining(["grid-cols-1", "lg:grid-cols-[352px_minmax(0,1fr)]"]),
+    );
+    expect(grid.firstElementChild).toBe(call);
+    const rest = grid.lastElementChild!;
+    const conversation = within(rest as HTMLElement).getByText("Conversation");
+    const tools = within(rest as HTMLElement).getByText("What the assistant is doing");
+    expect(
+      conversation.compareDocumentPosition(tools) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("offers only the clinic's languages and shows microphone guidance when idle", () => {
     render(<TryCall />);
     const select = screen.getByLabelText("Language") as HTMLSelectElement;

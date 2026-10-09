@@ -85,12 +85,13 @@ export function useVoicePreview(fetcher: VoicePreviewFetcher) {
       setStatus("loading");
       const ctl = new AbortController();
       abort.current = ctl;
+      let a: HTMLAudioElement | null = null;
       try {
         const blob = await fetcher({ ...req, text }, ctl.signal);
         if (ctl.signal.aborted) return;
         abort.current = null;
         url.current = URL.createObjectURL(blob);
-        const a = new Audio(url.current);
+        a = new Audio(url.current);
         audio.current = a;
         a.onended = () => {
           if (audio.current === a) stop();
@@ -98,7 +99,8 @@ export function useVoicePreview(fetcher: VoicePreviewFetcher) {
         setStatus("playing");
         await a.play();
       } catch (e) {
-        if (ctl.signal.aborted) return;
+        // Stopped while loading, or while play() was still pending (it rejects with AbortError).
+        if (ctl.signal.aborted || (a && audio.current !== a)) return;
         release();
         setStatus("idle");
         setError(e instanceof ApiError ? e.message : "Could not play the preview.");

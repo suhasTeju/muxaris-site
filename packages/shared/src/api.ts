@@ -7,6 +7,7 @@ import {
   type NotificationStatus,
 } from "./notifications.js";
 import { CITIES, ROLES, SPECIALTIES } from "./clinic.js";
+import { isIndianPhoneNumber } from "./phone.js";
 
 // Request-body schemas. Dates are shape-checked here; the API adds calendar checks.
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
@@ -21,6 +22,8 @@ const ARRAY_MAX = 50;
 const name = () => z.string().trim().min(1).max(NAME_MAX);
 const text = () => z.string().trim().max(TEXT_MAX);
 
+const CLINIC_PHONE_MESSAGE = "Enter a valid Indian mobile or landline number";
+
 /**
  * Indian mobile in common human formats (`+91 98765-43210`, `91…`, `0…`, bare 10 digits);
  * normalised to E.164 `+91XXXXXXXXXX`.
@@ -29,6 +32,22 @@ export const indianPhone = z
   .string()
   .transform((v) => v.replace(/[\s\-()]/g, ""))
   .pipe(z.string().regex(/^(?:\+91|91|0)?[6-9]\d{9}$/, "Enter a valid Indian mobile number"))
+  .transform((v) => `+91${v.slice(-10)}`);
+
+/**
+ * A clinic's own number: an Indian mobile, or a landline with its STD code (`080 4123 4567`,
+ * `0821 242 3456`, `+91 8182 27 1234`); normalised to E.164. It accepts the numbers
+ * `formatIndianPhone` groups, so whatever a clinic saves reads back the same way.
+ */
+export const clinicPhone = z
+  .string()
+  .transform((v) => v.replace(/[\s\-()]/g, ""))
+  .pipe(
+    z
+      .string()
+      .regex(/^(?:\+91|91|0)?\d{10}$/, CLINIC_PHONE_MESSAGE)
+      .refine((v) => isIndianPhoneNumber(v.slice(-10)), CLINIC_PHONE_MESSAGE),
+  )
   .transform((v) => `+91${v.slice(-10)}`);
 
 /** `+919876543210` -> `+91 •••• ••3210` (last four digits visible). */
@@ -45,7 +64,7 @@ export const createClinicBody = z.object({
   city: name(),
   specialty: name().optional(),
   address: text().optional(),
-  phone: indianPhone.optional(),
+  phone: clinicPhone.optional(),
   languages: languages.optional(),
 });
 

@@ -9,10 +9,9 @@ import {
   WEEKDAY_NAMES,
   defaultWeekHours,
   validateWeekHours,
-  weekHoursPayload,
   type WeekHours,
 } from "@/lib/onboarding";
-import { saveErrorText, weekFromHours } from "./format";
+import { hoursForSave, saveErrorText, weekFromHours } from "./format";
 import { ToggleChips } from "./settings-ui";
 
 /** Colour the design gives a newly added doctor's avatar. */
@@ -76,7 +75,11 @@ export function DoctorDrawer({
   const api = useApi();
   const { toast } = useToast();
   const [draft, setDraft] = useState<Draft>(() => toDraft(doctor, clinicLanguages));
-  const [initialWeek] = useState(() => JSON.stringify(draft.week));
+  // The server's copy of this doctor: the one being edited, or the one this drawer has already
+  // created. A retry after a failed hours save then updates it instead of POSTing a duplicate.
+  const [current, setCurrent] = useState<Doctor | null>(doctor);
+  // The week last saved for `current` (null until a new doctor's hours are saved).
+  const [savedWeek, setSavedWeek] = useState(() => (doctor ? JSON.stringify(draft.week) : null));
   const [split] = useState(() => !!doctor && weekFromHours(doctor.workingHours).split);
   const [nameBad, setNameBad] = useState(false);
   const [langBad, setLangBad] = useState(false);
@@ -101,25 +104,28 @@ export function DoctorDrawer({
       languages: draft.languages,
       active: draft.active,
     };
-    const hoursChanged = !doctor || JSON.stringify(draft.week) !== initialWeek;
+    const week = JSON.stringify(draft.week);
+    let saved: Doctor | null = null;
     try {
-      let saved: Doctor;
-      if (doctor) {
+      if (current) {
         const patch: Record<string, unknown> = {};
-        if (fields.name !== doctor.name) patch.name = fields.name;
-        if (fields.title !== doctor.title) patch.title = fields.title;
-        if (!sameList(fields.specialties, doctor.specialties))
+        if (fields.name !== current.name) patch.name = fields.name;
+        if (fields.title !== current.title) patch.title = fields.title;
+        if (!sameList(fields.specialties, current.specialties))
           patch.specialties = fields.specialties;
-        if (!sameList(fields.languages, doctor.languages)) patch.languages = fields.languages;
-        if (fields.active !== doctor.active) patch.active = fields.active;
+        if (!sameList(fields.languages, current.languages)) patch.languages = fields.languages;
+        if (fields.active !== current.active) patch.active = fields.active;
         saved = Object.keys(patch).length
-          ? (
-              await api<{ doctor: Doctor }>(`/v1/doctors/${encodeURIComponent(doctor.id)}`, {
-                method: "PATCH",
-                body: patch,
-              })
-            ).doctor
-          : doctor;
+          ? {
+              ...(
+                await api<{ doctor: Doctor }>(`/v1/doctors/${encodeURIComponent(current.id)}`, {
+                  method: "PATCH",
+                  body: patch,
+                })
+              ).doctor,
+              workingHours: current.workingHours,
+            }
+          : current;
       } else {
         saved = (
           await api<{ doctor: Doctor }>("/v1/doctors", {
@@ -134,19 +140,26 @@ export function DoctorDrawer({
             },
           })
         ).doctor;
+        saved = { ...saved, workingHours: [] };
       }
-      let workingHours = doctor?.workingHours ?? [];
-      if (hoursChanged) {
-        workingHours = weekHoursPayload(draft.week);
+      setCurrent(saved);
+      if (week !== savedWeek) {
+        const workingHours = hoursForSave(saved.workingHours, draft.week);
         await api(`/v1/doctors/${encodeURIComponent(saved.id)}/hours`, {
           method: "PUT",
           body: { hours: workingHours },
         });
+        saved = { ...saved, workingHours };
+        setCurrent(saved);
+        setSavedWeek(week);
       }
-      onSaved({ ...saved, workingHours });
+      onSaved(saved);
       toast(doctor ? "Doctor updated" : "Doctor added");
       onClose();
     } catch (e) {
+      // The doctor may have saved before its hours failed: list it now; a retry re-sends only
+      // what is still unsaved.
+      if (saved) onSaved(saved);
       setError(saveErrorText(e));
     } finally {
       setBusy(false);
@@ -215,7 +228,7 @@ export function DoctorDrawer({
             return (
               <div
                 key={day}
-                className="border-line-soft grid grid-cols-[120px_minmax(0,1fr)] items-center gap-[10px] border-t px-[12px] py-[7px]"
+                className="border-line-soft grid grid-cols-[120px_minmax(0,1fr)] items-center gap-[10px] border-t px-[12px] py-[7px] max-sm:grid-cols-1 max-sm:gap-[6px]"
               >
                 <Checkbox
                   label={name}
@@ -224,7 +237,7 @@ export function DoctorDrawer({
                   className="py-[2px]"
                 />
                 {d.open ? (
-                  <div className="flex items-center gap-[8px]">
+                  <div className="flex items-center gap-[8px] max-sm:pl-[26px]">
                     {(["start", "end"] as const).map((k, i) => (
                       <span key={k} className="contents">
                         {i === 1 ? <span className="text-muted-2">–</span> : null}
@@ -242,7 +255,7 @@ export function DoctorDrawer({
                     ))}
                   </div>
                 ) : (
-                  <span className="text-muted-2 text-[13px]">Closed</span>
+                  <span className="text-muted-2 text-[13px] max-sm:hidden">Closed</span>
                 )}
               </div>
             );
@@ -250,7 +263,7 @@ export function DoctorDrawer({
         </div>
         {split ? (
           <span className="text-muted text-[12px]">
-            Some days have a break between shifts. Changing the hours here saves one shift per day.
+            Some days have a break between shifts. A day you change here saves as one shift.
           </span>
         ) : null}
         {Object.keys(hourErrors).length ? (
