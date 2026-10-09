@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowUpRight, Check, CircleCheck, Eye } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Callback } from "@muxaris/shared";
 import { useApi } from "@/lib/api-client";
 import { localDateKey } from "@/lib/dashboard";
@@ -30,7 +30,11 @@ interface Bucket {
   total: number;
 }
 
-/** The design lists open callbacks urgent → high → normal, newest first within a priority. */
+/**
+ * The design lists open callbacks urgent → high → normal, newest first within a priority. The API
+ * pages by newest first, so each page is sorted as it arrives and appended after the pages
+ * already shown: Load more never moves rows the user has already seen.
+ */
 const RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2 };
 const rank = (p: string) => RANK[p] ?? 3;
 
@@ -57,6 +61,21 @@ function CallbackCard({
   const api = useApi();
   const { toast } = useToast();
   const reveal = useRevealPhone(`/v1/callbacks/${encodeURIComponent(cb.id)}/reveal-phone`);
+  const showButton = useRef<HTMLButtonElement>(null);
+  const phoneLink = useRef<HTMLAnchorElement>(null);
+  const revealClicked = useRef(false);
+  const linkFocused = useRef(false);
+  // The button disappears when the number shows: move focus to the number, and back to the
+  // button when the number hides again while it had focus (some browsers blur a removed element,
+  // leaving focus on the body).
+  useEffect(() => {
+    if (!revealClicked.current) return;
+    if (reveal.phone) phoneLink.current?.focus();
+    else if (linkFocused.current || document.activeElement === document.body) {
+      linkFocused.current = false;
+      showButton.current?.focus();
+    }
+  }, [reveal.phone]);
   const [note, setNote] = useState(cb.note ?? "");
   const [assignee, setAssignee] = useState(cb.assignedTo ?? "");
   const [busy, setBusy] = useState(false);
@@ -91,7 +110,7 @@ function CallbackCard({
     <Card
       as="article"
       className={cn(
-        "animate-mx-in flex flex-col gap-[14px] p-[18px]",
+        "animate-mx-in flex flex-col gap-[14px] p-[18px] motion-reduce:animate-none",
         urgent && "border-rose-line shadow-[0_0_0_3px_rgba(224,72,112,0.08)]",
       )}
     >
@@ -99,6 +118,9 @@ function CallbackCard({
         <div className="flex flex-wrap items-center gap-[10px]">
           {reveal.phone ? (
             <a
+              ref={phoneLink}
+              onFocus={() => (linkFocused.current = true)}
+              onBlur={() => (linkFocused.current = false)}
               href={`tel:${reveal.phone}`}
               className="text-ink hover:text-ink font-mono text-[14px] font-medium"
             >
@@ -109,11 +131,15 @@ function CallbackCard({
           )}
           {!reveal.phone ? (
             <Button
+              ref={showButton}
               variant="secondary"
               size={26}
               icon={Eye}
               disabled={reveal.busy}
-              onClick={reveal.reveal}
+              onClick={() => {
+                revealClicked.current = true;
+                void reveal.reveal();
+              }}
             >
               Show number
             </Button>
@@ -238,8 +264,13 @@ export function CallbacksQueue({
   const router = useRouter();
   const [today] = useState(() => todayProp ?? localDateKey(new Date(), tz));
   const [tab, setTab] = useState<Tab>(initialTab);
-  const [open, setOpen] = useState<Bucket>({ items: initial, total: initialTotal });
-  const [done, setDone] = useState<Bucket | null>(initialDone ?? null);
+  const [open, setOpen] = useState<Bucket>(() => ({
+    items: sortFor("open", initial),
+    total: initialTotal,
+  }));
+  const [done, setDone] = useState<Bucket | null>(() =>
+    initialDone ? { items: sortFor("done", initialDone.items), total: initialDone.total } : null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -253,7 +284,13 @@ export function CallbacksQueue({
       const merge = (prev: Bucket | null): Bucket => {
         const seen = new Set((prev?.items ?? []).map((c) => c.id));
         return {
-          items: [...(prev?.items ?? []), ...r.callbacks.filter((c) => !seen.has(c.id))],
+          items: [
+            ...(prev?.items ?? []),
+            ...sortFor(
+              which,
+              r.callbacks.filter((c) => !seen.has(c.id)),
+            ),
+          ],
           total: r.total,
         };
       };
@@ -294,7 +331,7 @@ export function CallbacksQueue({
 
   const bucket = tab === "open" ? open : done;
   return (
-    <div className="animate-mx-in flex max-w-[980px] flex-col gap-[18px]">
+    <div className="animate-mx-in flex max-w-[980px] flex-col gap-[18px] motion-reduce:animate-none">
       <PageHeader title="Callbacks" className="max-sm:flex-wrap max-sm:[&_h1]:text-[22px]" />
       <Tabs
         aria-label="Callback status"
@@ -333,7 +370,7 @@ export function CallbacksQueue({
             </EmptyState>
           ) : (
             <div className="flex flex-col gap-[10px]">
-              {sortFor(tab, bucket.items).map((cb) => (
+              {bucket.items.map((cb) => (
                 <CallbackCard key={cb.id} cb={cb} tz={tz} today={today} onChanged={changed} />
               ))}
             </div>

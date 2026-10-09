@@ -166,6 +166,36 @@ describe("CallbacksQueue", () => {
     expect(link.getAttribute("href")).toBe("tel:+919845123210");
     expect(screen.getByText("Visible for 60 seconds. This view is logged.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Show number" })).toBeNull();
+    // The button went away, so focus moves to the number instead of falling to the page.
+    await waitFor(() => expect(document.activeElement).toBe(link));
+  });
+
+  it("sorts each page as it arrives and keeps earlier pages in place on Load more", async () => {
+    api.mockResolvedValue({
+      callbacks: [
+        cb({ id: "p2a", reason: "page two normal" }),
+        cb({ id: "p2b", reason: "page two urgent", priority: "urgent" }),
+      ],
+      total: 4,
+    });
+    renderQueue({
+      initial: [
+        cb({ id: "p1a", reason: "page one normal" }),
+        cb({ id: "p1b", reason: "page one high", priority: "high" }),
+      ],
+      initialTotal: 4,
+    });
+    const reasons = () =>
+      screen.getAllByRole("article").map((a) => a.querySelector("p")?.textContent);
+    expect(reasons()).toEqual(["page one high", "page one normal"]);
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(reasons()).toHaveLength(4));
+    expect(reasons()).toEqual([
+      "page one high",
+      "page one normal",
+      "page two urgent",
+      "page two normal",
+    ]);
   });
 
   it("shows an inline error and keeps the row when Mark done fails", async () => {
