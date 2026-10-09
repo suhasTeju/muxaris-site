@@ -1,15 +1,19 @@
 import Link from "next/link";
+import { Calendar, CalendarCheck, Phone, PhoneIncoming, Timer } from "lucide-react";
 import type { Appointment, Call, Doctor, Service } from "@muxaris/shared";
+import { Badge, Card, KpiCard, PageHeader, SectionHeader, badgeFor } from "@/components/ui";
 import {
-  formatDay,
-  formatDuration,
+  formatTime,
+  languageLabel,
+  localDateKey,
   type OverviewStats,
   type Section,
   type Usage,
 } from "@/lib/dashboard";
-import { AppointmentList } from "./AppointmentList";
-import { CallList } from "./CallList";
-import { KpiCard } from "./KpiCard";
+import { TodayAppointmentList } from "./overview/TodayAppointmentList";
+import { callIcon, callerOf, type PatientNames } from "./core/calls";
+import { formatDateLong, formatDur, relativeDay } from "./core/format";
+import { usageCard } from "./usage";
 
 export interface TodayAppointments {
   appointments: Appointment[];
@@ -17,26 +21,26 @@ export interface TodayAppointments {
   services: Service[];
 }
 
+const DASH = "–";
+
 function Unavailable({ what }: { what: string }) {
   return (
-    <p role="alert" className="text-danger py-4 text-sm">
+    <p role="alert" className="text-rose m-0 px-[18px] py-[16px] text-[13.5px]">
       Couldn&apos;t load {what}. Refresh the page to try again.
     </p>
   );
 }
 
-const DASH = "–";
-
-function usageHint(u: Usage, tz: string): string {
-  const base =
-    u.plan === "pilot" && u.pilotEndsAt
-      ? `Pilot ends ${formatDay(u.pilotEndsAt, tz)}`
-      : u.plan === "pilot"
-        ? "Pilot plan"
-        : "Standard plan";
-  return u.overageSeconds > 0 ? `${base} · ${Math.ceil(u.overageSeconds / 60)} min over` : base;
+function Quiet({ children }: { children: React.ReactNode }) {
+  return <p className="text-muted m-0 p-[18px] text-[14px] italic">{children}</p>;
 }
 
+function usageHint(u: Usage): string {
+  const over = Math.ceil(u.overageSeconds / 60);
+  return usageCard(u).hint + (over > 0 ? ` · ${over} min over` : "");
+}
+
+/** Overview from AppOverview.dc.html: four KPI tiles, today's appointments by doctor, recent calls. */
 export function OverviewView({
   clinicName,
   tz,
@@ -44,6 +48,9 @@ export function OverviewView({
   usage,
   appointments,
   recentCalls,
+  urgentCallbacks = null,
+  patientNames,
+  now = new Date(),
 }: {
   clinicName: string;
   tz: string;
@@ -51,89 +58,135 @@ export function OverviewView({
   usage: Section<Usage>;
   appointments: Section<TodayAppointments>;
   recentCalls: Section<Call[]>;
+  /** Open callbacks marked urgent: the badge on the Open callbacks tile (hidden at 0 or unknown). */
+  urgentCallbacks?: number | null;
+  /** Names for the patients behind recent calls. */
+  patientNames?: PatientNames;
+  now?: Date;
 }) {
-  const minutesUsed = usage.ok ? Math.ceil(usage.data.callSeconds / 60) : 0;
-  const minutesIncluded = usage.ok ? usage.data.includedCallMinutes : 0;
-  const usageRatio = minutesIncluded > 0 ? Math.min(1, minutesUsed / minutesIncluded) : 0;
+  const todayKey = localDateKey(now, tz);
   const fail = stats.ok ? undefined : "Couldn't load";
+  const card = usage.ok ? usageCard(usage.data) : null;
   return (
-    <div className="px-4 py-8 sm:px-8">
-      <h1 className="font-display text-3xl">Overview</h1>
-      <p className="text-muted mt-1">{clinicName}</p>
+    <div className="animate-mx-in flex flex-col gap-[22px]">
+      <PageHeader
+        title="Overview"
+        subtitle={clinicName}
+        actions={
+          <span className="border-line bg-surface text-ink-2 inline-flex h-[32px] items-center gap-[8px] rounded-9 border px-[12px] font-mono text-[12.5px]">
+            <Calendar size={13} aria-hidden="true" />
+            {formatDateLong(now.toISOString(), tz)}
+          </span>
+        }
+      />
 
-      <section aria-label="Key numbers" className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="Key numbers"
+        className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-[14px]"
+      >
         <KpiCard
+          icon={Phone}
           label="Calls today"
           value={stats.ok ? String(stats.data.callsToday) : DASH}
-          hint={
-            fail ?? (stats.ok ? `Average ${formatDuration(stats.data.avgDurationS)}` : undefined)
-          }
+          hint={fail ?? `Average ${Math.round(stats.ok ? (stats.data.avgDurationS ?? 0) : 0)}s`}
         />
         <KpiCard
+          icon={CalendarCheck}
           label="Booked by assistant"
           value={stats.ok ? String(stats.data.bookedToday) : DASH}
           hint={fail ?? "Calls that ended in a booking today"}
         />
         <KpiCard
+          icon={PhoneIncoming}
           label="Open callbacks"
           value={stats.ok ? String(stats.data.openCallbacks) : DASH}
-          hint={fail ?? "View the callback queue"}
           href="/app/callbacks"
+          hint={fail ?? "View the callback queue"}
+          hintTone={fail ? "muted" : "link"}
+          badge={
+            urgentCallbacks ? (
+              // Block-level, so the label row is exactly the badge's 20px as in the design.
+              <Badge tone="bad" size={20} className="flex">
+                {urgentCallbacks} urgent
+              </Badge>
+            ) : undefined
+          }
         />
-        {usage.ok ? (
+        {usage.ok && card ? (
           <KpiCard
+            icon={Timer}
             label="Minutes used this month"
-            value={`${minutesUsed} / ${minutesIncluded}`}
-            ratio={usageRatio}
-            hint={usageHint(usage.data, tz)}
+            value={card.usedLabel}
+            unit={`/ ${card.includedLabel}`}
+            meter={{ used: card.used, included: card.included }}
+            hint={usageHint(usage.data)}
           />
         ) : (
-          <KpiCard label="Minutes used this month" value={DASH} hint="Couldn't load" />
+          <KpiCard icon={Timer} label="Minutes used this month" value={DASH} hint="Couldn't load" />
         )}
       </section>
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-2">
-        <section aria-labelledby="today-h">
-          <div className="mb-3 flex items-baseline justify-between">
-            <h2 id="today-h" className="font-display text-xl">
-              Today&apos;s appointments
-            </h2>
-            <Link
-              href="/app/appointments"
-              className="text-accent-deep text-sm underline-offset-4 hover:underline"
-            >
-              All appointments
-            </Link>
-          </div>
-          {appointments.ok ? (
-            <AppointmentList
-              appointments={appointments.data.appointments}
-              doctors={appointments.data.doctors}
-              services={appointments.data.services}
-              tz={tz}
-            />
-          ) : (
+      <div className="grid items-start gap-[14px] lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <Card className="overflow-hidden" aria-label="Today's appointments">
+          <SectionHeader
+            title="Today's appointments"
+            link={{ href: "/app/appointments", label: "All appointments" }}
+          />
+          {!appointments.ok ? (
             <Unavailable what="today's appointments" />
-          )}
-        </section>
-        <section aria-labelledby="calls-h">
-          <div className="mb-3 flex items-baseline justify-between">
-            <h2 id="calls-h" className="font-display text-xl">
-              Recent calls
-            </h2>
-            <Link
-              href="/app/calls"
-              className="text-accent-deep text-sm underline-offset-4 hover:underline"
-            >
-              All calls
-            </Link>
-          </div>
-          {recentCalls.ok ? (
-            <CallList calls={recentCalls.data} tz={tz} />
+          ) : appointments.data.appointments.length === 0 ? (
+            <Quiet>No appointments today. Your assistant will book them as calls come in.</Quiet>
           ) : (
-            <Unavailable what="recent calls" />
+            <>
+              <TodayAppointmentList
+                appointments={appointments.data.appointments}
+                doctors={appointments.data.doctors}
+                services={appointments.data.services}
+                tz={tz}
+                now={now}
+              />
+              <div className="h-[10px]" />
+            </>
           )}
-        </section>
+        </Card>
+
+        <Card className="overflow-hidden" aria-label="Recent calls">
+          <SectionHeader title="Recent calls" link={{ href: "/app/calls", label: "All calls" }} />
+          {!recentCalls.ok ? (
+            <Unavailable what="recent calls" />
+          ) : recentCalls.data.length === 0 ? (
+            <Quiet>No calls yet. Try your assistant to place a first test call.</Quiet>
+          ) : (
+            recentCalls.data.map((c) => {
+              const who = callerOf(c, patientNames);
+              const { icon: Icon, tile } = callIcon(c);
+              const b = badgeFor("outcome", c.outcome);
+              const meta = [
+                `${relativeDay(c.startedAt, todayKey, tz)}, ${formatTime(c.startedAt, tz)}`,
+                formatDur(c.durationS),
+                c.languageDetected ? languageLabel(c.languageDetected) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <Link
+                  key={c.id}
+                  href={`/app/calls/${c.id}`}
+                  className="border-line-soft text-ink hover:bg-subtle hover:text-ink grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-[12px] border-t px-[18px] py-[12px]"
+                >
+                  <span className={`grid size-[36px] place-items-center rounded-10 ${tile}`}>
+                    <Icon size={15} aria-hidden="true" />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-[14px] font-medium">{who.who}</span>
+                    <span className="text-muted text-[12.5px]">{meta}</span>
+                  </span>
+                  <Badge tone={b.tone}>{b.label}</Badge>
+                </Link>
+              );
+            })
+          )}
+        </Card>
       </div>
     </div>
   );
