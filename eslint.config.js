@@ -19,5 +19,30 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   { languageOptions: { globals: { ...globals.node, ...globals.browser } } },
   { rules: { "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }] } },
+  {
+    // Dev preview code (fixtures, DevAppFrame, /dev routes) is development-only. Production code
+    // must never import it; tests may.
+    files: ["apps/web/src/**/*.{ts,tsx}"],
+    ignores: ["apps/web/src/app/dev/**", "apps/web/src/components/dev/**", "**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/components/dev",
+                "@/components/dev/**",
+                "@/app/dev/**",
+                "**/components/dev/**",
+                "**/app/dev/**",
+              ],
+              message: "Dev preview code is development-only; pass data as props instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   prettier,
 );
