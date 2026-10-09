@@ -1,33 +1,319 @@
 @import "tailwindcss";
 
-@theme {
+/*
+ * Muxaris design tokens. Source of truth: the Claude Design bundle (Muxaris Redesign.dc.html
+ * swatches, the TONES map and shell values in Muxaris App.dc.html). `static` so every token is
+ * emitted as a CSS variable even when no utility uses it: pages also read them from inline styles.
+ * Documented for page implementers in src/components/ui/README.md.
+ */
+@theme static {
+  /* Type: composed from the next/font variables set on <html> in app/layout.tsx. */
+  --font-sans:
+    var(--font-schibsted), var(--font-noto-devanagari), var(--font-noto-kannada),
+    var(--font-noto-tamil), var(--font-noto-telugu), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-wordmark: var(--font-fraunces), Georgia, serif;
+
+  /* Palette (swatches). */
   --color-ink: #0c1220;
-  --color-ink-deep: #080d18;
-  --color-paper: #fafaf7;
+  --color-ink-2: #2c3646;
+  --color-muted: #5f6b7c;
+  --color-line: #e2e7ee;
+  --color-paper: #f4f6f9;
+  --color-teal: #0e9a96;
+  --color-teal-ink: #0b6b70;
+  --color-teal-soft: #e3f4f3;
+  --color-signal: #16a34a;
+  --color-rose: #b4234a;
+
+  /* Neutrals. */
   --color-surface: #ffffff;
-  --color-accent: #15803d;
-  --color-accent-deep: #166534;
-  --color-accent-soft: #dcfce7;
-  --color-accent-bright: #4ade80;
-  --color-danger: #9f1239;
-  --color-danger-soft: #fff1f2;
-  --color-on-accent: #ffffff;
-  --color-muted: #5b6472;
-  --color-line: #e7e5df;
-  --color-accent-ink: color-mix(in oklch, #15803d, black 25%);
-  --color-accent-btn: color-mix(in oklch, #15803d, black 15%);
-  --color-accent-btn-hover: color-mix(in oklch, #15803d, black 28%);
-  /* Dark surface system: ink -> ink-raised gradient, translucent cards, one highlight. */
+  --color-ink-hover: #1d2638;
+  --color-ink-3: #4a5566;
+  --color-muted-2: #8a95a5;
+  --color-field: #d3dae3;
+  --color-chip: #eef2f6;
+  --color-line-soft: #f1f4f7;
+  --color-line-strong: #c3ccd7;
+  --color-track: #e9eef3;
+  --color-subtle: #f8fafc;
+  --color-surface-2: #fbfcfd;
+
+  /* Teal family. */
+  --color-teal-tint: #e9f6f5;
+  --color-teal-line: #c6e8e5;
+  --color-teal-border: #9fd8d3;
+  --color-teal-hover: #b9e3e0;
+  --color-teal-deep: #0b5459;
+  --color-teal-bright: #5ee0d6;
+  --color-selection: #bfe9e5;
+
+  /* Status tones (TONES map): bg / fg / dot. */
+  --color-good-bg: #e7f6ec;
+  --color-good-fg: #15803d;
+  --color-good-dot: #16a34a;
+  --color-warn-bg: #fdf1dc;
+  --color-warn-fg: #8a4b00;
+  --color-warn-dot: #d98a14;
+  --color-bad-bg: #fdecef;
+  --color-bad-fg: #b4234a;
+  --color-bad-dot: #e04870;
+  --color-muted-bg: #eef2f6;
+  --color-muted-fg: #4a5566;
+  --color-muted-dot: #8a95a5;
+  --color-info-bg: #e3f4f3;
+  --color-info-fg: #0b6b70;
+  --color-info-dot: #0e9a96;
+
+  /* Rose and amber extras (alerts, invalid fields, callback notes). */
+  --color-rose-soft: #fdecef;
+  --color-rose-dot: #e04870;
+  --color-rose-line: #f5c6d1;
+  --color-rose-deep: #8f1c3b;
+  --color-rose-invalid: #e48aa0;
+  --color-amber: #d98a14;
+  --color-amber-ink: #8a4b00;
+  --color-amber-soft: #fdf1dc;
+  --color-amber-deep: #6d3c00;
+  --color-amber-bright: #f0b44c;
+  --color-green-soft: #e7f6ec;
+  --color-green-ink: #15803d;
+
+  /* Dark glass (toasts, unsaved-changes bar). */
+  --color-glass: rgba(12, 18, 32, 0.92);
+  --color-glass-text: #eef0f4;
+  --color-glass-muted: #aeb6c4;
+  --color-toast-bad: #f7a8bb;
+  --color-toast-info: #cfe9ff;
+
+  /* Radii used by the design. */
+  --radius-5: 5px;
+  --radius-6: 6px;
+  --radius-7: 7px;
+  --radius-8: 8px;
+  --radius-9: 9px;
+  --radius-10: 10px;
+  --radius-11: 11px;
+  --radius-12: 12px;
+  --radius-14: 14px;
+  --radius-16: 16px;
+  --radius-18: 18px;
+  --radius-20: 20px;
+  --radius-pill: 999px;
+
+  /* Shadows. */
+  --shadow-rest: 0 1px 2px rgba(12, 18, 32, 0.04);
+  --shadow-nav: 0 1px 2px rgba(12, 18, 32, 0.05);
+  --shadow-seg: 0 1px 2px rgba(12, 18, 32, 0.1);
+  --shadow-hover: 0 12px 28px -18px rgba(12, 18, 32, 0.3);
+  --shadow-drawer: 0 30px 80px -30px rgba(12, 18, 32, 0.45);
+  --shadow-dialog: 0 40px 100px -30px rgba(12, 18, 32, 0.55);
+  --shadow-toast: 0 20px 40px -16px rgba(12, 18, 32, 0.5);
+  --shadow-knob: 0 1px 3px rgba(12, 18, 32, 0.25);
+  --shadow-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --shadow-cta: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 10px 24px -10px rgba(12, 18, 32, 0.5);
+  --shadow-focus: 0 0 0 4px rgba(14, 154, 150, 0.14);
+
+  /* Animations (keyframes are declared below, outside @theme, so they always ship). */
+  --animate-mx-in: mxIn 0.25s ease both;
+  --animate-mx-toast: mxToast 0.25s ease both;
+  --animate-mx-sheet: mxSheet 0.25s ease both;
+  --animate-mx-fade: mxFade 0.2s ease both;
+  --animate-mx-spin: mxSpin 0.8s linear infinite;
+  --animate-mx-pulse: mxPulse 2.4s infinite;
+  --animate-mx-caret: mxCaret 1s step-end infinite;
+
+  /*
+   * Legacy names, kept so unmigrated components compile. Each points at the nearest new value;
+   * new code uses the names above.
+   */
+  --color-ink-deep: #080d18;
   --color-ink-raised: #151e35;
+  --color-accent: #0e9a96;
+  --color-accent-deep: #0b6b70;
+  --color-accent-soft: #e3f4f3;
+  --color-accent-bright: #7fe6dc;
+  --color-accent-ink: #0b6b70;
+  --color-accent-btn: #0c1220;
+  --color-accent-btn-hover: #1d2638;
+  --color-on-accent: #ffffff;
+  --color-danger: #b4234a;
+  --color-danger-soft: #fdecef;
   --color-dark-text: #eef0f4;
   --color-dark-muted: #aeb6c4;
   --color-dark-line: rgb(255 255 255 / 0.1);
-  --radius-card: 1.25rem;
-  --radius-inner: 1rem;
-  --font-display: var(--font-fraunces), Georgia, serif;
-  --font-body: var(--font-inter), -apple-system, sans-serif;
-  --shadow-lift: 0 12px 32px -12px rgb(12 18 32 / 0.14);
-  --shadow-card: 0 24px 60px -24px rgb(12 18 32 / 0.22);
+  --radius-card: 16px;
+  --radius-inner: 12px;
+  --font-display:
+    var(--font-schibsted), var(--font-noto-devanagari), var(--font-noto-kannada),
+    var(--font-noto-tamil), var(--font-noto-telugu), system-ui, sans-serif;
+  --font-body:
+    var(--font-schibsted), var(--font-noto-devanagari), var(--font-noto-kannada),
+    var(--font-noto-tamil), var(--font-noto-telugu), system-ui, sans-serif;
+  --shadow-lift: 0 12px 28px -18px rgba(12, 18, 32, 0.3);
+  --shadow-card: 0 1px 2px rgba(12, 18, 32, 0.04), 0 24px 48px -32px rgba(12, 18, 32, 0.25);
+}
+
+/*
+ * Keyframes from the design helmets. Where the site and the app disagree, the app value keeps the
+ * plain name and the site value gets a suffix naming the difference (mxIn8: 8px rise,
+ * mxPulse10: 10px ring, mxBar35: 0.35 floor).
+ */
+@keyframes mxIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mxIn8 {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mxToast {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mxPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(22, 163, 74, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+  }
+}
+@keyframes mxPulse10 {
+  0% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(22, 163, 74, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+  }
+}
+@keyframes mxPulseAmber {
+  0% {
+    box-shadow: 0 0 0 0 rgba(217, 138, 20, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(217, 138, 20, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 138, 20, 0);
+  }
+}
+@keyframes mxSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes mxBar {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@keyframes mxBar35 {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@keyframes mxSheet {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mxFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mxCaret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes mxMarquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes mxFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* Base styles from the design helmets. Public pages are 16px; the app shell sets 14px. */
+@layer base {
+  html {
+    scroll-behavior: auto;
+  }
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: var(--color-teal-ink);
+    text-decoration: none;
+  }
+  a:hover {
+    color: var(--color-ink);
+  }
+  ::selection {
+    background: var(--color-selection);
+  }
 }
 
 @layer components {
@@ -39,10 +325,10 @@
     @apply py-16 md:py-24 lg:py-28;
   }
   .mx-eyebrow {
-    @apply text-accent-ink text-xs font-semibold tracking-[0.16em] uppercase;
+    @apply text-teal-ink text-xs font-semibold tracking-[0.16em] uppercase;
   }
   .mx-h2 {
-    @apply font-display mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl;
+    @apply font-sans mt-4 text-4xl leading-[1.05] font-medium tracking-[-0.03em] text-balance sm:text-5xl;
   }
   .mx-lede {
     @apply text-muted mt-5 max-w-xl text-lg leading-relaxed;
@@ -51,7 +337,7 @@
     @apply text-accent-bright;
   }
   .mx-dark .mx-lede {
-    @apply text-dark-muted;
+    @apply text-glass-muted;
   }
 
   /* Buttons: one height (48px), one radius, shared focus ring. */
@@ -59,18 +345,18 @@
     @apply inline-flex min-h-12 items-center justify-center rounded-full px-7 text-[0.95rem] font-medium transition-colors duration-150 motion-reduce:transition-none;
   }
   .mx-btn-primary {
-    @apply bg-accent-btn text-on-accent hover:bg-accent-btn-hover;
+    @apply bg-ink shadow-highlight hover:bg-ink-hover text-white hover:text-white;
   }
   .mx-btn-secondary {
-    @apply border-ink/20 hover:border-ink/50 hover:bg-ink/[0.03] border;
+    @apply border-field hover:bg-paper text-ink hover:text-ink border;
   }
   .mx-dark .mx-btn-secondary {
-    @apply border-white/25 hover:border-white/60 hover:bg-white/[0.06];
+    @apply border-white/25 text-white hover:border-white/60 hover:bg-white/[0.06] hover:text-white;
   }
 
   /* Cards: light and dark variants share radius, border weight and hover lift. */
   .mx-card {
-    @apply rounded-card border-line bg-surface border shadow-[0_1px_2px_rgb(12_18_32/0.04)] transition-[box-shadow,transform] duration-200 motion-reduce:transition-none;
+    @apply rounded-card border-line bg-surface shadow-rest border transition-[box-shadow,transform] duration-200 motion-reduce:transition-none;
   }
   .mx-card-hover:hover {
     @apply shadow-lift -translate-y-0.5 motion-reduce:translate-y-0;
@@ -84,24 +370,24 @@
   }
   .mx-card-dark:hover {
     @apply -translate-y-0.5 motion-reduce:translate-y-0;
-    border-color: rgb(74 222 128 / 0.35);
+    border-color: rgb(127 230 220 / 0.35);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.09),
       0 18px 40px -18px rgb(0 0 0 / 0.6);
   }
   .mx-card-ring {
-    border-color: rgb(74 222 128 / 0.45);
+    border-color: rgb(127 230 220 / 0.45);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.08),
-      0 0 0 1px rgb(74 222 128 / 0.18),
-      0 12px 36px -16px rgb(74 222 128 / 0.25);
+      0 0 0 1px rgb(127 230 220 / 0.18),
+      0 12px 36px -16px rgb(14 154 150 / 0.3);
   }
 
-  /* Dark band: ink slightly lifted at the top with a faint green bloom. */
+  /* Dark band: ink slightly lifted at the top with a faint teal bloom. */
   .mx-dark {
-    color: var(--color-dark-text);
+    color: var(--color-glass-text);
     background:
-      radial-gradient(60% 55% at 50% 0%, rgb(74 222 128 / 0.07), transparent 70%),
+      radial-gradient(60% 55% at 50% 0%, rgb(14 154 150 / 0.14), transparent 70%),
       linear-gradient(
         180deg,
         var(--color-ink-raised) 0%,
@@ -128,7 +414,7 @@
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-teal);
   outline-offset: 2px;
 }
 .mx-dark :focus-visible {
@@ -139,24 +425,5 @@
     opacity: 1;
     transform: none;
     transition: none;
-  }
-}
-
-html {
-  scroll-behavior: smooth;
-}
-body {
-  background: var(--color-paper);
-  color: var(--color-ink);
-  font-family: var(--font-body);
-  -webkit-font-smoothing: antialiased;
-}
-::selection {
-  background: var(--color-accent-soft);
-  color: var(--color-ink);
-}
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
   }
 }
