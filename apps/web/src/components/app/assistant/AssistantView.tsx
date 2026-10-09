@@ -357,7 +357,7 @@ export function AssistantView({
                     key={i}
                     role="group"
                     aria-label={`Question ${i + 1}`}
-                    className="border-line bg-subtle grid grid-cols-[minmax(0,1fr)_auto] items-start gap-[8px] rounded-12 border p-[12px]"
+                    className="border-line bg-subtle grid grid-cols-[minmax(0,1fr)_auto] items-start gap-[8px] rounded-12 border p-[12px] max-sm:grid-cols-1"
                   >
                     <div className="flex flex-col gap-[6px]">
                       <Input
@@ -395,6 +395,7 @@ export function AssistantView({
                         size={30}
                         onClick={() => up({ faq: d.faq.filter((_, j) => j !== i) })}
                         aria-label={`Remove question ${i + 1}`}
+                        className="max-sm:justify-self-end"
                       >
                         Remove
                       </Button>
