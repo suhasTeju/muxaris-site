@@ -35,6 +35,7 @@ import {
   TableGroup,
   TableHead,
   TableRow,
+  TableScroll,
   Tabs,
   Textarea,
   badgeFor,
@@ -82,6 +83,7 @@ export function UiGallery({
   const [modal, setModal] = useState<"" | "dialog" | "drawer">(initialModal ?? "");
   const [tab, setTab] = useState("open");
   const [seg, setSeg] = useState("day");
+  const [section, setSection] = useState("greeting");
   const [on, setOn] = useState(true);
   useEffect(() => {
     if (!toasts) return;
@@ -110,10 +112,7 @@ export function UiGallery({
         }
       />
 
-      <div
-        className="grid gap-[14px]"
-        style={{ gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))" }}
-      >
+      <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard icon={Phone} label="Calls today" value="9" hint="Average 84s" />
         <KpiCard
           icon={CalendarCheck}
@@ -144,41 +143,37 @@ export function UiGallery({
         />
       </div>
 
-      <div className="grid items-start gap-[14px] lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-[14px] lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <Card className="overflow-hidden">
           <SectionHeader
             title="Today's appointments"
             link={{ href: "#", label: "All appointments" }}
           />
-          <div className="overflow-x-auto">
-            <div className="min-w-[560px]">
-              <TableHead columns={COLS}>
-                <span>Time</span>
-                <span>Patient</span>
-                <span>Service</span>
-                <span>Status</span>
-              </TableHead>
-              <TableGroup>Friday, 9 October</TableGroup>
-              {today.map((a) => {
-                const b = badgeFor("appt", a.status);
-                return (
-                  <TableRow key={a.id} href="#" columns={COLS} className="py-[12px]">
-                    <span className="text-ink-2 font-mono text-[12.5px]">
-                      {istTime(a.startsAt)}
-                    </span>
-                    <span className="truncate font-medium">{a.patient?.name ?? "New caller"}</span>
-                    <span className="text-ink-3 truncate">
-                      {services.find((s) => s.id === a.serviceId)?.name} ·{" "}
-                      {doctors.find((d) => d.id === a.doctorId)?.name}
-                    </span>
-                    <span>
-                      <Badge tone={b.tone}>{b.label}</Badge>
-                    </span>
-                  </TableRow>
-                );
-              })}
-            </div>
-          </div>
+          <TableScroll minWidth={560}>
+            <TableHead columns={COLS}>
+              <span>Time</span>
+              <span>Patient</span>
+              <span>Service</span>
+              <span>Status</span>
+            </TableHead>
+            <TableGroup>Friday, 9 October</TableGroup>
+            {today.map((a) => {
+              const b = badgeFor("appt", a.status);
+              return (
+                <TableRow key={a.id} href="#" columns={COLS} className="py-[12px]">
+                  <span className="text-ink-2 font-mono text-[12.5px]">{istTime(a.startsAt)}</span>
+                  <span className="truncate font-medium">{a.patient?.name ?? "New caller"}</span>
+                  <span className="text-ink-3 truncate">
+                    {services.find((s) => s.id === a.serviceId)?.name} ·{" "}
+                    {doctors.find((d) => d.id === a.doctorId)?.name}
+                  </span>
+                  <span>
+                    <Badge tone={b.tone}>{b.label}</Badge>
+                  </span>
+                </TableRow>
+              );
+            })}
+          </TableScroll>
           <div className="h-[10px]" />
         </Card>
 
@@ -190,6 +185,18 @@ export function UiGallery({
             items={[
               { id: "open", label: "Open", count: 3 },
               { id: "done", label: "Done", count: 2 },
+            ]}
+          />
+          <Tabs
+            aria-label="Assistant sections"
+            value={section}
+            onChange={setSection}
+            items={[
+              { id: "greeting", label: "Greeting" },
+              { id: "voice", label: "Voice and languages" },
+              { id: "faq", label: "Questions", count: 3 },
+              { id: "knowledge", label: "Clinic knowledge" },
+              { id: "handoff", label: "Handoff" },
             ]}
           />
           <Segmented
