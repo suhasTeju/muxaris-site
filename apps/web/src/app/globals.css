@@ -314,6 +314,14 @@
   ::selection {
     background: var(--color-selection);
   }
+  /* In the base layer so a component's focus utility (e.g. the field ring) can replace it. */
+  :focus-visible {
+    outline: 2px solid var(--color-teal);
+    outline-offset: 2px;
+  }
+  .mx-dark :focus-visible {
+    outline-color: var(--color-accent-bright);
+  }
 }
 
 @layer components {
@@ -413,13 +421,6 @@
   }
 }
 
-:focus-visible {
-  outline: 2px solid var(--color-teal);
-  outline-offset: 2px;
-}
-.mx-dark :focus-visible {
-  outline-color: var(--color-accent-bright);
-}
 @media (prefers-reduced-motion: reduce) {
   .mx-reveal {
     opacity: 1;
