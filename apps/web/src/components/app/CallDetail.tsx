@@ -1,27 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
+import { ArrowRight, UserPen } from "lucide-react";
 import type { Call, CallTurn, Callback } from "@muxaris/shared";
-import { formatDateTime, formatDuration } from "@/lib/dashboard";
-import { Badge, CallStatusBadge, OutcomeBadge } from "./Badge";
+import { Badge, BackLink, Card, badgeFor } from "@/components/ui";
+import { formatDateTime, formatTime, languageLabel } from "@/lib/dashboard";
 import { AnalysisCard, PURGED_NOTE } from "./AnalysisCard";
-import { languageLabel } from "./CallList";
 import { CallPlayer } from "./CallPlayer";
 import { OutcomeEditor } from "./OutcomeEditor";
 import { SyncedTranscript } from "./SyncedTranscript";
+import { StatusBadge } from "./core/StatusBadge";
+import { formatDateLong, formatDur } from "./core/format";
 
-/** Owns the call row so the player, analysis and outcome editor stay in step after polls and edits. */
+function Dot() {
+  return <span aria-hidden className="bg-line-strong size-[3px] shrink-0 rounded-full" />;
+}
+
+/**
+ * Call detail from AppCallDetail.dc.html. Owns the call row so the player, analysis and outcome
+ * editor stay in step after polls and edits.
+ */
 export function CallDetail({
   initialCall,
   turns,
   callbacks,
   tz,
+  patientName,
 }: {
   initialCall: Call;
   turns: CallTurn[];
   callbacks: Callback[];
   tz: string;
+  /** The linked patient's name, when the call is matched to one. */
+  patientName?: string | null;
 }) {
   const [call, setCall] = useState(initialCall);
   const [currentMs, setCurrentMs] = useState<number | null>(null);
@@ -36,92 +48,123 @@ export function CallDetail({
     void audio.play()?.catch(() => undefined);
   }
 
+  const test = call.channel === "browser";
+  const purged = call.metrics?.["purgedAt"] !== undefined;
+  const masked = call.callerPhoneMasked ?? "Unknown caller";
+  const who = test ? "Test call" : patientName ? `${patientName} · ${masked}` : masked;
+  const status = badgeFor("status", call.status);
+  const hasTranscript = !purged && turns.length > 0;
+  const meta = [
+    <span key="dur" className="font-mono text-[12.5px]">
+      {formatDur(call.durationS)}
+    </span>,
+    <span key="lang">{call.languageDetected ? languageLabel(call.languageDetected) : "–"}</span>,
+    <span key="channel">{test ? "Browser" : "Phone"}</span>,
+    <span key="who">{who}</span>,
+  ];
+
   return (
-    <div className="max-w-6xl px-4 py-8 sm:px-8">
-      <Link href="/app/calls" className="text-muted text-sm underline-offset-4 hover:underline">
-        ← All calls
-      </Link>
-      <h1 className="font-display mt-2 text-3xl">{formatDateTime(call.startedAt, tz)}</h1>
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-        <OutcomeBadge outcome={call.outcome} />
-        {call.outcomeSource === "staff" ? <Badge tone="muted">Edited by staff</Badge> : null}
-        <CallStatusBadge status={call.status} />
-        <span className="text-muted">{formatDuration(call.durationS)}</span>
-        <span className="text-muted">{languageLabel(call.languageDetected)}</span>
-        <span className="text-muted">
-          {call.channel === "browser" ? "Test call" : (call.callerPhoneMasked ?? "Phone call")}
-        </span>
+    <div className="animate-mx-in flex flex-col gap-[18px]">
+      <BackLink href="/app/calls">All calls</BackLink>
+      <div className="flex flex-col gap-[10px]">
+        <h1 className="m-0 text-[26px] leading-[1.15] font-semibold tracking-[-0.03em]">
+          {formatDateLong(call.startedAt, tz)}, {formatTime(call.startedAt, tz)}
+        </h1>
+        <div className="text-muted flex flex-wrap items-center gap-[8px] text-[13.5px]">
+          <StatusBadge kind="outcome" value={call.outcome} size={24} />
+          {call.outcomeSource === "staff" ? (
+            <span className="bg-chip text-ink-3 inline-flex h-[24px] items-center gap-[6px] rounded-7 px-[9px] text-[12.5px] font-medium">
+              <UserPen size={12} aria-hidden />
+              Edited by staff
+            </span>
+          ) : null}
+          <Badge tone={status.tone} variant="outline" size={24} className="border-line">
+            {status.label}
+          </Badge>
+          {meta.map((m) => (
+            <Fragment key={m.key}>
+              <Dot />
+              {m}
+            </Fragment>
+          ))}
+        </div>
       </div>
 
-      {call.recordingStatus !== "none" ? (
-        <div className="mt-6">
-          <CallPlayer
-            callId={call.id}
-            recordingStatus={call.recordingStatus}
-            audioRef={audioRef}
-            onTimeUpdate={setCurrentMs}
-            onCall={onCall}
-          />
-        </div>
-      ) : null}
-
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <section aria-labelledby="transcript-h">
-          <h2 id="transcript-h" className="font-display mb-3 text-xl">
-            Transcript
-          </h2>
-          {call.metrics?.["purgedAt"] !== undefined ? (
-            <p className="text-muted font-display italic">{PURGED_NOTE}</p>
-          ) : (
+      <div className="grid items-start gap-[14px] lg:grid-cols-[minmax(0,1.5fr)_minmax(300px,1fr)]">
+        <div className="flex min-w-0 flex-col gap-[14px]">
+          {!purged ? (
+            <CallPlayer
+              callId={call.id}
+              recordingStatus={call.recordingStatus}
+              durationS={call.durationS}
+              audioRef={audioRef}
+              onTimeUpdate={setCurrentMs}
+              onCall={onCall}
+            />
+          ) : null}
+          <Card aria-labelledby="transcript-h" className="overflow-hidden">
+            <div className="border-chip flex items-center justify-between border-b px-[18px] py-[16px]">
+              <h2 id="transcript-h" className="m-0 text-[15px] font-semibold">
+                Transcript
+              </h2>
+              {hasTranscript ? (
+                <span className="text-muted text-[12.5px]">Click a line to jump to it</span>
+              ) : null}
+            </div>
             <SyncedTranscript
-              turns={turns}
+              turns={purged ? [] : turns}
+              emptyNote={purged ? PURGED_NOTE : undefined}
               callStartedAt={call.startedAt}
               recorderT0Ms={call.metrics?.["recorderT0Ms"] ?? 0}
               currentTimeMs={currentMs}
               onSeek={seek}
             />
-          )}
-        </section>
-        <div className="flex flex-col gap-6">
-          <AnalysisCard call={call} callbackCount={callbacks.length} onCall={onCall} />
+          </Card>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-[14px] lg:sticky lg:top-[84px]">
+          <AnalysisCard
+            call={call}
+            callbackCount={callbacks.length}
+            callbackReason={callbacks[0]?.reason}
+            onCall={onCall}
+          />
           <OutcomeEditor call={call} onSaved={onCall} />
           {callbacks.length > 0 ? (
-            <section
-              aria-labelledby="linked-cb-h"
-              className="border-line bg-surface rounded-card border p-5"
-            >
-              <h2 id="linked-cb-h" className="font-display mb-3 text-lg">
+            <Card aria-labelledby="linked-cb-h" className="flex flex-col gap-[10px] p-[18px]">
+              <h2 id="linked-cb-h" className="m-0 text-[15px] font-semibold">
                 Callbacks from this call
               </h2>
-              <ul className="flex flex-col gap-3">
+              <ul className="m-0 flex list-none flex-col gap-[10px] p-0">
                 {callbacks.map((cb) => (
-                  <li key={cb.id} className="text-sm">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="tabular-nums">{cb.phoneMasked}</span>
-                      <Badge tone={cb.status === "open" ? "warn" : "good"}>
-                        {cb.status === "open" ? "Open" : "Done"}
-                      </Badge>
+                  <li
+                    key={cb.id}
+                    className="border-chip bg-subtle flex flex-col gap-[6px] rounded-12 border p-[12px]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[13px]">{cb.phoneMasked}</span>
+                      <StatusBadge kind="cb" value={cb.status} />
                     </div>
-                    <p className="text-muted">{cb.reason}</p>
+                    <span className="text-ink-2 text-[13.5px] leading-[1.5]">{cb.reason}</span>
                   </li>
                 ))}
               </ul>
               <Link
                 href="/app/callbacks"
-                className="text-accent-deep mt-3 inline-block text-sm underline-offset-4 hover:underline"
+                className="flex items-center gap-[6px] text-[13.5px] font-medium"
               >
                 Open callback queue
+                <ArrowRight size={13} aria-hidden />
               </Link>
-            </section>
+            </Card>
           ) : null}
+          <p className="text-muted m-0 px-[4px] text-[12.5px] leading-[1.5]">
+            {test ? "Test call" : "Phone call"}
+            {call.endedAt ? ` · ended ${formatDateTime(call.endedAt, tz)}` : " · in progress"}
+            {call.outcomeSource === "worker" ? " · outcome set from the call analysis" : ""}
+          </p>
         </div>
       </div>
-
-      <p className="text-muted mt-10 text-xs">
-        {call.channel === "browser" ? "Test call" : "Phone call"}
-        {call.endedAt ? ` · ended ${formatDateTime(call.endedAt, tz)}` : " · in progress"}
-        {call.outcomeSource === "worker" ? " · outcome set from the call analysis" : ""}
-      </p>
     </div>
   );
 }

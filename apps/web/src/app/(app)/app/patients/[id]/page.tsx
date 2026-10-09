@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Clinic, Doctor, Notification, PatientDetail, Service } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
@@ -27,21 +26,13 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
     ),
   ]);
   return (
-    <div className="max-w-4xl px-4 py-8 sm:px-8">
-      <Link
-        href="/app/patients"
-        className="text-muted mb-4 inline-block text-sm underline-offset-4 hover:underline"
-      >
-        ← Patients
-      </Link>
-      <PatientDetailView
-        key={detail.patient.id}
-        detail={detail}
-        doctors={doctors.doctors}
-        services={services.services}
-        notifications={notifications.notifications}
-        tz={clinic.timezone}
-      />
-    </div>
+    <PatientDetailView
+      key={detail.patient.id}
+      detail={detail}
+      doctors={doctors.doctors}
+      services={services.services}
+      notifications={notifications.notifications}
+      tz={clinic.timezone}
+    />
   );
 }

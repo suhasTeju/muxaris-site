@@ -21,8 +21,12 @@ describe("RevealPhone", () => {
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith("/v1/patients/pat_1/reveal-phone", { method: "POST" }),
     );
-    const link = (await screen.findByRole("link", { name: "+919876543210" })) as HTMLAnchorElement;
+    const link = (await screen.findByRole("link", {
+      name: "+91 98765 43210",
+    })) as HTMLAnchorElement;
     expect(link.href).toBe("tel:+919876543210");
+    expect(screen.getByText("Visible for 60 seconds. This view is logged.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /show number/i })).toBeNull();
   });
 
   it("hides the number again after 60 seconds", async () => {
@@ -33,12 +37,13 @@ describe("RevealPhone", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(screen.getByRole("link", { name: "+919876543210" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "+91 98765 43210" })).toBeTruthy();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.getByText("+91 •••• ••3210")).toBeTruthy();
+    expect(screen.queryByText("Visible for 60 seconds. This view is logged.")).toBeNull();
     vi.useRealTimers();
   });
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Notification, PatientDetail } from "@muxaris/shared";
 
@@ -81,7 +81,49 @@ describe("PatientDetailView", () => {
     expect(screen.getByText(/Cleaning/)).toBeTruthy();
     expect(screen.getByText(/Dr\. Rao/)).toBeTruthy();
     expect(screen.getByText("Booked a cleaning")).toBeTruthy();
-    expect(screen.getByText("r•••@x.com")).toBeTruthy();
-    expect(screen.getByText("Confirmation")).toBeTruthy();
+    expect(screen.getByText(/Confirmation/)).toBeTruthy();
+    expect(screen.getByText("· Email")).toBeTruthy();
+    expect(screen.getByText("Sent")).toBeTruthy();
+    expect(screen.getByText("No email on file")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Booked a cleaning/ }).getAttribute("href")).toBe(
+      "/app/calls/call_1",
+    );
+  });
+
+  it("says when there are no visits, calls or messages", () => {
+    render(
+      <PatientDetailView
+        detail={{ ...detail, appointments: [], calls: [] }}
+        doctors={[]}
+        services={[]}
+        notifications={[]}
+        tz="Asia/Kolkata"
+      />,
+    );
+    expect(screen.getByText("No visits yet.")).toBeTruthy();
+    expect(screen.getByText("No calls yet.")).toBeTruthy();
+    expect(screen.getByText("No messages yet.")).toBeTruthy();
+  });
+
+  it("shows the date of birth and notes, and swaps them for the form on Edit", () => {
+    render(
+      <PatientDetailView
+        detail={{
+          ...detail,
+          patient: { ...detail.patient, dob: "1994-03-12", notes: "Prefers evenings." },
+        }}
+        doctors={[]}
+        services={[]}
+        notifications={[]}
+        tz="Asia/Kolkata"
+      />,
+    );
+    expect(screen.getByText("12 Mar 1994")).toBeTruthy();
+    expect(screen.getByText("Prefers evenings.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Ravi");
+    expect(screen.queryByText("12 Mar 1994")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("12 Mar 1994")).toBeTruthy();
   });
 });

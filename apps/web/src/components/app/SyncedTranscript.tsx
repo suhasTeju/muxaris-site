@@ -1,22 +1,53 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import { Check, TriangleAlert } from "lucide-react";
 import type { CallTurn } from "@muxaris/shared";
+import { cn } from "@/components/ui";
+import { formatClock } from "./core/format";
 
 interface Row {
   turn: CallTurn;
   offsetMs: number;
 }
 
-function clock(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+export const NO_TRANSCRIPT = "No transcript was recorded for this call.";
+
+/** Offsets on the recording clock: never negative, never going backwards in seq order. */
+function toRows(turns: CallTurn[], callStartedAt: string, recorderT0Ms: number): Row[] {
+  const base = Date.parse(callStartedAt) + recorderT0Ms;
+  const rows: Row[] = [];
+  let prev = 0;
+  for (const turn of [...turns].sort((a, b) => a.seq - b.seq)) {
+    prev = Math.max(prev, Date.parse(turn.startedAt) - base || 0);
+    rows.push({ turn, offsetMs: prev });
+  }
+  return rows;
+}
+
+function ToolChip({ turn }: { turn: CallTurn }) {
+  const failed = turn.toolStatus === "error";
+  const Icon = failed ? TriangleAlert : Check;
+  return (
+    <li
+      data-kind="tool"
+      className={cn(
+        "inline-flex h-[28px] items-center gap-[8px] self-center rounded-pill border px-[12px] text-[12.5px]",
+        failed ? "border-rose-line bg-rose-soft text-rose" : "border-line bg-subtle text-ink-3",
+      )}
+    >
+      <Icon size={13} className="shrink-0" />
+      Assistant used <span className="font-mono text-[12px]">{turn.toolName}</span>
+      {turn.toolStatus ? <span className="opacity-80">· {failed ? "failed" : "done"}</span> : null}
+    </li>
+  );
 }
 
 /**
- * Transcript whose current turn follows the audio player. Each spoken turn is a button that seeks
- * the player to that turn; tool calls are shown as small non-interactive chips between turns.
- * `currentTimeMs` is null until playback has started, so nothing is highlighted before then.
+ * Transcript whose current turn follows the audio player (AppCallDetail.dc.html). Each spoken turn
+ * is a button that seeks the player to that turn; tool calls are small non-interactive chips
+ * between turns. `currentTimeMs` is null until playback has started, so nothing is highlighted
+ * before then. Renders the inside of the Transcript card: the empty note, or the turns.
  */
 export function SyncedTranscript({
   turns,
@@ -24,6 +55,7 @@ export function SyncedTranscript({
   recorderT0Ms = 0,
   currentTimeMs,
   onSeek,
+  emptyNote = NO_TRANSCRIPT,
 }: {
   turns: CallTurn[];
   callStartedAt: string;
@@ -31,18 +63,13 @@ export function SyncedTranscript({
   recorderT0Ms?: number;
   currentTimeMs: number | null;
   onSeek: (ms: number) => void;
+  /** Shown instead of the turns when there are none (the purge note, for example). */
+  emptyNote?: string;
 }) {
-  const rows = useMemo<Row[]>(() => {
-    const base = Date.parse(callStartedAt) + recorderT0Ms;
-    let prev = 0;
-    return [...turns]
-      .sort((a, b) => a.seq - b.seq)
-      .map((turn) => ({
-        turn,
-        // Never negative, never going backwards in seq order.
-        offsetMs: (prev = Math.max(prev, Date.parse(turn.startedAt) - base || 0)),
-      }));
-  }, [turns, callStartedAt, recorderT0Ms]);
+  const rows = useMemo(
+    () => toRows(turns, callStartedAt, recorderT0Ms),
+    [turns, callStartedAt, recorderT0Ms],
+  );
 
   // The current turn is the last spoken turn that has started: offsetMs <= t < next offsetMs.
   let currentId: string | null = null;
@@ -63,46 +90,56 @@ export function SyncedTranscript({
 
   if (rows.length === 0) {
     return (
-      <p className="text-muted font-display italic">No transcript was recorded for this call.</p>
+      <>
+        <p className="text-muted m-0 px-[18px] py-[28px] text-center text-[14.5px] italic">
+          {emptyNote}
+        </p>
+        <div aria-hidden className="p-[18px]" />
+      </>
     );
   }
 
   return (
-    <ol aria-label="Transcript" className="flex flex-col gap-2">
+    <ol aria-label="Transcript" className="m-0 flex list-none flex-col gap-[12px] p-[18px]">
       {rows.map(({ turn, offsetMs }) => {
-        if (turn.role === "tool") {
-          return (
-            <li key={turn.id} data-kind="tool" className="text-muted self-center text-xs">
-              <span className="border-line bg-surface inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1">
-                Assistant used <code>{turn.toolName}</code>
-                {turn.toolStatus ? (
-                  <span
-                    className={turn.toolStatus === "error" ? "text-danger" : "text-accent-deep"}
-                  >
-                    {turn.toolStatus === "error" ? "failed" : "done"}
-                  </span>
-                ) : null}
-              </span>
-            </li>
-          );
-        }
+        if (turn.role === "tool") return <ToolChip key={turn.id} turn={turn} />;
         const current = turn.id === currentId;
-        const assistant = turn.role === "assistant";
+        const caller = turn.role === "user";
         return (
-          <li key={turn.id} className={`flex ${assistant ? "justify-start" : "justify-end"}`}>
+          <li key={turn.id} className={cn("flex max-w-[80%]", caller ? "self-end" : "self-start")}>
             <button
               type="button"
               ref={current ? currentEl : undefined}
               aria-current={current ? "true" : undefined}
               onClick={() => onSeek(offsetMs)}
-              className={`max-w-[85%] rounded-2xl px-4 py-2 text-left text-[15px] motion-safe:transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] ${
-                assistant ? "bg-accent-soft" : "border-line bg-surface border"
-              } ${current ? "ring-accent ring-2" : "hover:brightness-95"}`}
+              className={cn(
+                "flex cursor-pointer flex-col gap-[5px] border-0 bg-transparent p-0 text-left",
+                caller ? "items-end" : "items-start",
+              )}
             >
-              <span className="text-muted block text-xs">
-                {assistant ? "Assistant" : "Caller"} · {clock(offsetMs)}
+              <span
+                className={cn(
+                  "font-mono text-[11px] tracking-[0.05em]",
+                  caller ? "text-muted" : "text-teal-ink",
+                )}
+              >
+                {caller ? "Caller" : "Assistant"} · {formatClock(offsetMs / 1000)}
               </span>
-              {turn.text}
+              <span
+                className={cn(
+                  "text-ink border px-[14px] py-[11px] text-[14.5px] leading-[1.5] transition-all duration-200 ease-[ease]",
+                  caller
+                    ? "rounded-[14px_14px_4px_14px] bg-white"
+                    : "rounded-[14px_14px_14px_4px] bg-teal-tint",
+                  current
+                    ? "border-teal shadow-[0_0_0_3px_rgba(14,154,150,0.15)]"
+                    : caller
+                      ? "border-line"
+                      : "border-teal-line",
+                )}
+              >
+                {turn.text}
+              </span>
             </button>
           </li>
         );

@@ -58,6 +58,17 @@ describe("PatientForm", () => {
     );
   });
 
+  it("asks for a valid Indian mobile number before posting", async () => {
+    render(<PatientForm mode="create" onSaved={() => undefined} onCancel={() => undefined} />);
+    fireEvent.change(screen.getByLabelText(/phone/i), { target: { value: "12345" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(
+      await screen.findByText("Enter a 10-digit Indian mobile number, for example 98765 43210."),
+    ).toBeTruthy();
+    expect(screen.getByLabelText(/phone/i).getAttribute("aria-invalid")).toBe("true");
+    expect(api).not.toHaveBeenCalled();
+  });
+
   it("surfaces a duplicate-phone error", async () => {
     api.mockRejectedValue(
       Object.assign(new Error("a patient with this phone already exists"), { status: 409 }),

@@ -1,15 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { Check } from "lucide-react";
 import { CALL_OUTCOMES, type Call } from "@muxaris/shared";
-import { useApi } from "@/lib/api-client";
+import { Button, Card, Select, useToast } from "@/components/ui";
 import { OUTCOME_LABEL } from "@/lib/dashboard";
-import { Badge } from "./Badge";
-import { fieldClass, primaryBtn } from "./Modal";
+import { useCoreApi } from "./core/api";
 
-/** Staff correction of the outcome the assistant (or the analysis worker) assigned. */
+/**
+ * Staff correction of the outcome the assistant (or the analysis worker) assigned. The "Edited by
+ * staff" chip sits in the page header next to the outcome badge.
+ */
 export function OutcomeEditor({ call, onSaved }: { call: Call; onSaved: (call: Call) => void }) {
-  const api = useApi();
+  const api = useCoreApi();
+  const { toast } = useToast();
   const [value, setValue] = useState<string>(call.outcome ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +24,9 @@ export function OutcomeEditor({ call, onSaved }: { call: Call; onSaved: (call: C
     if (value === (seen ?? "")) setValue(call.outcome ?? "");
     setSeen(call.outcome);
   }
-  const changed = value !== "" && value !== call.outcome;
+  // Saving the outcome already shown confirms it as staff-checked, as the design allows; the poll
+  // follow above keeps the select from holding a stale value.
+  const canSave = value !== "" && !busy;
 
   async function save() {
     setBusy(true);
@@ -33,6 +39,7 @@ export function OutcomeEditor({ call, onSaved }: { call: Call; onSaved: (call: C
       });
       onSaved(r.call);
       setSaved(true);
+      toast("Outcome saved.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the outcome");
     } finally {
@@ -41,18 +48,16 @@ export function OutcomeEditor({ call, onSaved }: { call: Call; onSaved: (call: C
   }
 
   return (
-    <section aria-labelledby="outcome-h" className="border-line bg-surface rounded-card border p-5">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 id="outcome-h" className="font-display text-lg">
-          Call outcome
-        </h2>
-        {call.outcomeSource === "staff" ? <Badge tone="muted">Edited by staff</Badge> : null}
-      </div>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex min-w-40 flex-1 flex-col gap-1 text-sm">
-          <span className="text-muted">Outcome</span>
-          <select
-            className={fieldClass}
+    <Card aria-labelledby="outcome-h" className="flex flex-col gap-[12px] p-[18px]">
+      <h2 id="outcome-h" className="m-0 text-[15px] font-semibold">
+        Call outcome
+      </h2>
+      <div className="flex gap-[8px]">
+        <label className="flex min-w-0 flex-1">
+          <span className="sr-only">Outcome</span>
+          <Select
+            size={38}
+            className="flex-1"
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
@@ -69,22 +74,28 @@ export function OutcomeEditor({ call, onSaved }: { call: Call; onSaved: (call: C
                 {OUTCOME_LABEL[o]}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
-        <button type="button" className={primaryBtn} onClick={save} disabled={!changed || busy}>
+        <Button
+          size={38}
+          className="rounded-9 text-[13.5px] shadow-none"
+          onClick={save}
+          disabled={!canSave}
+        >
           {busy ? "Saving…" : "Save outcome"}
-        </button>
+        </Button>
       </div>
       {error ? (
-        <p role="alert" className="text-danger mt-3 text-sm">
+        <p role="alert" className="text-rose m-0 text-[13px]">
           {error}
         </p>
       ) : null}
       {saved ? (
-        <p role="status" className="text-muted mt-3 text-sm">
+        <p role="status" className="text-green-ink m-0 flex items-center gap-[6px] text-[13px]">
+          <Check size={13} aria-hidden />
           Outcome saved.
         </p>
       ) : null}
-    </section>
+    </Card>
   );
 }

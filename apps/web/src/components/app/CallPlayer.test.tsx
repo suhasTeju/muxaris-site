@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api";
 const api = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api-client", () => ({ useApi: () => api }));
 
-import { CallPlayer } from "./CallPlayer";
+import { CallPlayer, waveBars } from "./CallPlayer";
 
 beforeEach(() => {
   // jsdom has no media pipeline.
@@ -37,9 +37,48 @@ describe("CallPlayer", () => {
     const audio = container.querySelector("audio")!;
     expect(audio.getAttribute("src")).toBe("https://s3.example/rec.mp3?sig=1");
     expect(audio.getAttribute("preload")).toBe("none");
-    expect(audio.hasAttribute("controls")).toBe(true);
+    // The design draws its own controls over a hidden element.
+    expect(audio.hasAttribute("controls")).toBe(false);
+    expect(screen.getByRole("button", { name: "Play" })).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "Seek" })).toBeTruthy();
     expect(api).toHaveBeenCalledTimes(1);
     expect(api).toHaveBeenCalledWith("/v1/calls/c1/recording-url");
+  });
+
+  it("shows the call length on the clock before the audio loads", async () => {
+    api.mockResolvedValue({ url: "https://s3.example/rec.mp3", expiresInS: 600 });
+    render(<CallPlayer {...props("ready", { durationS: 78 })} />);
+    expect(await screen.findByText("0:00 / 1:18")).toBeTruthy();
+  });
+
+  it("plays and pauses through the design's button", async () => {
+    api.mockResolvedValue({ url: "https://s3.example/rec.mp3", expiresInS: 600 });
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const audioRef: { current: HTMLAudioElement | null } = { current: null };
+    const { container } = render(<CallPlayer {...props("ready", { audioRef })} />);
+    await waitFor(() => expect(container.querySelector("audio")).not.toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    expect(play).toHaveBeenCalledTimes(1);
+    fireEvent.play(container.querySelector("audio")!);
+    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+  });
+
+  it("offers Retry when the URL request fails", async () => {
+    api
+      .mockRejectedValueOnce(new ApiError(500, "internal", "boom"))
+      .mockResolvedValueOnce({ url: "https://s3.example/rec.mp3", expiresInS: 600 });
+    const { container } = render(<CallPlayer {...props("ready")} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("Recording unavailable");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(container.querySelector("audio")).not.toBeNull());
+  });
+
+  it("draws 48 bars, teal up to the playback position", () => {
+    const bars = waveBars(0.5);
+    expect(bars).toHaveLength(48);
+    expect(bars.filter((b) => b.played)).toHaveLength(24);
+    expect(bars[0]!.h).toBe(6);
+    expect(Math.max(...bars.map((b) => b.h))).toBeLessThanOrEqual(34);
   });
 
   it("re-fetches the URL once when the element errors (expired link)", async () => {

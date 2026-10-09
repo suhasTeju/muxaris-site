@@ -11,14 +11,11 @@ export default async function PatientsPage() {
     serverApi<{ patients: Patient[]; total: number }>("/v1/patients?limit=50"),
   ]);
   return (
-    <div className="max-w-5xl px-4 py-8 sm:px-8">
-      <h1 className="font-display mb-6 text-3xl">Patients</h1>
-      <PatientsView
-        key={active.clinicId}
-        initial={list.patients}
-        initialTotal={list.total}
-        tz={clinic.timezone}
-      />
-    </div>
+    <PatientsView
+      key={active.clinicId}
+      initial={list.patients}
+      initialTotal={list.total}
+      tz={clinic.timezone}
+    />
   );
 }

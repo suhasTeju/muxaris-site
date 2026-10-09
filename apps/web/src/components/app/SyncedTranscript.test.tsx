@@ -142,8 +142,8 @@ describe("SyncedTranscript", () => {
         onSeek={vi.fn()}
       />,
     );
-    expect(screen.getByText("done")).toBeTruthy();
-    expect(screen.getByText("failed")).toBeTruthy();
+    expect(screen.getByText("· done")).toBeTruthy();
+    expect(screen.getByText("· failed")).toBeTruthy();
   });
 
   it("says so when there is no transcript", () => {
@@ -151,5 +151,32 @@ describe("SyncedTranscript", () => {
       <SyncedTranscript turns={[]} callStartedAt={START} currentTimeMs={null} onSeek={vi.fn()} />,
     );
     expect(screen.getByText("No transcript was recorded for this call.")).toBeTruthy();
+  });
+
+  it("shows a given note instead, such as the purge message", () => {
+    render(
+      <SyncedTranscript
+        turns={[]}
+        emptyNote="Deleted after 90 days."
+        callStartedAt={START}
+        currentTimeMs={null}
+        onSeek={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Deleted after 90 days.")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("labels each turn with the speaker and its clock offset", () => {
+    render(
+      <SyncedTranscript
+        turns={turns}
+        callStartedAt={START}
+        currentTimeMs={null}
+        onSeek={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Caller · 0:04")).toBeTruthy();
+    expect(screen.getByText("Assistant · 0:09")).toBeTruthy();
   });
 });
