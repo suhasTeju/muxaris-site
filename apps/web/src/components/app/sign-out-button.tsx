@@ -32,7 +32,7 @@ export function SignOutButton() {
       type="button"
       onClick={onClick}
       disabled={busy}
-      className="text-muted hover:text-ink focus-visible:ring-accent-soft rounded text-sm underline-offset-4 outline-none hover:underline focus-visible:ring-4 disabled:opacity-60"
+      className="border-field bg-surface text-ink hover:bg-paper inline-flex h-[34px] cursor-pointer items-center rounded-9 border px-[12px] text-[13.5px] font-medium whitespace-nowrap disabled:cursor-default disabled:opacity-70"
     >
       Sign out
     </button>

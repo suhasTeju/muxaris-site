@@ -1,16 +1,31 @@
-import { redirect } from "next/navigation";
-import { currentNextPath, getActiveClinic, getServerMe, getServerToken } from "@/lib/api-server";
+import { redirect, unstable_rethrow } from "next/navigation";
+import type { UsageSummary } from "@muxaris/shared";
+import {
+  currentNextPath,
+  getActiveClinic,
+  getServerMe,
+  getServerToken,
+  serverApi,
+} from "@/lib/api-server";
 import { authConfigured } from "@/lib/amplify";
 import { ClinicProvider } from "@/components/app/clinic-context";
-import { ClinicSwitcher } from "@/components/app/clinic-switcher";
 import { AppShell } from "@/components/app/AppShell";
 import { AmplifyProvider } from "@/components/auth/amplify-provider";
-import { SignOutButton } from "@/components/app/sign-out-button";
 
 export const dynamic = "force-dynamic";
 
 async function toSignIn(): Promise<never> {
   redirect(`/sign-in?next=${encodeURIComponent(await currentNextPath())}`);
+}
+
+/** Minutes for the sidebar card; the shell still renders (with a dash) if the call fails. */
+async function loadUsage(clinicId: string): Promise<UsageSummary | null> {
+  try {
+    return await serverApi<UsageSummary>("/v1/usage", { clinicId });
+  } catch (err) {
+    unstable_rethrow(err);
+    return null;
+  }
 }
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -25,19 +40,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     name: m.clinic.name,
     role: m.role,
   }));
+  const usage = await loadUsage(active.clinicId);
 
   return (
     <AmplifyProvider>
       <ClinicProvider clinics={clinics} activeId={active.clinicId} cookieStale={active.cookieStale}>
-        <AppShell
-          switcher={<ClinicSwitcher />}
-          right={
-            <>
-              <span className="text-muted hidden text-sm sm:inline">{me.user.email}</span>
-              <SignOutButton />
-            </>
-          }
-        >
+        <AppShell email={me.user.email} usage={usage}>
           {children}
         </AppShell>
       </ClinicProvider>

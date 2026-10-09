@@ -1,49 +1,61 @@
 "use client";
 
-import Image from "next/image";
+import { Building2, Menu, X } from "lucide-react";
+import { Chip } from "@/components/ui/Chip";
+import { useClinic } from "./clinic-context";
+import { ClinicSwitcher } from "./clinic-switcher";
+import { SignOutButton } from "./sign-out-button";
 
+const ROLE_LABEL: Record<string, string> = { owner: "Owner", front_desk: "Front desk" };
+
+export function roleLabel(role: string): string {
+  return ROLE_LABEL[role] ?? role.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+/**
+ * 60px sticky header: clinic chip, name or switcher, role chip; on the right the live dot, the
+ * signed-in email and Sign out. Below 1024px a menu button opens the off-canvas sidebar.
+ */
 export function Topbar({
   open,
   onToggle,
-  switcher,
-  right,
+  email,
 }: {
   open: boolean;
   onToggle: () => void;
-  switcher: React.ReactNode;
-  right: React.ReactNode;
+  email: string;
 }) {
+  const { activeClinic } = useClinic();
   return (
-    <header className="border-line bg-surface flex items-center justify-between gap-4 border-b px-4 py-3 sm:px-6">
-      <div className="flex min-w-0 items-center gap-3 sm:gap-6">
+    <header className="border-line sticky top-0 z-30 flex h-[60px] items-center justify-between gap-[16px] border-b bg-[rgba(244,246,249,0.8)] px-[16px] backdrop-blur-[16px] sm:px-[24px] lg:px-[32px]">
+      <div className="flex min-w-0 items-center gap-[10px]">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={open}
           aria-controls="app-sidebar"
           aria-label={open ? "Close menu" : "Open menu"}
-          className="border-line inline-flex size-11 items-center justify-center rounded-xl border md:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+          className="border-field bg-surface text-ink hover:bg-paper grid size-[34px] shrink-0 cursor-pointer place-items-center rounded-9 border lg:hidden"
         >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-            <path
-              d="M2 4.5h14M2 9h14M2 13.5h14"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-          </svg>
+          {open ? <X size={16} /> : <Menu size={16} />}
         </button>
-        <Image
-          src="/brand/muxaris-wordmark.svg"
-          alt="Muxaris"
-          width={110}
-          height={29}
-          priority
-          className="hidden sm:block"
-        />
-        <div className="min-w-0 truncate">{switcher}</div>
+        <span className="border-line bg-surface text-teal-ink grid size-[28px] shrink-0 place-items-center rounded-8 border">
+          <Building2 size={14} />
+        </span>
+        <div className="min-w-0">
+          <ClinicSwitcher />
+        </div>
+        <Chip className="shrink-0">{roleLabel(activeClinic.role)}</Chip>
       </div>
-      <div className="flex items-center gap-4">{right}</div>
+      <div className="flex shrink-0 items-center gap-[14px]">
+        <span className="text-muted hidden items-center gap-[8px] text-[13px] whitespace-nowrap sm:flex">
+          <span className="bg-signal animate-mx-pulse size-[7px] rounded-full" />
+          Assistant live
+        </span>
+        <span aria-hidden="true" className="bg-line hidden h-[20px] w-px md:block" />
+        <span className="text-ink-2 hidden text-[13.5px] md:inline">{email}</span>
+        <SignOutButton />
+      </div>
     </header>
   );
 }
