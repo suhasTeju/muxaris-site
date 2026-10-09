@@ -1,101 +1,116 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LANGUAGES, type LanguageCode } from "@muxaris/shared";
-import { useVoiceCall, type CallState } from "@muxaris/voice-sdk";
+import { LANGUAGES, type Clinic, type LanguageCode } from "@muxaris/shared";
+import { useVoiceCall, type VoiceClientOptions } from "@muxaris/voice-sdk";
 import { getAccessToken } from "@/lib/api-client";
-import { CALL_ERROR_COPY, classifyCallError } from "@/lib/call-errors";
 import { assertRuntimeEnv, env } from "@/lib/env";
-import { BookingCard } from "./BookingCard";
+import { TryCallView } from "./assistant/TryCallView";
+import type { StartError } from "./assistant/call-visuals";
 import { useClinic } from "./clinic-context";
-import { fieldClass, ghostBtn } from "./Modal";
-import { ToolTimeline } from "./ToolTimeline";
-import { TranscriptPane } from "./TranscriptPane";
 import { useClinicProfile } from "./use-clinic-profile";
 
-export const STATE_LABEL: Record<NonNullable<CallState>, string> = {
-  listening: "Listening",
-  thinking: "Thinking",
-  speaking: "Speaking",
-};
+export { STATE_LABEL, formatRemaining } from "./assistant/call-visuals";
 
-const DOT: Record<NonNullable<CallState>, string> = {
-  listening: "bg-muted",
-  thinking: "bg-[#d97706] animate-pulse motion-reduce:animate-none",
-  speaking: "bg-accent animate-pulse motion-reduce:animate-none",
-};
+/** Where a test call connects, and the browser pieces it uses. Injectable for previews and tests. */
+export interface TryCallVoice extends Pick<
+  VoiceClientOptions,
+  "wsFactory" | "mediaFactory" | "playerFactory"
+> {
+  url: string;
+  getToken: () => Promise<string | undefined>;
+  /** Throws when the deployment cannot place calls (missing configuration). */
+  assertEnv: () => void;
+}
 
-export function formatRemaining(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+/** The design's default: Kannada when the clinic offers it, else the clinic's first language. */
+export function defaultTryLanguage(codes: readonly LanguageCode[]): LanguageCode {
+  return codes.includes("kn-IN") ? "kn-IN" : (codes[0] ?? "en-IN");
 }
 
 /** Keyed by clinic so switching clinics mid-call ends the live call instead of orphaning it. */
 export function TryCall() {
   const { activeClinic } = useClinic();
-  return <TryCallInner key={activeClinic.id} />;
+  return <TryCallInner key={activeClinic.id} clinicId={activeClinic.id} />;
 }
 
-function TryCallInner() {
-  const { activeClinic } = useClinic();
+function TryCallInner({ clinicId }: { clinicId: string }) {
   const { clinic, tz } = useClinicProfile();
+  const voice = useMemo<TryCallVoice>(
+    () => ({
+      url: `${env.voiceWsUrl}/v1/session`,
+      getToken: getAccessToken,
+      assertEnv: assertRuntimeEnv,
+    }),
+    [],
+  );
+  return <TryCallSession clinicId={clinicId} clinic={clinic} tz={tz} voice={voice} />;
+}
+
+/**
+ * The test-call state machine: fetches a fresh token on Start, renders it into the voice hook's
+ * options, then starts the call. The token is dropped as soon as the call ends or fails.
+ */
+export function TryCallSession({
+  clinicId,
+  clinic,
+  tz,
+  voice,
+}: {
+  clinicId: string;
+  /** null while the clinic profile loads (English only until then). */
+  clinic: Pick<Clinic, "languages"> | null;
+  tz: string;
+  voice: TryCallVoice;
+}) {
   const languages = useMemo(
     () => LANGUAGES.filter((l) => (clinic?.languages ?? ["en-IN"]).includes(l.code)),
     [clinic],
   );
-  const [language, setLanguage] = useState<LanguageCode>("en-IN");
+  const [picked, setPicked] = useState<LanguageCode | null>(null);
+  const language =
+    picked && languages.some((l) => l.code === picked)
+      ? picked
+      : defaultTryLanguage(languages.map((l) => l.code));
   const [token, setToken] = useState("");
   const [pending, setPending] = useState(false);
   const startingRef = useRef(false);
+  const armedRef = useRef(false);
   const [configMessage, setConfigMessage] = useState("");
-  const [startError, setStartError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const first = languages[0]?.code;
-    if (first && !languages.some((l) => l.code === language)) setLanguage(first);
-  }, [languages, language]);
+  const [startError, setStartError] = useState<StartError>(null);
 
   const call = useVoiceCall({
-    url: `${env.voiceWsUrl}/v1/session`,
+    url: voice.url,
     token,
-    clinicId: activeClinic.id,
+    clinicId,
     language,
+    ...(voice.wsFactory ? { wsFactory: voice.wsFactory } : {}),
+    ...(voice.mediaFactory ? { mediaFactory: voice.mediaFactory } : {}),
+    ...(voice.playerFactory ? { playerFactory: voice.playerFactory } : {}),
   });
-  const {
-    phase,
-    state,
-    lines,
-    tools,
-    booking,
-    secondsRemaining,
-    planSecondsRemaining,
-    error,
-    start,
-    stop,
-  } = call;
-  // errorCode ships with the voice SDK; wording is the fallback when it is absent.
-  const errorCode = (call as { errorCode?: string | null }).errorCode ?? null;
+  const { phase, start, stop } = call;
+
+  // Never keep a token past the call that used it: drop it as the call ends or fails.
+  const [seenPhase, setSeenPhase] = useState(phase);
+  if (phase !== seenPhase) {
+    setSeenPhase(phase);
+    if (phase === "ended" || phase === "error") setToken("");
+  }
 
   // Start only after the freshly fetched token has been rendered into the hook's options.
   useEffect(() => {
-    if (pending && token) {
-      startingRef.current = false;
-      setPending(false);
+    if (armedRef.current && token) {
+      armedRef.current = false;
       void start();
     }
-  }, [pending, token, start]);
-
-  // Never keep a token past the call that used it.
-  useEffect(() => {
-    if (phase === "ended" || phase === "error") setToken("");
-  }, [phase]);
+  }, [token, start]);
 
   async function onStart() {
     if (startingRef.current) return;
     startingRef.current = true;
     setStartError(null);
     try {
-      assertRuntimeEnv();
+      voice.assertEnv();
     } catch (e) {
       setStartError("config");
       setConfigMessage(e instanceof Error ? e.message : "Misconfigured deployment");
@@ -105,142 +120,33 @@ function TryCallInner() {
     setPending(true);
     let t: string | undefined;
     try {
-      t = await getAccessToken();
+      t = await voice.getToken();
     } catch {
-      startingRef.current = false;
-      setPending(false);
+      t = undefined;
       setStartError("network");
+    }
+    startingRef.current = false;
+    setPending(false);
+    if (t === undefined) {
+      setStartError((s) => s ?? "auth");
       return;
     }
-    if (!t) {
-      startingRef.current = false;
-      setPending(false);
-      setStartError("auth");
-      return;
-    }
+    armedRef.current = true;
     setToken(t);
   }
 
-  const active = phase === "connecting" || phase === "live";
-  const failure =
-    startError === "auth" ? "invalid or expired token" : phase === "error" ? error : null;
-  const errorCopy =
-    startError === "config"
-      ? { title: "Calls are not available", body: configMessage }
-      : startError === "network"
-        ? {
-            title: "Could not reach the sign-in service",
-            body: "Check your connection and try again.",
-          }
-        : failure !== null
-          ? CALL_ERROR_COPY[classifyCallError(failure, errorCode)]
-          : null;
-
   return (
-    <div className="px-4 py-8 sm:px-8">
-      <h1 className="font-display text-3xl">Try your assistant</h1>
-      <p className="text-muted mt-1 max-w-xl">
-        Talk to your assistant right here in the browser, exactly as a patient would on the phone.
-        Test calls count toward your monthly minutes.
-      </p>
-
-      <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,22rem)_1fr]">
-        <div className="flex flex-col gap-5">
-          <label className="flex flex-col gap-1 text-sm">
-            Language
-            <select
-              className={fieldClass}
-              value={language}
-              disabled={active}
-              onChange={(e) => setLanguage(e.target.value as LanguageCode)}
-            >
-              {languages.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label} ({l.native})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {active ? (
-            <button
-              type="button"
-              onClick={stop}
-              className="bg-danger min-h-14 rounded-2xl px-6 text-lg font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-danger)]"
-            >
-              End call
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onStart}
-              disabled={pending}
-              className="bg-accent text-on-accent hover:bg-accent-deep min-h-14 rounded-2xl px-6 text-lg font-medium transition-colors disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
-            >
-              {phase === "ended" || phase === "error" ? "Start another call" : "Start call"}
-            </button>
-          )}
-
-          <div className="flex items-center justify-between gap-4" aria-live="polite">
-            <p className="flex items-center gap-2 text-[15px]">
-              <span
-                aria-hidden="true"
-                className={`inline-block size-3 rounded-full ${state ? DOT[state] : "bg-[color-mix(in_srgb,var(--color-ink)_15%,white)]"}`}
-              />
-              <span data-testid="state-label">
-                {phase === "connecting"
-                  ? "Connecting…"
-                  : state
-                    ? STATE_LABEL[state]
-                    : phase === "live"
-                      ? "Connected"
-                      : phase === "ended"
-                        ? "Call ended"
-                        : "Ready"}
-              </span>
-            </p>
-            {secondsRemaining !== null && active ? (
-              <p className="text-muted text-sm tabular-nums">
-                {formatRemaining(secondsRemaining)} left in this call
-              </p>
-            ) : null}
-            {planSecondsRemaining !== null && secondsRemaining !== null && active ? (
-              <p className="text-muted text-xs tabular-nums">
-                Your plan has {formatRemaining(Math.min(planSecondsRemaining, secondsRemaining))} of
-                call time left this month
-              </p>
-            ) : null}
-          </div>
-
-          {phase === "idle" && !errorCopy ? (
-            <p className="text-muted text-sm">
-              Your browser will ask for microphone access when you start. If you block it, you can
-              re-enable it from the lock icon in the address bar.
-            </p>
-          ) : null}
-
-          {errorCopy ? (
-            <div role="alert" className="bg-danger-soft text-danger rounded-2xl p-4">
-              <p className="font-medium">{errorCopy.title}</p>
-              <p className="mt-1 text-sm">{errorCopy.body}</p>
-              {startError !== "network" &&
-                failure !== null &&
-                classifyCallError(failure, errorCode) === "auth_failed" && (
-                  <a href="/sign-in?next=/app/assistant/try" className={`${ghostBtn} mt-3`}>
-                    Sign in again
-                  </a>
-                )}
-            </div>
-          ) : null}
-
-          {booking ? <BookingCard booking={booking} tz={tz} /> : null}
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-6">
-          <TranscriptPane lines={lines} live={phase === "live"} />
-          <ToolTimeline tools={tools} />
-        </div>
-      </div>
-    </div>
+    <TryCallView
+      call={call}
+      languages={languages}
+      language={language}
+      onLanguage={setPicked}
+      pending={pending}
+      startError={startError}
+      configMessage={configMessage}
+      onStart={() => void onStart()}
+      onStop={stop}
+      tz={tz}
+    />
   );
 }

@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { ArrowRight, CalendarCheck } from "lucide-react";
 import { formatDateTime } from "@/lib/dashboard";
 
+/** Try your assistant: the appointment the assistant just booked, with a way to it. */
 export function BookingCard({
   booking,
   tz,
@@ -11,18 +13,24 @@ export function BookingCard({
   return (
     <section
       aria-label="Appointment booked"
-      className="border-accent bg-accent-soft rounded-2xl border p-5"
+      className="flex animate-[mxSheet_.35s_ease_both] flex-col gap-[10px] rounded-16 border border-[#bfe5cb] bg-[#f0faf3] p-[16px]"
     >
-      <p className="text-accent-deep text-sm font-medium">Appointment booked</p>
-      <p className="font-display mt-1 text-2xl">{booking.serviceName}</p>
-      <p className="mt-1 text-[15px]">
-        {booking.doctorName} · {formatDateTime(booking.startsAt, tz)}
-      </p>
+      <span className="text-green-ink flex items-center gap-[8px] font-mono text-[11px] tracking-[0.08em] uppercase">
+        <CalendarCheck size={14} aria-hidden="true" />
+        Appointment booked
+      </span>
+      <div className="flex flex-col gap-[2px]">
+        <span className="text-[16px] font-semibold">{booking.serviceName}</span>
+        <span className="text-ink-2 text-[13.5px]">
+          {booking.doctorName} · {formatDateTime(booking.startsAt, tz)}
+        </span>
+      </div>
       <Link
         href="/app/appointments"
-        className="text-accent-deep mt-3 inline-flex min-h-11 items-center text-[15px] font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+        className="text-green-ink inline-flex items-center gap-[6px] self-start text-[13.5px] font-semibold"
       >
         View in appointments
+        <ArrowRight size={13} aria-hidden="true" />
       </Link>
     </section>
   );
