@@ -70,6 +70,14 @@ describe("AnalyticsView", () => {
     );
   });
 
+  it("lays the KPIs out in 1, then 2, then the design's auto-fit columns", () => {
+    renderView();
+    const kpis = screen.getByRole("region", { name: "Key numbers" });
+    expect(kpis.className).toContain("grid-cols-1");
+    expect(kpis.className).toContain("sm:grid-cols-2");
+    expect(kpis.className).toContain("lg:grid-cols-[repeat(auto-fit,minmax(200px,1fr))]");
+  });
+
   it("puts the range in the subtitle from the page even when analytics failed", () => {
     renderView({ analytics: { ok: false }, from: "2026-09-10", to: "2026-10-09" });
     expect(screen.getByText("Thu, 10 Sep 2026 – Fri, 9 Oct 2026")).toBeTruthy();

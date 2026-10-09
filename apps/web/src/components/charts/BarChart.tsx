@@ -71,7 +71,7 @@ export function BarChart({
               data-bar
               title={barTitle?.(i)}
               className={cn(
-                "relative min-w-[2px] flex-1 rounded-[4px_4px_0_0]",
+                "relative min-w-[2px] flex-1 rounded-[4px_4px_0_0] max-sm:min-w-px",
                 barClassName(v, max, i),
               )}
               style={{ height: `${pct(v, max)}%` }}
@@ -92,7 +92,10 @@ export function BarChart({
       </div>
       <div className="text-muted-2 flex justify-between font-mono text-[11px]" aria-hidden="true">
         {ticks.map((t, i) => (
-          <span key={`${t}-${i}`}>{t}</span>
+          // Below 640px every other label is hidden; `invisible` keeps the others in place.
+          <span key={`${t}-${i}`} className={i % 2 ? "max-sm:invisible" : undefined}>
+            {t}
+          </span>
         ))}
       </div>
       <DataTable

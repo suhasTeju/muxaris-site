@@ -30,6 +30,26 @@ describe("BarChart", () => {
     expect(table.textContent).toContain("3");
   });
 
+  it("hides every other tick label below 640px without moving the rest", () => {
+    render(
+      <BarChart
+        {...base}
+        ticks={["0", "6", "12", "18", "23"]}
+        title="Calls by hour"
+        categories={["a", "b"]}
+        series={{ name: "Calls", values: [1, 2] }}
+      />,
+    );
+    const ticks = Array.from(document.querySelectorAll("[aria-hidden='true'] > span"));
+    expect(ticks.map((t) => t.className.includes("max-sm:invisible"))).toEqual([
+      false,
+      true,
+      false,
+      true,
+      false,
+    ]);
+  });
+
   it("scales bars to the largest value, colours the max, and never divides by zero", () => {
     render(
       <BarChart
