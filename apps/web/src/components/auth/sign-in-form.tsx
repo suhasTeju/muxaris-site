@@ -8,7 +8,7 @@ import { Input } from "@/components/ui";
 import { authErrorMessage, authErrorName, safeNext, signInStepMessage } from "@/lib/auth-errors";
 import { googleEnabled } from "@/lib/amplify";
 import { verifyEmail } from "@/lib/client-store";
-import { AuthField, AuthMessage, SubmitButton } from "./auth-ui";
+import { AuthField, AuthMessage, SubmitButton, useBadField } from "./auth-ui";
 import { GoogleButton } from "./google-button";
 
 /** The Amplify calls the sign-in form makes; previews pass stubs. */
@@ -29,6 +29,7 @@ export function SignInForm({ auth = AMPLIFY }: { auth?: SignInAuth }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const bad = useBadField();
   // The API rejected the session (or the user asked to sign out): clear any stale Amplify session
   // before the form shows, otherwise UserAlreadyAuthenticated would bounce back to /app forever.
   const reason = params.get("reason");
@@ -64,6 +65,7 @@ export function SignInForm({ auth = AMPLIFY }: { auth?: SignInAuth }) {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    bad.reset();
     setBusy(true);
     try {
       const res = await auth.signIn({ username: email.trim(), password });
@@ -74,6 +76,7 @@ export function SignInForm({ auth = AMPLIFY }: { auth?: SignInAuth }) {
       const name = authErrorName(err);
       if (name === "UserNotConfirmedException") return toVerify();
       if (name === "UserAlreadyAuthenticatedException") return done();
+      bad.flag(err);
       setError(authErrorMessage(err));
     } finally {
       setBusy(false);
@@ -107,7 +110,11 @@ export function SignInForm({ auth = AMPLIFY }: { auth?: SignInAuth }) {
             autoComplete="email"
             required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            invalid={bad.is("email")}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              bad.edited("email");
+            }}
           />
         </AuthField>
         <AuthField
@@ -125,7 +132,11 @@ export function SignInForm({ auth = AMPLIFY }: { auth?: SignInAuth }) {
             autoComplete="current-password"
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            invalid={bad.is("password")}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              bad.edited("password");
+            }}
           />
         </AuthField>
         <SubmitButton busy={busy}>Sign in</SubmitButton>

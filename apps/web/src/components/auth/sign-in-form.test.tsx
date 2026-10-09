@@ -82,6 +82,29 @@ describe("SignInForm", () => {
       "/forgot-password",
     );
   });
+
+  it("outlines the field the error points at until it is edited", async () => {
+    query = "";
+    const auth: SignInAuth = {
+      signIn: vi.fn(async () => {
+        throw Object.assign(new Error("Incorrect"), { name: "NotAuthorizedException" });
+      }),
+      signOut: vi.fn(async () => undefined),
+      signInWithRedirect: vi.fn(async () => undefined),
+      googleEnabled: false,
+    };
+    const { container } = render(<SignInForm auth={auth} />);
+    const email = screen.getByLabelText("Email");
+    const password = screen.getByLabelText("Password");
+    fireEvent.change(email, { target: { value: "a@b.in" } });
+    fireEvent.change(password, { target: { value: "x" } });
+    fireEvent.submit(container.querySelector("form")!);
+    await screen.findByRole("alert");
+    expect(password.getAttribute("aria-invalid")).toBe("true");
+    expect(email.getAttribute("aria-invalid")).toBeNull();
+    fireEvent.change(password, { target: { value: "xy" } });
+    expect(password.getAttribute("aria-invalid")).toBeNull();
+  });
   it("shows Continue with Google only when Google is enabled", async () => {
     query = "";
     const redirect = vi.fn(() => new Promise<void>(() => undefined));

@@ -6,7 +6,14 @@ import { confirmSignUp, resendSignUpCode } from "aws-amplify/auth";
 import { Input } from "@/components/ui";
 import { authErrorMessage, safeNext } from "@/lib/auth-errors";
 import { verifyEmail } from "@/lib/client-store";
-import { AuthField, AuthMessage, CODE_INPUT_CLASS, ResendButton, SubmitButton } from "./auth-ui";
+import {
+  AuthField,
+  AuthMessage,
+  CODE_INPUT_CLASS,
+  ResendButton,
+  SubmitButton,
+  useBadField,
+} from "./auth-ui";
 
 /** The Amplify calls the verify form makes; previews pass stubs. */
 export interface VerifyAuth {
@@ -25,10 +32,12 @@ export function VerifyForm({ auth = AMPLIFY }: { auth?: VerifyAuth }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const bad = useBadField();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    bad.reset();
     setNotice(null);
     setBusy(true);
     try {
@@ -38,6 +47,7 @@ export function VerifyForm({ auth = AMPLIFY }: { auth?: VerifyAuth }) {
         `/sign-in?verified=1${next === "/app" ? "" : `&next=${encodeURIComponent(next)}`}`,
       );
     } catch (err) {
+      bad.flag(err);
       setError(authErrorMessage(err));
     } finally {
       setBusy(false);
@@ -72,7 +82,11 @@ export function VerifyForm({ auth = AMPLIFY }: { auth?: VerifyAuth }) {
             autoComplete="email"
             required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            invalid={bad.is("email")}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              bad.edited("email");
+            }}
           />
         </AuthField>
         <AuthField label="Confirmation code">
@@ -85,7 +99,11 @@ export function VerifyForm({ auth = AMPLIFY }: { auth?: VerifyAuth }) {
             placeholder="••••••"
             required
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            invalid={bad.is("code")}
+            onChange={(e) => {
+              setCode(e.target.value);
+              bad.edited("code");
+            }}
             className={CODE_INPUT_CLASS}
           />
         </AuthField>

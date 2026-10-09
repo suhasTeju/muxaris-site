@@ -1,8 +1,9 @@
 "use client";
 
-import { cloneElement, useId } from "react";
+import { cloneElement, useId, useState } from "react";
 import { CircleAlert, Info } from "lucide-react";
 import { Button, cn } from "@/components/ui";
+import { authErrorName } from "@/lib/auth-errors";
 
 /**
  * Auth form pieces from `Muxaris Auth.dc.html`. The kit's Field (13px label, gap 6) and Notice
@@ -13,6 +14,29 @@ export const PASSWORD_HELPER = "At least 8 characters, with upper and lower case
 
 /** The six-digit code field: 56px, Geist Mono 22px with wide tracking. */
 export const CODE_INPUT_CLASS = "h-[56px] px-[16px] text-[22px] tracking-[0.4em]";
+
+export type AuthInput = "email" | "password" | "code";
+
+/** Which field each Cognito error points at; the design outlines it in rose (#e48aa0). */
+const ERROR_FIELD: Record<string, AuthInput> = {
+  NotAuthorizedException: "password",
+  UserNotFoundException: "password",
+  InvalidPasswordException: "password",
+  UsernameExistsException: "email",
+  CodeMismatchException: "code",
+  ExpiredCodeException: "code",
+};
+
+/** The field marked invalid after a failed submit; editing that field clears the mark. */
+export function useBadField() {
+  const [bad, setBad] = useState<AuthInput | null>(null);
+  return {
+    is: (f: AuthInput) => bad === f,
+    flag: (err: unknown) => setBad(ERROR_FIELD[authErrorName(err)] ?? null),
+    reset: () => setBad(null),
+    edited: (f: AuthInput) => setBad((b) => (b === f ? null : b)),
+  };
+}
 
 /** Label 14px/500 ink, gap 8; optional right-hand action (Forgot password?) and 13px helper. */
 export function AuthField({

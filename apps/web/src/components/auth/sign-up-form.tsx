@@ -7,7 +7,7 @@ import { Input } from "@/components/ui";
 import { googleEnabled } from "@/lib/amplify";
 import { authErrorMessage } from "@/lib/auth-errors";
 import { verifyEmail } from "@/lib/client-store";
-import { AuthField, AuthMessage, PASSWORD_HELPER, SubmitButton } from "./auth-ui";
+import { AuthField, AuthMessage, PASSWORD_HELPER, SubmitButton, useBadField } from "./auth-ui";
 import { GoogleButton } from "./google-button";
 
 /** The Amplify calls the sign-up form makes; previews pass stubs. */
@@ -25,10 +25,12 @@ export function SignUpForm({ auth = AMPLIFY }: { auth?: SignUpAuth }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const bad = useBadField();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    bad.reset();
     setBusy(true);
     try {
       const username = email.trim();
@@ -36,6 +38,7 @@ export function SignUpForm({ auth = AMPLIFY }: { auth?: SignUpAuth }) {
       verifyEmail.set(username);
       router.push("/verify");
     } catch (err) {
+      bad.flag(err);
       setError(authErrorMessage(err));
     } finally {
       setBusy(false);
@@ -59,7 +62,11 @@ export function SignUpForm({ auth = AMPLIFY }: { auth?: SignUpAuth }) {
             autoComplete="email"
             required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            invalid={bad.is("email")}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              bad.edited("email");
+            }}
           />
         </AuthField>
         <AuthField label="Password" helper={PASSWORD_HELPER}>
@@ -71,7 +78,11 @@ export function SignUpForm({ auth = AMPLIFY }: { auth?: SignUpAuth }) {
             minLength={8}
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            invalid={bad.is("password")}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              bad.edited("password");
+            }}
           />
         </AuthField>
         <SubmitButton busy={busy}>Create account</SubmitButton>

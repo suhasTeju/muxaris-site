@@ -12,6 +12,7 @@ import {
   PASSWORD_HELPER,
   ResendButton,
   SubmitButton,
+  useBadField,
 } from "./auth-ui";
 
 /** The Amplify calls the reset form makes; previews pass stubs. */
@@ -31,11 +32,13 @@ export function ForgotPasswordForm({ auth = AMPLIFY }: { auth?: ResetAuth }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const bad = useBadField();
 
   async function request(e?: React.FormEvent) {
     e?.preventDefault();
     if (busy) return;
     setError(null);
+    bad.reset();
     setBusy(true);
     try {
       await auth.resetPassword({ username: email.trim() });
@@ -46,7 +49,10 @@ export function ForgotPasswordForm({ auth = AMPLIFY }: { auth?: ResetAuth }) {
       if (msg === null) {
         setStep("confirm");
         setNotice(RESET_SENT_NOTICE);
-      } else setError(msg);
+      } else {
+        bad.flag(err);
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }
@@ -55,6 +61,7 @@ export function ForgotPasswordForm({ auth = AMPLIFY }: { auth?: ResetAuth }) {
   async function confirm(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    bad.reset();
     setBusy(true);
     try {
       await auth.confirmResetPassword({
@@ -64,6 +71,7 @@ export function ForgotPasswordForm({ auth = AMPLIFY }: { auth?: ResetAuth }) {
       });
       router.push("/sign-in?reset=1");
     } catch (err) {
+      bad.flag(err);
       setError(authErrorMessage(err));
     } finally {
       setBusy(false);
@@ -85,7 +93,11 @@ export function ForgotPasswordForm({ auth = AMPLIFY }: { auth?: ResetAuth }) {
               autoComplete="email"
               required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              invalid={bad.is("email")}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                bad.edited("email");
+              }}
             />
           </AuthField>
           <SubmitButton busy={busy}>Send reset code</SubmitButton>
@@ -108,7 +120,11 @@ export function ForgotPasswordForm({ auth = AMPLIFY }: { auth?: ResetAuth }) {
             placeholder="••••••"
             required
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            invalid={bad.is("code")}
+            onChange={(e) => {
+              setCode(e.target.value);
+              bad.edited("code");
+            }}
             className={CODE_INPUT_CLASS}
           />
         </AuthField>
@@ -121,7 +137,11 @@ export function ForgotPasswordForm({ auth = AMPLIFY }: { auth?: ResetAuth }) {
             minLength={8}
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            invalid={bad.is("password")}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              bad.edited("password");
+            }}
           />
         </AuthField>
         <SubmitButton busy={busy}>Set new password</SubmitButton>
