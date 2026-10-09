@@ -1,73 +1,51 @@
-import Image from "next/image";
-import Link from "next/link";
 import { CONTACT_EMAIL, FOOTER_LANGUAGES, NAV_LINKS } from "@/lib/content";
+import { Mark } from "./Mark";
+import { SECTION_X } from "./SectionHeader";
+import { SiteLink } from "./SiteLink";
 
-const linkClass =
-  "text-dark-muted flex min-h-11 items-center text-sm transition-colors hover:text-white";
-const headingClass = "text-dark-text/60 text-xs font-semibold tracking-[0.16em] uppercase";
+const HEADING =
+  "text-muted m-0 font-mono text-[11px] font-normal tracking-[0.12em] uppercase leading-[1.5]";
+const LINK = "text-ink-2 hover:text-ink text-[15px]";
 
 export function Footer() {
   return (
-    <footer data-theme="dark" className="mx-dark border-t border-white/10">
-      <div className="mx-container grid gap-12 py-16 md:grid-cols-[1.4fr_1fr_1fr] md:gap-8">
-        <div>
-          <Image
-            src="/brand/muxaris-mark.svg"
-            alt=""
-            width={36}
-            height={36}
-            className="rounded-lg"
-          />
-          <p className="font-display mt-5 max-w-xs text-2xl leading-snug tracking-tight">
-            A calmer front desk,{" "}
-            <span className="text-accent-bright italic">in your language.</span>
-          </p>
-          <p className="text-dark-muted mt-4 max-w-xs text-sm leading-relaxed">
-            {FOOTER_LANGUAGES}
-          </p>
-        </div>
-        <nav aria-label="Product">
-          <h2 className={headingClass}>Product</h2>
-          <ul className="mt-3">
+    <footer className={`border-line bg-surface border-t pt-[72px] pb-[28px] ${SECTION_X}`}>
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-[56px]">
+        <div className="grid gap-[48px] md:grid-cols-[minmax(0,1.6fr)_minmax(0,0.7fr)_minmax(0,0.7fr)]">
+          <div className="flex flex-col gap-[20px]">
+            <Mark size={44} />
+            <p className="m-0 max-w-[420px] text-[30px] leading-[1.15] font-semibold tracking-[-0.03em]">
+              A calmer front desk, <span className="text-teal">in your language.</span>
+            </p>
+            <p className="text-muted m-0 text-[15px]">{FOOTER_LANGUAGES}</p>
+          </div>
+          <nav aria-label="Product" className="flex flex-col gap-[14px]">
+            <h2 className={HEADING}>Product</h2>
             {NAV_LINKS.map((l) => (
-              <li key={l.href}>
-                <Link href={l.href} className={linkClass}>
-                  {l.label}
-                </Link>
-              </li>
+              <SiteLink key={l.href} href={l.href} className={LINK}>
+                {l.label}
+              </SiteLink>
             ))}
-            <li>
-              <Link href="/sign-in" className={linkClass}>
-                Sign in
-              </Link>
-            </li>
-          </ul>
-        </nav>
-        <nav aria-label="Company">
-          <h2 className={headingClass}>Company</h2>
-          <ul className="mt-3">
-            <li>
-              <Link href="/privacy" className={linkClass}>
-                Privacy
-              </Link>
-            </li>
-            <li>
-              <Link href="/terms" className={linkClass}>
-                Terms
-              </Link>
-            </li>
-            <li>
-              <a href={`mailto:${CONTACT_EMAIL}`} className={linkClass}>
-                {CONTACT_EMAIL}
-              </a>
-            </li>
-          </ul>
-        </nav>
-      </div>
-      <div className="border-t border-white/10">
-        <div className="text-dark-muted mx-container flex flex-col gap-2 py-6 text-xs sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Muxaris. All rights reserved.</p>
-          <p className="font-display italic">Made in Bengaluru</p>
+            <SiteLink href="/sign-in" className={LINK}>
+              Sign in
+            </SiteLink>
+          </nav>
+          <nav aria-label="Company" className="flex flex-col gap-[14px]">
+            <h2 className={HEADING}>Company</h2>
+            <SiteLink href="/privacy" className={LINK}>
+              Privacy
+            </SiteLink>
+            <SiteLink href="/terms" className={LINK}>
+              Terms
+            </SiteLink>
+            <a href={`mailto:${CONTACT_EMAIL}`} className={LINK}>
+              {CONTACT_EMAIL}
+            </a>
+          </nav>
+        </div>
+        <div className="border-line text-muted flex flex-col justify-between gap-[16px] border-t pt-[24px] text-[13px] sm:flex-row">
+          <span>© {new Date().getFullYear()} Muxaris. All rights reserved.</span>
+          <span>Made in Bengaluru</span>
         </div>
       </div>
     </footer>

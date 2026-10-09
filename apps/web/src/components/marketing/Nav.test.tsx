@@ -1,46 +1,50 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import { Nav } from "./Nav";
 
-vi.mock("next/image", () => ({
-  default: (p: { src: string; alt: string }) => <img src={p.src} alt={p.alt} />,
-}));
-
-afterEach(() => {
-  cleanup();
-  document.body.innerHTML = "";
-});
-
-function darkSection(top: number, bottom: number) {
-  const el = document.createElement("section");
-  el.setAttribute("data-theme", "dark");
-  el.getBoundingClientRect = () => ({ top, bottom }) as DOMRect;
-  document.body.appendChild(el);
-  return el;
-}
+afterEach(cleanup);
 
 describe("Nav", () => {
-  it("is light by default and switches to dark glass over a dark section", async () => {
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
-      cb(0);
-      return 0;
-    });
-    const dark = darkSection(500, 1400);
+  it("links the sections, pricing, FAQ, sign-in and the demo form", () => {
     render(<Nav />);
-    const header = screen.getByRole("banner");
-    expect(header.dataset.tone).toBe("light");
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    const href = (name: string) => within(nav).getByRole("link", { name }).getAttribute("href");
+    expect(href("Muxaris home")).toBe("/");
+    expect(href("How it works")).toBe("/#how");
+    expect(href("Languages")).toBe("/#languages");
+    expect(href("Pricing")).toBe("/pricing");
+    expect(href("FAQ")).toBe("/faq");
+    expect(href("Sign in")).toBe("/sign-in");
+    expect(href("Book a demo")).toBe("/#demo");
+  });
 
-    dark.getBoundingClientRect = () => ({ top: -200, bottom: 700 }) as DOMRect;
-    await act(async () => {
-      window.dispatchEvent(new Event("scroll"));
-    });
-    expect(header.dataset.tone).toBe("dark");
+  it("opens the mobile menu and closes it with Escape or a link", () => {
+    render(<Nav />);
+    const button = screen.getByRole("button", { name: "Open menu" });
+    expect(button.getAttribute("aria-controls")).toBe("mobile-menu");
+    expect(document.getElementById("mobile-menu")).toBeNull();
 
-    dark.getBoundingClientRect = () => ({ top: -900, bottom: -10 }) as DOMRect;
-    await act(async () => {
-      window.dispatchEvent(new Event("scroll"));
-    });
-    expect(header.dataset.tone).toBe("light");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.getAttribute("aria-label")).toBe("Close menu");
+    const menu = document.getElementById("mobile-menu")!;
+    expect(
+      within(menu)
+        .getAllByRole("link")
+        .map((a) => a.getAttribute("href")),
+    ).toEqual(["/#how", "/#languages", "/pricing", "/faq", "/sign-in", "/#demo"]);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(document.getElementById("mobile-menu")).toBeNull();
+
+    // Stop jsdom's own navigation (the default action) once React has handled the click.
+    const stop = (e: Event) => e.preventDefault();
+    window.addEventListener("click", stop);
+    fireEvent.click(button);
+    const menuNow = document.getElementById("mobile-menu")!;
+    fireEvent.click(within(menuNow).getByRole("link", { name: "FAQ" }));
+    expect(document.getElementById("mobile-menu")).toBeNull();
+    window.removeEventListener("click", stop);
   });
 });

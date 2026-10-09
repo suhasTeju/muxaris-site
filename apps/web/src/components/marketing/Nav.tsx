@@ -1,40 +1,22 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
+import { Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { buttonClass } from "@/components/ui/Button";
+import { cn } from "@/components/ui/cn";
+import { Wordmark } from "@/components/ui/Wordmark";
 import { NAV_LINKS } from "@/lib/content";
+import { SiteLink } from "./SiteLink";
 
+const GLASS =
+  "border border-[rgba(255,255,255,0.9)] bg-[rgba(255,255,255,0.72)] shadow-[0_1px_0_rgba(12,18,32,0.04),0_12px_32px_-16px_rgba(12,18,32,0.18)] backdrop-blur-[18px] backdrop-saturate-[1.4]";
+const LINK =
+  "rounded-10 text-ink-2 block px-[14px] py-[8px] text-[14.5px] font-medium transition-colors hover:bg-[rgba(12,18,32,0.05)] hover:text-ink";
+const CTA = buttonClass({ size: 40, className: "rounded-12 px-[18px] text-[14.5px]" });
+
+/** The floating glass pill over every public page. Below 1024px the links fold into a menu. */
 export function Nav() {
   const [open, setOpen] = useState(false);
-  const [dark, setDark] = useState(false);
-
-  // Switch to the dark glass while the header's midline sits over a dark section.
-  useEffect(() => {
-    let frame = 0;
-    const measure = () => {
-      frame = 0;
-      const y = 32;
-      const over = Array.from(document.querySelectorAll<HTMLElement>('[data-theme="dark"]')).some(
-        (el) => {
-          const r = el.getBoundingClientRect();
-          return r.top <= y && r.bottom >= y;
-        },
-      );
-      setDark((prev) => (prev === over ? prev : over));
-    };
-    const schedule = () => {
-      if (!frame) frame = window.requestAnimationFrame(measure);
-    };
-    measure();
-    window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule);
-    return () => {
-      window.removeEventListener("scroll", schedule);
-      window.removeEventListener("resize", schedule);
-      if (frame) window.cancelAnimationFrame(frame);
-    };
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -43,110 +25,100 @@ export function Nav() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const linkTone = dark ? "text-dark-text/80 hover:text-white" : "text-ink/75 hover:text-ink";
+  const close = () => setOpen(false);
 
   return (
-    <header
-      data-tone={dark ? "dark" : "light"}
-      className={`sticky top-0 z-40 border-b backdrop-blur-xl backdrop-saturate-150 transition-colors duration-200 motion-reduce:transition-none ${
-        dark ? "border-white/10 bg-ink/70 text-dark-text" : "border-line bg-paper/80 text-ink"
-      }`}
-    >
-      <nav
-        aria-label="Primary"
-        className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6"
-      >
-        <Link href="/" aria-label="Muxaris home" className="flex min-h-11 items-center">
-          <Image
-            src={dark ? "/brand/muxaris-wordmark-light.svg" : "/brand/muxaris-wordmark.svg"}
-            alt="Muxaris"
-            width={112}
-            height={30}
-            priority
-          />
-        </Link>
-
-        <ul className="hidden items-center gap-1 md:flex">
-          {NAV_LINKS.map((l) => (
-            <li key={l.href}>
-              <Link
-                href={l.href}
-                className={`${linkTone} flex min-h-11 items-center rounded-full px-3.5 text-sm transition-colors`}
-              >
-                {l.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-
-        <div className="hidden items-center gap-2 md:flex">
-          <Link
-            href="/sign-in"
-            className={`${linkTone} flex min-h-11 items-center px-3 text-sm transition-colors`}
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/#demo"
-            className="bg-accent-btn text-on-accent hover:bg-accent-btn-hover flex min-h-11 items-center rounded-full px-5 text-sm font-medium transition-colors"
-          >
-            Book a demo
-          </Link>
-        </div>
-
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls="mobile-menu"
-          aria-label={open ? "Close menu" : "Open menu"}
-          onClick={() => setOpen((v) => !v)}
-          className="-mr-2 flex size-11 items-center justify-center rounded-full md:hidden"
+    <header className="pointer-events-none fixed inset-x-0 top-[14px] z-50 flex justify-center px-[12px] sm:px-[24px]">
+      <div className="pointer-events-auto relative w-full max-w-[1200px]">
+        <nav
+          aria-label="Primary"
+          className={cn(
+            "rounded-18 flex h-[60px] w-full items-center justify-between gap-[24px] pr-[10px] pl-[22px]",
+            GLASS,
+          )}
         >
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-            {open ? (
-              <path d="M5 5l12 12M17 5L5 17" stroke="currentColor" strokeWidth="1.8" />
-            ) : (
-              <path d="M3 7h16M3 15h16" stroke="currentColor" strokeWidth="1.8" />
-            )}
-          </svg>
-        </button>
-      </nav>
+          <SiteLink href="/" aria-label="Muxaris home" className="flex items-center">
+            <Wordmark width={120} />
+          </SiteLink>
 
-      {open && (
-        <div
-          id="mobile-menu"
-          className={`border-t md:hidden ${dark ? "bg-ink border-white/10" : "border-line bg-paper"}`}
-        >
-          <ul className="mx-auto flex max-w-6xl flex-col px-4 py-3 sm:px-6">
+          <ul className="m-0 hidden list-none items-center gap-[4px] p-0 lg:flex">
             {NAV_LINKS.map((l) => (
               <li key={l.href}>
-                <Link
-                  href={l.href}
-                  onClick={() => setOpen(false)}
-                  className="font-display flex min-h-12 items-center text-xl tracking-tight"
-                >
+                <SiteLink href={l.href} className={LINK}>
                   {l.label}
-                </Link>
+                </SiteLink>
               </li>
             ))}
-            <li className="mt-3 flex gap-3">
-              <Link
+          </ul>
+
+          <div className="hidden items-center gap-[6px] lg:flex">
+            <SiteLink href="/sign-in" className={LINK}>
+              Sign in
+            </SiteLink>
+            <SiteLink href="/#demo" stay className={CTA}>
+              Book a demo
+            </SiteLink>
+          </div>
+
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls="mobile-menu"
+            aria-label={open ? "Close menu" : "Open menu"}
+            onClick={() => setOpen((v) => !v)}
+            className="rounded-12 text-ink-2 hover:text-ink grid size-[40px] cursor-pointer place-items-center transition-colors hover:bg-[rgba(12,18,32,0.05)] lg:hidden"
+          >
+            {open ? <X size={18} aria-hidden /> : <Menu size={18} aria-hidden />}
+          </button>
+        </nav>
+
+        {open && (
+          <div
+            id="mobile-menu"
+            className={cn(
+              "rounded-18 animate-[mxIn8_.2s_ease_both] absolute inset-x-0 top-[68px] p-[10px] lg:hidden",
+              GLASS,
+              "bg-[rgba(255,255,255,0.94)]",
+            )}
+          >
+            <ul className="m-0 flex list-none flex-col p-0">
+              {NAV_LINKS.map((l) => (
+                <li key={l.href}>
+                  <SiteLink
+                    href={l.href}
+                    onClick={close}
+                    className="rounded-10 text-ink-2 hover:text-ink flex min-h-[48px] items-center px-[14px] text-[17px] font-medium hover:bg-[rgba(12,18,32,0.05)]"
+                  >
+                    {l.label}
+                  </SiteLink>
+                </li>
+              ))}
+            </ul>
+            <div className="border-line mt-[8px] grid grid-cols-2 gap-[8px] border-t pt-[10px]">
+              <SiteLink
                 href="/sign-in"
-                className={`flex min-h-12 flex-1 items-center justify-center rounded-full border text-sm ${dark ? "border-white/25" : "border-line"}`}
+                onClick={close}
+                className={buttonClass({
+                  variant: "secondary",
+                  size: 48,
+                  block: true,
+                  className: "font-semibold",
+                })}
               >
                 Sign in
-              </Link>
-              <Link
+              </SiteLink>
+              <SiteLink
                 href="/#demo"
-                onClick={() => setOpen(false)}
-                className="bg-accent-btn text-on-accent flex min-h-12 flex-1 items-center justify-center rounded-full text-sm font-medium"
+                stay
+                onClick={close}
+                className={buttonClass({ size: 48, block: true })}
               >
                 Book a demo
-              </Link>
-            </li>
-          </ul>
-        </div>
-      )}
+              </SiteLink>
+            </div>
+          </div>
+        )}
+      </div>
     </header>
   );
 }
