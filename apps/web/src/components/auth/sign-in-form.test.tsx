@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 let query = "";
@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("aws-amplify/auth", () => ({ signIn: vi.fn(), signOut, signInWithRedirect: vi.fn() }));
 vi.mock("@/lib/amplify", () => ({ googleEnabled: false, authConfigured: true }));
 
-import { SignInForm } from "./sign-in-form";
+import { SignInForm, type SignInAuth } from "./sign-in-form";
 
 afterEach(() => {
   cleanup();
@@ -56,5 +56,44 @@ describe("SignInForm", () => {
     query = "";
     render(<SignInForm />);
     expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("shows a Cognito error above the form and keeps the fields", async () => {
+    query = "";
+    const auth: SignInAuth = {
+      signIn: vi.fn(async () => {
+        throw Object.assign(new Error("Incorrect"), { name: "NotAuthorizedException" });
+      }),
+      signOut: vi.fn(async () => undefined),
+      signInWithRedirect: vi.fn(async () => undefined),
+      googleEnabled: false,
+    };
+    const { container } = render(<SignInForm auth={auth} />);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "a@b.in" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "x" } });
+    fireEvent.submit(container.querySelector("form")!);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/don’t match/);
+    // The message sits before the form, as in the design.
+    expect(alert.compareDocumentPosition(container.querySelector("form")!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(screen.getByRole("link", { name: "Forgot password?" }).getAttribute("href")).toBe(
+      "/forgot-password",
+    );
+  });
+  it("shows Continue with Google only when Google is enabled", async () => {
+    query = "";
+    const redirect = vi.fn(() => new Promise<void>(() => undefined));
+    const base = { signIn: vi.fn(), signOut: vi.fn(), signInWithRedirect: redirect };
+    const { rerender } = render(
+      <SignInForm auth={{ ...base, googleEnabled: false } as unknown as SignInAuth} />,
+    );
+    expect(screen.queryByRole("button", { name: "Continue with Google" })).toBeNull();
+    expect(screen.queryByText("or")).toBeNull();
+    rerender(<SignInForm auth={{ ...base, googleEnabled: true } as unknown as SignInAuth} />);
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+    expect(redirect).toHaveBeenCalledWith({ provider: "Google" });
+    await screen.findByRole("button", { name: "Redirecting…" });
   });
 });

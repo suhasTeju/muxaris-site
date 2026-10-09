@@ -8,15 +8,26 @@ import { fetchAuthSession } from "aws-amplify/auth";
 import { safeNext } from "@/lib/auth-errors";
 import { pendingNext } from "@/lib/client-store";
 
-const GENERIC_ERROR = "We couldn’t complete Google sign-in. Please try again.";
+/** The Amplify hooks the OAuth callback waits on; previews pass stubs. */
+export interface CallbackAuth {
+  /** Subscribes to Amplify auth events; returns the unsubscribe function. */
+  listen: (onEvent: (event: string) => void) => () => void;
+  /** Resolves true when a session with an access token already exists. */
+  hasSession: () => Promise<boolean>;
+}
 
-export function CallbackHandler() {
+const AMPLIFY: CallbackAuth = {
+  listen: (onEvent) => Hub.listen("auth", ({ payload }) => onEvent(payload.event)),
+  hasSession: () => fetchAuthSession().then((s) => Boolean(s.tokens?.accessToken)),
+};
+
+export function CallbackHandler({ auth = AMPLIFY }: { auth?: CallbackAuth }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [error, setError] = useState<string | null>(params.get("error") ? GENERIC_ERROR : null);
+  const [failed, setFailed] = useState(Boolean(params.get("error")));
 
   useEffect(() => {
-    if (error) return;
+    if (failed) return;
     let finished = false;
     const go = () => {
       if (finished) return;
@@ -24,33 +35,42 @@ export function CallbackHandler() {
       router.replace(safeNext(pendingNext.take() ?? params.get("next")));
       router.refresh();
     };
-    const stop = Hub.listen("auth", ({ payload }) => {
-      if (payload.event === "signInWithRedirect") go();
-      if (payload.event === "signInWithRedirect_failure") {
+    const stop = auth.listen((event) => {
+      if (event === "signInWithRedirect") go();
+      if (event === "signInWithRedirect_failure") {
         finished = true;
-        setError(GENERIC_ERROR);
+        setFailed(true);
       }
     });
-    fetchAuthSession()
-      .then((s) => {
-        if (s.tokens?.accessToken) go();
+    auth
+      .hasSession()
+      .then((ok) => {
+        if (ok) go();
       })
       .catch(() => undefined);
     return stop;
-  }, [error, params, router]);
+  }, [failed, params, router, auth]);
 
-  if (error) {
+  if (failed) {
     return (
-      <p role="alert" className="bg-danger-soft text-danger rounded-lg px-3.5 py-2.5 text-sm">
-        {error}{" "}
-        <Link
-          href="/sign-in"
-          className="focus-visible:ring-accent-soft rounded underline outline-none focus-visible:ring-4"
-        >
+      <p role="alert" className="text-ink-2 m-0 text-[15px] leading-[1.6]">
+        We couldn’t complete Google sign-in. Please try again.{" "}
+        <Link href="/sign-in" className="font-semibold">
           Back to sign in
         </Link>
       </p>
     );
   }
-  return <p className="text-muted text-sm">Signing you in…</p>;
+  return (
+    <div
+      role="status"
+      className="border-line bg-subtle flex items-center gap-[14px] rounded-16 border p-[18px]"
+    >
+      <span
+        aria-hidden="true"
+        className="border-teal-line border-t-teal animate-mx-spin size-[22px] flex-none rounded-full border-[2.5px]"
+      />
+      <span className="text-ink-2 text-[15px]">Signing you in…</span>
+    </div>
+  );
 }

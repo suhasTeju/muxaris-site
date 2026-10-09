@@ -1,0 +1,34 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/amplify", () => ({ authConfigured: true, googleEnabled: false }));
+
+import { AuthShell } from "./auth-shell";
+
+afterEach(cleanup);
+
+describe("AuthShell", () => {
+  it("renders the heading, aside, form and footer", () => {
+    render(
+      <AuthShell title="Welcome back" aside="Your calls are in good hands." footer="Footer">
+        <form aria-label="Sign in" />
+      </AuthShell>,
+    );
+    expect(screen.getByRole("heading", { level: 1, name: "Welcome back" })).toBeTruthy();
+    expect(screen.getByText("Your calls are in good hands.")).toBeTruthy();
+    expect(screen.getByRole("form", { name: "Sign in" })).toBeTruthy();
+    expect(screen.getByText("Footer")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Muxaris home" }).getAttribute("href")).toBe("/");
+    expect(screen.getByText("© 2026 Muxaris. All rights reserved.")).toBeTruthy();
+  });
+  it("replaces the form with a configuration alert when Cognito is not set up", () => {
+    render(
+      <AuthShell title="Welcome back" configured={false}>
+        <form aria-label="Sign in" />
+      </AuthShell>,
+    );
+    expect(screen.getByRole("alert").textContent).toMatch(/Sign-in is not configured/);
+    expect(screen.queryByRole("form")).toBeNull();
+  });
+});
