@@ -43,6 +43,25 @@ describe("PlanSettings", () => {
     ).toBeTruthy();
   });
 
+  it("billing disabled wins over the role and the plan, as before the redesign", () => {
+    const copy = "Upgrading is handled by us for now. Write to hello@muxaris.com.";
+    render(
+      <PlanSettings usage={usage} isOwner={false} billing={{ enabled: false }} tz="Asia/Kolkata" />,
+    );
+    expect(screen.getByText(copy)).toBeTruthy();
+    expect(screen.queryByText("Only the clinic owner can change the plan.")).toBeNull();
+    cleanup();
+    render(
+      <PlanSettings
+        usage={{ ...usage, plan: "standard", planName: "Standard", pilotEndsAt: null }}
+        isOwner
+        billing={{ enabled: false }}
+        tz="Asia/Kolkata"
+      />,
+    );
+    expect(screen.getByText(copy)).toBeTruthy();
+  });
+
   it("pilot with a halted subscription: payment message instead of the Upgrade button", () => {
     render(
       <PlanSettings
