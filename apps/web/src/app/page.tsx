@@ -1,16 +1,5 @@
 import type { Metadata } from "next";
-import { Faq } from "@/components/marketing/Faq";
-import { FinalCta } from "@/components/marketing/FinalCta";
-import { Hero } from "@/components/marketing/Hero";
-import { HowItWorks } from "@/components/marketing/HowItWorks";
-import { LanguageMarquee } from "@/components/marketing/LanguageMarquee";
-import { Languages } from "@/components/marketing/Languages";
-import { LiveDemo } from "@/components/marketing/LiveDemo";
-import { Pricing } from "@/components/marketing/Pricing";
-import { ProblemStats } from "@/components/marketing/ProblemStats";
-import { Shell } from "@/components/marketing/Shell";
-import { WhatItHandles } from "@/components/marketing/WhatItHandles";
-import { WhoItsFor } from "@/components/marketing/WhoItsFor";
+import { Landing } from "@/components/marketing/Landing";
 import { CONTACT_EMAIL, HERO, PLANS, SITE_URL } from "@/lib/content";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
@@ -45,22 +34,11 @@ const jsonLd = {
 
 export default function Home() {
   return (
-    <Shell>
+    <Landing>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
       />
-      <Hero />
-      <LanguageMarquee />
-      <ProblemStats />
-      <LiveDemo />
-      <HowItWorks />
-      <Languages />
-      <WhatItHandles />
-      <WhoItsFor />
-      <Pricing />
-      <Faq />
-      <FinalCta />
-    </Shell>
+    </Landing>
   );
 }

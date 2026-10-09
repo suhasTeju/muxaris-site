@@ -1,29 +1,38 @@
 import Image from "next/image";
+import { cn } from "@/components/ui/cn";
 import { STEPS } from "@/lib/content";
-import { Reveal } from "./Reveal";
-import { SectionHeader } from "./SectionHeader";
+import { ANCHOR, CONTAINER, SECTION_X, SECTION_Y, SectionHeader } from "./SectionHeader";
 
 export function HowItWorks() {
   return (
-    <section id="how" className="bg-surface border-line scroll-mt-16 border-y">
-      <div className="mx-container mx-section">
-        <SectionHeader eyebrow="How it works">From ring to booked in three steps.</SectionHeader>
-        <ol className="mt-12 grid gap-10 md:grid-cols-3 md:gap-8">
-          {STEPS.map((s, i) => (
-            <Reveal as="li" key={s.n} delay={i * 50}>
-              <div className="rounded-card border-line relative aspect-square overflow-hidden border">
+    <section id="how" className={cn(SECTION_X, SECTION_Y, ANCHOR)}>
+      <div className={`${CONTAINER} flex flex-col gap-[40px] lg:gap-[56px]`}>
+        <SectionHeader eyebrow="How it works" titleClassName="max-w-[640px]">
+          From ring to booked in three steps.
+        </SectionHeader>
+        <ol className="m-0 grid list-none gap-[20px] p-0 md:grid-cols-3">
+          {STEPS.map((s) => (
+            <li
+              key={s.n}
+              className="border-line bg-surface flex flex-col gap-[22px] rounded-[26px] border px-[10px] pt-[10px] pb-[26px]"
+            >
+              <div className="rounded-18 relative aspect-square overflow-hidden">
                 <Image
                   src={s.img}
                   alt={s.alt}
                   fill
-                  sizes="(min-width: 768px) 360px, 100vw"
+                  sizes="(min-width: 1280px) 380px, (min-width: 768px) 30vw, 100vw"
                   className="object-cover"
                 />
+                <span className="rounded-10 text-teal-ink absolute top-[12px] left-[12px] bg-[rgba(255,255,255,0.82)] px-[10px] py-[6px] font-mono text-[12px] leading-[1.5] backdrop-blur-[10px]">
+                  {s.n}
+                </span>
               </div>
-              <p className="font-display text-accent-ink mt-6 text-3xl italic">{s.n}</p>
-              <h3 className="font-display mt-1 text-2xl tracking-tight">{s.title}</h3>
-              <p className="text-muted mt-3 leading-relaxed">{s.text}</p>
-            </Reveal>
+              <div className="flex flex-col gap-[10px] px-[14px]">
+                <h3 className="m-0 text-[22px] font-semibold tracking-[-0.02em]">{s.title}</h3>
+                <p className="text-muted m-0 text-[15.5px] leading-[1.6]">{s.text}</p>
+              </div>
+            </li>
           ))}
         </ol>
       </div>

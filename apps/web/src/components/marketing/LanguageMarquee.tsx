@@ -1,44 +1,41 @@
 "use client";
 
+import { Pause, Play } from "lucide-react";
 import { useState } from "react";
-import { GREETINGS } from "@/lib/content";
+import { MARQUEE } from "@/lib/content";
 
-const css = `
-@keyframes mx-marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
-.mx-marquee-track { animation: mx-marquee 48s linear infinite; }
-@media (prefers-reduced-motion: reduce) { .mx-marquee-track { animation: none; } }
-`;
-
+/** The greeting band under the hero. Two copies of the list scroll as one 48s loop. */
 export function LanguageMarquee() {
   const [paused, setPaused] = useState(false);
-  const items = [...GREETINGS, ...GREETINGS];
+  const label = paused ? "Play scrolling" : "Pause scrolling";
   return (
     <section
       aria-label="Greetings in five languages"
-      className="border-line bg-surface relative overflow-hidden border-y py-5"
+      className="border-line relative overflow-hidden border-y bg-[rgba(255,255,255,0.6)]"
     >
-      <style>{css}</style>
       <div
-        className="mx-marquee-track flex w-max items-center gap-10 whitespace-nowrap"
+        className="flex w-max animate-[mxMarquee_48s_linear_infinite] motion-reduce:animate-none"
         style={{ animationPlayState: paused ? "paused" : "running" }}
       >
-        {items.map((g, i) => (
-          <span
-            key={`${g.code}-${i}`}
-            aria-hidden={i >= GREETINGS.length ? true : undefined}
-            className="font-display text-ink/70 flex items-center gap-10 text-xl italic"
+        {[...MARQUEE, ...MARQUEE].map((m, i) => (
+          <div
+            key={i}
+            aria-hidden={i >= MARQUEE.length ? true : undefined}
+            className="text-ink-2 flex items-center gap-[28px] px-[14px] py-[22px] text-[22px] font-medium tracking-[-0.01em] whitespace-nowrap"
           >
-            {g.greeting.split(/[.?।]/)[0]}
-            <span className="bg-accent size-1.5 rounded-full" />
-          </span>
+            <span>{m}</span>
+            <span aria-hidden="true" className="bg-teal size-[6px] rounded-full opacity-60" />
+          </div>
         ))}
       </div>
       <button
         type="button"
         onClick={() => setPaused((p) => !p)}
-        className="bg-surface text-ink/70 hover:text-ink absolute top-1/2 right-2 flex min-h-11 -translate-y-1/2 items-center rounded-full border border-[var(--color-line)] px-4 text-xs shadow-sm motion-reduce:hidden"
+        aria-label={label}
+        title={label}
+        className="rounded-12 border-field text-ink-2 hover:bg-surface hover:text-ink absolute top-1/2 right-[16px] grid size-[40px] -translate-y-1/2 cursor-pointer place-items-center border bg-[rgba(255,255,255,0.92)] backdrop-blur-[8px] motion-reduce:hidden"
       >
-        {paused ? "Play scrolling" : "Pause scrolling"}
+        {paused ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />}
       </button>
     </section>
   );

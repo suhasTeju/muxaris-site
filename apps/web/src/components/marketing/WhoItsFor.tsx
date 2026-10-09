@@ -1,65 +1,68 @@
 import Image from "next/image";
+import { cn } from "@/components/ui/cn";
 import { SPECIALTY_CARDS } from "@/lib/content";
-import { Reveal } from "./Reveal";
-import { SectionHeader } from "./SectionHeader";
+import { CONTAINER, SECTION_X, SECTION_Y, SectionHeader } from "./SectionHeader";
+
+const PILL = "rounded-pill font-mono tracking-[0.08em] uppercase whitespace-nowrap";
 
 export function WhoItsFor() {
   const [first, ...rest] = SPECIALTY_CARDS;
   return (
-    <section className="mx-container mx-section">
-      <SectionHeader
-        eyebrow="Who it’s for"
-        lede="Dental first. Other specialties coming next. If your clinic books by phone, we’d like to hear from you."
-      >
-        Built for dental clinics first.
-      </SectionHeader>
-      <div className="mt-12 grid gap-4 lg:grid-cols-2">
-        {first && (
-          <Reveal className="relative min-h-80 overflow-hidden rounded-card lg:row-span-2 lg:min-h-full">
-            <Image
-              src={first.img}
-              alt=""
-              fill
-              sizes="(min-width: 1024px) 560px, 100vw"
-              className="object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/10 to-transparent" />
-            <div className="text-paper absolute inset-x-0 bottom-0 p-7">
-              <span className="bg-accent-btn text-on-accent rounded-full px-3 py-1 text-xs font-medium shadow-sm">
-                {first.status}
-              </span>
-              <h3 className="font-display mt-3 text-3xl tracking-tight">{first.title}</h3>
-              <p className="mt-2 max-w-sm text-sm text-white/90">{first.text}</p>
-            </div>
-          </Reveal>
-        )}
-        <ul className="grid gap-4 sm:grid-cols-2">
-          {rest.map((s, i) => (
-            <Reveal
-              as="li"
+    <section className={cn("border-line bg-surface border-t", SECTION_X, SECTION_Y)}>
+      <div className={`${CONTAINER} flex flex-col gap-[40px] lg:gap-[56px]`}>
+        <div className="grid items-end gap-[20px] lg:grid-cols-2 lg:gap-[48px]">
+          <SectionHeader eyebrow="Who it’s for">Built for dental clinics first.</SectionHeader>
+          <p className="text-muted m-0 max-w-[440px] text-[17px] leading-[1.6] text-pretty lg:justify-self-end">
+            Dental first. Other specialties coming next. If your clinic books by phone, we’d like to
+            hear from you.
+          </p>
+        </div>
+        <ul className="m-0 grid list-none gap-[16px] p-0 md:grid-cols-2 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)] lg:grid-rows-[auto_auto]">
+          {first && (
+            <li className="border-line relative min-h-[480px] overflow-hidden rounded-[26px] border md:col-span-2 lg:col-span-1 lg:row-span-2 lg:min-h-[620px]">
+              <Image
+                src={first.img}
+                alt=""
+                fill
+                sizes="(min-width: 1024px) 440px, 100vw"
+                className="object-cover"
+              />
+              <div className="rounded-20 absolute right-[16px] bottom-[16px] left-[16px] flex flex-col gap-[10px] border border-[rgba(255,255,255,0.95)] bg-[rgba(255,255,255,0.8)] p-[22px] backdrop-blur-[18px]">
+                <span
+                  className={`${PILL} bg-green-soft text-green-ink inline-flex items-center gap-[6px] self-start px-[10px] py-[4px] text-[11px]`}
+                >
+                  <span aria-hidden="true" className="bg-signal size-[6px] rounded-full" />
+                  {first.status}
+                </span>
+                <h3 className="m-0 text-[28px] font-semibold tracking-[-0.03em]">{first.title}</h3>
+                <p className="text-ink-3 m-0 text-[15.5px] leading-[1.55]">{first.text}</p>
+              </div>
+            </li>
+          )}
+          {rest.map((s) => (
+            <li
               key={s.key}
-              delay={i * 50}
-              className="mx-card mx-card-hover overflow-hidden"
+              className="border-line bg-subtle flex flex-col gap-[16px] rounded-[24px] border px-[8px] pt-[8px] pb-[20px]"
             >
-              <div className="relative aspect-[4/3]">
+              <div className="relative aspect-[16/10] overflow-hidden rounded-[17px]">
                 <Image
                   src={s.img}
                   alt=""
                   fill
-                  sizes="(min-width: 1024px) 280px, (min-width: 640px) 45vw, 100vw"
-                  className="object-cover"
+                  sizes="(min-width: 1024px) 360px, (min-width: 768px) 45vw, 100vw"
+                  className="object-cover saturate-[0.85]"
                 />
               </div>
-              <div className="p-5">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-display text-xl tracking-tight">{s.title}</h3>
-                  <span className="text-muted bg-ink/[0.06] rounded-full px-2.5 py-0.5 text-xs whitespace-nowrap">
+              <div className="flex flex-col gap-[8px] px-[12px]">
+                <div className="flex items-center justify-between gap-[10px]">
+                  <h3 className="m-0 text-[18px] font-semibold tracking-[-0.015em]">{s.title}</h3>
+                  <span className={`${PILL} bg-chip text-muted px-[9px] py-[3px] text-[10.5px]`}>
                     {s.status}
                   </span>
                 </div>
-                <p className="text-muted mt-2 text-sm leading-relaxed">{s.text}</p>
+                <p className="text-muted m-0 text-[14.5px] leading-[1.55]">{s.text}</p>
               </div>
-            </Reveal>
+            </li>
           ))}
         </ul>
       </div>

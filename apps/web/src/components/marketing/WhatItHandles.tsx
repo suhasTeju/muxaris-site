@@ -1,34 +1,42 @@
+import { cn } from "@/components/ui/cn";
 import { CAPABILITIES, COMING_NEXT } from "@/lib/content";
-import { Reveal } from "./Reveal";
-import { SectionHeader } from "./SectionHeader";
-
-/** Cards that carry the green ring: the two headline capabilities, one per row. */
-const FEATURED = new Set([0, 4]);
+import { ANCHOR, CONTAINER, SECTION_X, SECTION_Y, SectionHeader } from "./SectionHeader";
 
 export function WhatItHandles() {
   return (
-    <section id="handles" data-theme="dark" className="mx-dark scroll-mt-16">
-      <div className="mx-container mx-section">
-        <SectionHeader eyebrow="What it handles" aside="Not just the easy calls.">
+    <section id="handles" className={cn("border-line border-t", SECTION_X, SECTION_Y, ANCHOR)}>
+      <div className={`${CONTAINER} flex flex-col gap-[40px] lg:gap-[56px]`}>
+        <SectionHeader
+          eyebrow="What it handles"
+          aside="Not just the easy calls."
+          titleClassName="max-w-[820px]"
+        >
           The whole front-desk phone job.
         </SectionHeader>
-        <ul className="mt-12 grid auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <ul className="border-line bg-line m-0 grid list-none gap-px overflow-hidden rounded-[26px] border p-0 sm:grid-cols-2 lg:grid-cols-4">
           {CAPABILITIES.map((c, i) => (
-            <Reveal
-              as="li"
+            <li
               key={c.title}
-              delay={(i % 4) * 40}
-              className={`mx-card-dark flex flex-col p-6 sm:p-7 ${FEATURED.has(i) ? "mx-card-ring" : ""}`}
+              className="bg-surface flex flex-col gap-[24px] px-[24px] pt-[26px] pb-[30px] transition-colors hover:bg-[#fbfdfd] sm:min-h-[220px] sm:gap-[40px] lg:min-h-[250px]"
             >
-              <span className="font-display text-accent-bright text-sm italic">
+              <span className="text-teal-ink font-mono text-[12px]">
                 {String(i + 1).padStart(2, "0")}
               </span>
-              <h3 className="font-display mt-6 text-xl leading-snug tracking-tight">{c.title}</h3>
-              <p className="text-dark-muted mt-3 text-[0.95rem] leading-relaxed">{c.text}</p>
-            </Reveal>
+              <div className="flex flex-col gap-[10px]">
+                <h3 className="m-0 text-[18px] leading-[1.3] font-semibold tracking-[-0.015em]">
+                  {c.title}
+                </h3>
+                <p className="text-muted m-0 text-[14.5px] leading-[1.6]">{c.text}</p>
+              </div>
+            </li>
           ))}
         </ul>
-        <p className="font-display text-dark-muted mt-8 max-w-2xl text-sm italic">{COMING_NEXT}</p>
+        <p className="text-muted m-0 flex flex-wrap items-center gap-[10px] text-[15px]">
+          <span className="rounded-pill bg-teal-soft text-teal-ink px-[10px] py-[4px] font-mono text-[11px] tracking-[0.08em] uppercase">
+            Coming next
+          </span>
+          {COMING_NEXT}
+        </p>
       </div>
     </section>
   );
