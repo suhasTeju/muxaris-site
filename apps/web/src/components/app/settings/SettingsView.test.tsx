@@ -327,6 +327,35 @@ describe("SettingsView", () => {
     await waitFor(() => expect(within(section("Doctors")).getByText(/Dr\. Kavya N/)).toBeTruthy());
   });
 
+  it("doctor drawer: a retry after a failed hours save re-sends the hours, not a second doctor", async () => {
+    let hoursFail = true;
+    api.mockImplementation(async (path: string, init: { method: string; body: object }) => {
+      if (path === "/v1/doctors")
+        return { doctor: { ...doctors[0], id: "d3", title: null, ...init.body, workingHours: [] } };
+      if (hoursFail) throw new ApiError(500, "internal", "Could not save the hours");
+      return { ok: true };
+    });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Add doctor" }));
+    const drawer = screen.getByRole("dialog", { name: "Add doctor" });
+    fireEvent.change(within(drawer).getByLabelText("Name"), { target: { value: "Dr. Kavya N" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save doctor" }));
+    await waitFor(() =>
+      expect(within(drawer).getByRole("alert").textContent).toBe("Could not save the hours"),
+    );
+    // The doctor exists now, so the list shows it while the drawer stays open.
+    expect(within(section("Doctors")).getByText(/Dr\. Kavya N/)).toBeTruthy();
+    hoursFail = false;
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save doctor" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.mock.calls.map(([path, init]) => `${init.method} ${path}`)).toEqual([
+      "POST /v1/doctors",
+      "PUT /v1/doctors/d3/hours",
+      "PUT /v1/doctors/d3/hours",
+    ]);
+    expect(within(section("Doctors")).getAllByText(/Dr\. Kavya N/)).toHaveLength(1);
+  });
+
   it("doctor drawer: a failed save keeps the drawer open with the error", async () => {
     api.mockRejectedValue(new ApiError(403, "forbidden", "owner role required"));
     renderView();
