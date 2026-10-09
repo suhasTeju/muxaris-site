@@ -499,6 +499,69 @@ accessible name (default "Muxaris"). The design's sizes: 108 (sidebar), 150 (ind
 custom radius/shadow/animation scales. `TONES` and `BADGES` are the raw maps from the design script,
 for charts or inline styles that need hex values.
 
+## Dev preview (screens without sign-in)
+
+`next dev` serves preview routes under `/dev` that render real screens with the design's fixture
+data, without Cognito or the API, so they can be screenshotted and compared with the prototypes.
+Start the dev server and open `/dev` for the index.
+
+| Route                                           | Shows                                              |
+| ----------------------------------------------- | -------------------------------------------------- |
+| `/dev/shell?role=front_desk&plan=pilot&clinics=2` | The app shell around a placeholder page          |
+| `/dev/ui?m=dialog\|drawer&t=1`                   | Every primitive inside the shell; `m` opens a modal, `t=1` fires toasts |
+| `/dev/site`, `/dev/auth`, `/dev/onboarding`, `/dev/core`, `/dev/ops`, `/dev/assistant` | One folder per page area; each implementer adds their own |
+
+**`DevAppFrame`** (`@/components/dev/DevAppFrame`) is the real `AppShell` around fixture clinic
+context: Sunrise Dental Care (Bengaluru), owner@sunrisedental.in, Callbacks badge 3, minutes
+1,842 / 3,000. It makes no network calls: it passes fixture values through the same props the
+`(app)` layout passes and turns off the sidebar's API refresh. Props: `role` (`"owner"` default or
+`"front_desk"`, which also switches the email to frontdesk@sunrisedental.in), `plan` (`"standard"`
+default or `"pilot"`: 462 / 500, "Pilot ends 25 Oct 2026", meter in its hot state), `multiClinic`
+(shows the "Switch clinic" select), `openCallbacks`, `usage` (`null` shows the load-error state).
+
+**Fixtures** (`@/components/dev/fixtures`) are `seedDb()` from `Muxaris App.dc.html` typed as the
+API returns it (`@muxaris/shared` types): `clinic`, `secondClinic`, `doctors`, `services`,
+`slotRules`, `assistantProfile`, `patients`, `patientPhones` (raw numbers, for reveal-phone
+previews), `appointments`, `calls`, `callTurns` (by call id), `callbacks`, `notifications`,
+`usageStandard` / `usagePilot` / `usageFor(plan)`, and `FIXTURE_TODAY` (`2026-10-09`) /
+`FIXTURE_NOW` (2:10 pm IST, the prototype's "now"). They follow the API shapes, not the prototype's:
+UTC ISO instants (use `ist(date, time)` to build one), `xx-IN` language codes, E.164 or masked phones,
+masked emails, skip-reason codes in `notification.error`. Ids keep the prototype's (`p1`, `a7`,
+`c5`, `cb1`) so `/dev/core/calls/c5` lines up with `#calls/c5`.
+
+A preview page is a server component under `app/dev/<area>/…` that renders the production view
+with fixture props. Signed-in screens wrap it in `DevAppFrame`; site, auth and onboarding previews
+render their components directly (`app/dev/layout.tsx` already mounts a `ToastProvider`).
+
+```tsx
+// app/dev/core/calls/page.tsx
+import { DevAppFrame } from "@/components/dev/DevAppFrame";
+import { calls, clinic } from "@/components/dev/fixtures";
+import { CallsBrowser } from "@/components/app/CallsBrowser";
+
+export default function Preview() {
+  return (
+    <DevAppFrame role="front_desk">
+      <CallsBrowser initial={calls} tz={clinic.timezone} />
+    </DevAppFrame>
+  );
+}
+```
+
+Rules:
+
+- **Preview pages pass fixture data as props. Never add fixture branches to production code**
+  (no `if (preview)`, no importing fixtures from a view, no `?fixture=` switches). If a view only
+  loads its data from the API, split it so the loaded data arrives as props (a server page or a
+  thin client loader does the fetching and the view renders it) and preview the view.
+- Production code must not import `app/dev` or `components/dev`; eslint enforces this. Tests may use
+  the fixtures.
+- A view that fetches more on interaction will still call the API from a preview; that is fine for
+  screenshots of the initial state, but do not add mocks for it in production code.
+- Outside `next dev` every `/dev` path is a 404: the proxy answers it before anything renders,
+  `app/dev/layout.tsx` calls `notFound()` as a backstop, and the segment is never prerendered.
+  Nothing extra is needed in your area's pages.
+
 ## Testing notes
 
 - Vitest + Testing Library, jsdom via the `// @vitest-environment jsdom` comment at the top of a test.
