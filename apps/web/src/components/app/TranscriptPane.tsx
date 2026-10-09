@@ -10,12 +10,16 @@ export interface TranscriptLine {
 
 /**
  * Try your assistant → Conversation: final transcript lines as chat bubbles, the caller ("You")
- * on the right and the assistant on the left. The newest line is scrolled into view.
+ * on the right and the assistant on the left. The newest line is scrolled into view, smoothly
+ * unless the user prefers reduced motion (then it jumps, and the bubbles do not animate in).
  */
 export function TranscriptPane({ lines, idle }: { lines: TranscriptLine[]; idle: boolean }) {
   const last = useRef<HTMLLIElement>(null);
   useEffect(() => {
-    last.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    const reduce =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    last.current?.scrollIntoView?.({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
   }, [lines.length]);
   return (
     <Card radius={18} aria-labelledby="try-conversation" className="overflow-hidden">
@@ -39,7 +43,7 @@ export function TranscriptPane({ lines, idle }: { lines: TranscriptLine[]; idle:
                   ref={i === lines.length - 1 ? last : undefined}
                   data-role={l.role}
                   className={cn(
-                    "animate-mx-in flex max-w-[78%] flex-col gap-[5px]",
+                    "animate-mx-in flex max-w-[78%] flex-col gap-[5px] motion-reduce:animate-none",
                     me ? "items-end self-end" : "items-start self-start",
                   )}
                 >
