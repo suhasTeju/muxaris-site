@@ -2,25 +2,30 @@
  * Preview data for the core screens, derived from the design fixtures the way the API would
  * derive it (stats, today's range, names). Development only.
  */
-import type { Appointment, PatientDetail } from "@muxaris/shared";
+import type { Appointment, Call, PatientDetail } from "@muxaris/shared";
 import {
   FIXTURE_NOW,
   FIXTURE_TODAY,
   appointments,
   callbacks,
-  calls,
+  calls as seedCalls,
   clinic,
   doctors,
   notifications,
   patients,
   services,
 } from "@/components/dev/fixtures";
-import { patientNamesFrom } from "@/components/app/core/calls";
 import { localDateKey, type OverviewStats } from "@/lib/dashboard";
 
 export const TZ = clinic.timezone;
 export const NOW = new Date(FIXTURE_NOW);
-export const names = patientNamesFrom(patients);
+
+/** A call as GET /v1/calls returns it: with the linked patient's name joined in. */
+export function withPatientName(call: Call): Call {
+  const name = call.patientId ? patients.find((p) => p.id === call.patientId)?.name : null;
+  return { ...call, patientName: name ?? null };
+}
+export const calls = seedCalls.map(withPatientName);
 
 export function onDay(key: string): Appointment[] {
   return appointments.filter((a) => localDateKey(a.startsAt, TZ) === key);
@@ -32,14 +37,13 @@ export const overviewStats: OverviewStats = {
   callsToday: today.length,
   bookedToday: today.filter((c) => c.outcome === "booked").length,
   openCallbacks: callbacks.filter((c) => c.status === "open").length,
+  openUrgentCallbacks: callbacks.filter((c) => c.status === "open" && c.priority === "urgent")
+    .length,
   avgDurationS: today.length
     ? today.reduce((n, c) => n + (c.durationS ?? 0), 0) / today.length
     : null,
   byOutcome: {},
 };
-export const urgentCallbacks = callbacks.filter(
-  (c) => c.status === "open" && c.priority === "urgent",
-).length;
 
 export const todayAppointments = { appointments: onDay(FIXTURE_TODAY), doctors, services };
 

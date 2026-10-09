@@ -1,14 +1,18 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Notification, PatientDetail } from "@muxaris/shared";
 
-vi.mock("@/lib/api-client", () => ({ useApi: () => vi.fn() }));
+const api = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/api-client", () => ({ useApi: () => api }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import { PatientDetailView } from "./PatientDetailView";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  api.mockReset();
+});
 
 const detail = {
   patient: {
@@ -84,6 +88,7 @@ describe("PatientDetailView", () => {
     expect(screen.getByText(/Confirmation/)).toBeTruthy();
     expect(screen.getByText("· Email")).toBeTruthy();
     expect(screen.getByText("Sent")).toBeTruthy();
+    expect(screen.getByText("r•••@x.com")).toBeTruthy();
     expect(screen.getByText("No email on file")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Booked a cleaning/ }).getAttribute("href")).toBe(
       "/app/calls/call_1",
@@ -125,5 +130,81 @@ describe("PatientDetailView", () => {
     expect(screen.queryByText("12 Mar 1994")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByText("12 Mar 1994")).toBeTruthy();
+  });
+
+  it("stacks the profile over the sections and puts each row's date on its own line on phones", () => {
+    render(
+      <PatientDetailView
+        detail={detail}
+        doctors={[{ id: "d1", name: "Dr. Rao" }]}
+        services={[{ id: "s1", name: "Cleaning" }]}
+        notifications={[note]}
+        tz="Asia/Kolkata"
+      />,
+    );
+    const visit = screen.getByText(/Cleaning/).closest("li")!;
+    expect(visit.className).toContain("grid-cols-[150px_minmax(0,1fr)_auto]");
+    expect(visit.className).toContain("max-sm:grid-cols-[minmax(0,1fr)_auto]");
+    expect(visit.firstElementChild!.className).toContain("max-sm:col-span-full");
+    const layout = screen.getByRole("heading", { level: 1 }).closest(".grid")!;
+    expect(layout.className).toContain("lg:grid-cols-[340px_minmax(0,1fr)]");
+  });
+  it("shows a message on demand and hides it again", () => {
+    render(
+      <PatientDetailView
+        detail={detail}
+        doctors={[]}
+        services={[]}
+        notifications={[
+          { ...note, payload: { subject: "Appointment confirmed", body: "See you." } },
+        ]}
+        tz="Asia/Kolkata"
+      />,
+    );
+    const view = screen.getByRole("button", { name: "View message" });
+    expect(view.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(view);
+    const panel = document.getElementById(view.getAttribute("aria-controls")!)!;
+    expect(panel.textContent).toContain("Appointment confirmed");
+    expect(panel.textContent).toContain("See you.");
+    fireEvent.click(screen.getByRole("button", { name: "Hide message" }));
+    expect(screen.queryByText("See you.")).toBeNull();
+    // A sent message cannot be retried.
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("retries a failed message and shows its new status", async () => {
+    const failed = { ...note, status: "failed" as const, error: "Mailbox unavailable" };
+    api.mockResolvedValue({ notification: { ...failed, status: "queued", error: null } });
+    render(
+      <PatientDetailView
+        detail={detail}
+        doctors={[]}
+        services={[]}
+        notifications={[failed]}
+        tz="Asia/Kolkata"
+      />,
+    );
+    const messages = screen.getByRole("heading", { name: "Messages" }).closest("section, div")!;
+    expect(within(messages as HTMLElement).getByText("Failed: Mailbox unavailable")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith("/v1/notifications/ntf_1/retry", { method: "POST" }),
+    );
+    expect(await screen.findByText("Queued")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("does not offer Retry on a superseded message", () => {
+    render(
+      <PatientDetailView
+        detail={detail}
+        doctors={[]}
+        services={[]}
+        notifications={[{ ...note, status: "skipped", error: "superseded" }]}
+        tz="Asia/Kolkata"
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 });

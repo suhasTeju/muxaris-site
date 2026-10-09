@@ -1,50 +1,58 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Search, UserPlus } from "lucide-react";
 import type { Patient } from "@muxaris/shared";
-import {
-  Button,
-  Card,
-  EmptyState,
-  Input,
-  PageHeader,
-  TableHead,
-  TableRow,
-  cn,
-  useToast,
-} from "@/components/ui";
+import { Button, Card, EmptyState, Input, PageHeader, cn, useToast } from "@/components/ui";
 import { languageLabel } from "@/lib/dashboard";
 import { useCoreApi } from "./core/api";
 import { formatDayShort, initials } from "./core/format";
+import { PAGE_TITLE_MOBILE } from "./core/layout";
+import { BodyRow, HeadRow, ROW_LINK } from "./core/table";
 import { PatientForm } from "./PatientForm";
 
 const PAGE = 50;
 const COLUMNS = "minmax(0,1.4fr) 170px 110px minmax(0,1.2fr) 110px";
 
+const HEADINGS = ["Name", "Phone", "Language", "Email", "Added"];
+
 function PatientRow({ p, tz }: { p: Patient; tz: string }) {
   return (
-    <TableRow columns={COLUMNS} href={`/app/patients/${p.id}`}>
-      <span className="flex min-w-0 items-center gap-[10px]">
-        <span
-          aria-hidden
-          className={cn(
-            "grid size-[30px] shrink-0 place-items-center rounded-full text-[12px] font-semibold",
-            p.name ? "bg-teal-soft text-teal-ink" : "bg-chip text-muted-2",
-          )}
+    <BodyRow columns={COLUMNS}>
+      <span role="cell" className="flex min-w-0">
+        <Link
+          href={`/app/patients/${p.id}`}
+          className={cn("flex min-w-0 flex-1 items-center gap-[10px]", ROW_LINK)}
         >
-          {initials(p.name)}
-        </span>
-        <span className={cn("truncate font-medium", !p.name && "text-muted-2")}>
-          {p.name ?? "Unnamed"}
-        </span>
+          <span
+            aria-hidden
+            className={cn(
+              "grid size-[30px] shrink-0 place-items-center rounded-full text-[12px] font-semibold",
+              p.name ? "bg-teal-soft text-teal-ink" : "bg-chip text-muted-2",
+            )}
+          >
+            {initials(p.name)}
+          </span>
+          <span className={cn("truncate font-medium", !p.name && "text-muted-2")}>
+            {p.name ?? "Unnamed"}
+          </span>
+        </Link>
       </span>
-      <span className="text-ink-2 font-mono text-[12.5px]">{p.phoneMasked}</span>
-      <span className="text-ink-2">{languageLabel(p.preferredLanguage)}</span>
-      <span className="text-muted truncate">{p.email ?? "—"}</span>
-      <span className="text-muted font-mono text-[12.5px]">{formatDayShort(p.createdAt, tz)}</span>
-    </TableRow>
+      <span role="cell" className="text-ink-2 font-mono text-[12.5px]">
+        {p.phoneMasked}
+      </span>
+      <span role="cell" className="text-ink-2">
+        {languageLabel(p.preferredLanguage)}
+      </span>
+      <span role="cell" className="text-muted truncate">
+        {p.email ?? "—"}
+      </span>
+      <span role="cell" className="text-muted font-mono text-[12.5px]">
+        {formatDayShort(p.createdAt, tz)}
+      </span>
+    </BodyRow>
   );
 }
 
@@ -118,6 +126,7 @@ export function PatientsView({
   return (
     <div className="animate-mx-in flex flex-col gap-[18px]">
       <PageHeader
+        className={PAGE_TITLE_MOBILE}
         title="Patients"
         subtitle={`${initialTotal} ${initialTotal === 1 ? "patient" : "patients"}`}
         actions={
@@ -152,16 +161,10 @@ export function PatientsView({
             : "No patients yet. They are added automatically when the assistant books an appointment."}
         </EmptyState>
       ) : (
-        <Card aria-label="Patients" className="overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <div className="min-w-[760px]">
-              <TableHead columns={COLUMNS}>
-                <span>Name</span>
-                <span>Phone</span>
-                <span>Language</span>
-                <span>Email</span>
-                <span>Added</span>
-              </TableHead>
+            <div role="table" aria-label="Patients" className="min-w-[760px]">
+              <HeadRow columns={COLUMNS} labels={HEADINGS} />
               {items.map((p) => (
                 <PatientRow key={p.id} p={p} tz={tz} />
               ))}

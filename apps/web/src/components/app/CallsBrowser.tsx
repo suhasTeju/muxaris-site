@@ -6,7 +6,6 @@ import { Button } from "@/components/ui";
 import { CALLS_PAGE_SIZE } from "@/lib/dashboard";
 import { CallList } from "./CallList";
 import { useCoreApi } from "./core/api";
-import type { PatientNames } from "./core/calls";
 
 /** First page comes from the server; "Load more" pages through GET /v1/calls by offset. */
 export function CallsBrowser({
@@ -14,7 +13,6 @@ export function CallsBrowser({
   tz,
   filters = {},
   now,
-  names,
 }: {
   initial: Call[];
   tz: string;
@@ -22,7 +20,6 @@ export function CallsBrowser({
   filters?: Record<string, string>;
   /** Anchors "Today" and "Yesterday" (defaults to the current time). */
   now?: Date;
-  names?: PatientNames;
 }) {
   const api = useCoreApi();
   const [calls, setCalls] = useState(initial);
@@ -54,13 +51,7 @@ export function CallsBrowser({
 
   return (
     <>
-      <CallList
-        calls={calls}
-        tz={tz}
-        now={now}
-        names={names}
-        filtered={Object.keys(filters).length > 0}
-      />
+      <CallList calls={calls} tz={tz} now={now} filtered={Object.keys(filters).length > 0} />
       {error ? (
         <p role="alert" className="text-rose m-0 text-[13.5px]">
           {error}

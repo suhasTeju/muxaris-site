@@ -16,6 +16,7 @@ import { addDays, dayRange, localDateKey } from "@/lib/dashboard";
 import { CancelDialog, NewAppointmentDialog, RescheduleDialog } from "../AppointmentDialogs";
 import { useCoreApi } from "../core/api";
 import { keyDateLong, keyDayShort, keyWeekdayIndex } from "../core/format";
+import { PAGE_TITLE_MOBILE } from "../core/layout";
 import { AppointmentDrawer } from "./AppointmentDrawer";
 import { DayTimeline } from "./DayTimeline";
 import { WeekGrid, mondayOf } from "./WeekGrid";
@@ -147,6 +148,21 @@ export function AppointmentsBoard({
     };
   }, [api, rangeStart, mode, tz, ready, nonce, rangeKey]);
 
+  // Mirror the date, view and open appointment in the URL so a reload or a shared link shows the
+  // same thing. replaceState keeps Next's router in sync without a navigation; other params stay.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const put = (key: string, value: string | null) =>
+      value ? params.set(key, value) : params.delete(key);
+    put("date", picked && picked !== today ? picked : null);
+    put("view", mode === "week" ? "week" : null);
+    put("id", selectedId);
+    const qs = params.toString();
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) window.history.replaceState(null, "", next);
+  }, [picked, today, mode, selectedId]);
+
   const reload = () => setNonce((n) => n + 1);
   const selected = data?.appointments.find((a) => a.id === selectedId) ?? null;
 
@@ -253,6 +269,7 @@ export function AppointmentsBoard({
   return (
     <div className="animate-mx-in flex flex-col gap-[18px]">
       <PageHeader
+        className={PAGE_TITLE_MOBILE}
         title="Appointments"
         subtitle={subtitle}
         actions={

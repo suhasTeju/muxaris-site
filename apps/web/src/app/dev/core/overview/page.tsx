@@ -1,7 +1,7 @@
 import { DevAppFrame } from "@/components/dev/DevAppFrame";
-import { calls, clinic, usageFor } from "@/components/dev/fixtures";
+import { clinic, usageFor } from "@/components/dev/fixtures";
 import { OverviewView } from "@/components/app/OverviewView";
-import { NOW, TZ, names, overviewStats, param, todayAppointments, urgentCallbacks } from "../_data";
+import { NOW, TZ, calls, overviewStats, param, todayAppointments } from "../_data";
 
 /**
  * /dev/core/overview
@@ -48,8 +48,6 @@ export default async function OverviewPreview({
         recentCalls={
           state === "error" ? failed : { ok: true, data: empty ? [] : calls.slice(0, 5) }
         }
-        urgentCallbacks={state === "error" ? null : urgentCallbacks}
-        patientNames={names}
       />
     </DevAppFrame>
   );

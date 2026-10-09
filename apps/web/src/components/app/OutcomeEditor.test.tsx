@@ -61,17 +61,23 @@ describe("OutcomeEditor", () => {
     expect(onSaved).not.toHaveBeenCalled();
   });
 
-  it("follows a worker-set outcome arriving from a poll, so Save cannot overwrite it", async () => {
-    api.mockResolvedValue({ call: call({ outcome: "callback", outcomeSource: "staff" }) });
+  it("keeps Save disabled until the outcome changes", () => {
+    render(<OutcomeEditor call={call()} onSaved={vi.fn()} />);
+    const save = () => screen.getByRole("button", { name: "Save outcome" }) as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Outcome"), { target: { value: "booked" } });
+    expect(save().disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("Outcome"), { target: { value: "info" } });
+    expect(save().disabled).toBe(true);
+  });
+
+  it("follows a worker-set outcome arriving from a poll, so Save cannot overwrite it", () => {
     const { rerender } = render(<OutcomeEditor call={call()} onSaved={vi.fn()} />);
     rerender(<OutcomeEditor call={call({ outcome: "callback" })} onSaved={vi.fn()} />);
     expect((screen.getByLabelText("Outcome") as HTMLSelectElement).value).toBe("callback");
-    fireEvent.click(screen.getByRole("button", { name: "Save outcome" }));
-    await waitFor(() =>
-      expect(api).toHaveBeenCalledWith("/v1/calls/c1", {
-        method: "PATCH",
-        body: { outcome: "callback" },
-      }),
-    );
+    expect(
+      (screen.getByRole("button", { name: "Save outcome" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(api).not.toHaveBeenCalled();
   });
 });

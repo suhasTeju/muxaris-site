@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import { DevAppFrame } from "@/components/dev/DevAppFrame";
-import { callTurns, callbacks, calls, patients } from "@/components/dev/fixtures";
+import { callTurns, callbacks } from "@/components/dev/fixtures";
 import { CallDetail } from "@/components/app/CallDetail";
 import { FixtureApi } from "../../_lib/FixtureApi";
-import { TZ, param } from "../../_data";
+import { TZ, calls, param } from "../../_data";
 
 const REC = ["ready", "pending", "missing", "error"] as const;
 
@@ -32,7 +32,6 @@ export default async function CallDetailPreview({
   const initial =
     call.status === "abandoned" ? { ...call, metrics: { ...call.metrics, userTurns: 0 } } : call;
   const rec = REC.find((r) => r === param(q, "rec")) ?? "ready";
-  const name = patients.find((p) => p.id === call.patientId)?.name ?? null;
   return (
     <DevAppFrame role={param(q, "role") === "front_desk" ? "front_desk" : "owner"}>
       <FixtureApi recording={rec}>
@@ -42,7 +41,7 @@ export default async function CallDetailPreview({
           turns={callTurns[call.id] ?? []}
           callbacks={callbacks.filter((c) => c.callId === call.id)}
           tz={TZ}
-          patientName={name}
+          patientName={call.patientName ?? null}
         />
       </FixtureApi>
     </DevAppFrame>

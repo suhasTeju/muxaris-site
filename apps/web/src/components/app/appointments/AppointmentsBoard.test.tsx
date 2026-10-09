@@ -17,7 +17,10 @@ vi.mock("next/link", () => ({
 
 import { AppointmentsBoard } from "./AppointmentsBoard";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.history.replaceState(null, "", "/");
+});
 
 const NOW = new Date(FIXTURE_NOW);
 
@@ -59,12 +62,34 @@ describe("AppointmentsBoard", () => {
     expect(await screen.findByText("12 Oct – 18 Oct 2026")).toBeTruthy();
   });
 
+  it("writes the view, date and open appointment to the URL, keeping other params", async () => {
+    window.history.replaceState(null, "", "/app/appointments?state=x");
+    renderBoard();
+    await screen.findByRole("list", { name: "Dr. Meera Rao" });
+    expect(window.location.search).toBe("?state=x");
+    fireEvent.click(screen.getByRole("tab", { name: "Week" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("12 Oct – 18 Oct 2026");
+    expect(new URLSearchParams(window.location.search).get("view")).toBe("week");
+    expect(new URLSearchParams(window.location.search).get("date")).toBe("2026-10-16");
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Day" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Consultation · Ananya Krishnan/ }));
+    await screen.findByRole("dialog");
+    expect(window.location.search).toBe("?state=x&id=a7");
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await waitFor(() => expect(window.location.search).toBe("?state=x"));
+    expect(window.location.pathname).toBe("/app/appointments");
+  });
+
   it("opens the drawer for an upcoming visit with Reschedule and Cancel", async () => {
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /Consultation · Ananya Krishnan/ }));
     const drawer = await screen.findByRole("dialog");
     expect(within(drawer).getByText("Fri, 9 Oct 2026 · 4:30 pm – 4:50 pm")).toBeTruthy();
     expect(within(drawer).getByText("Booked by assistant")).toBeTruthy();
+    // Masked until the audited reveal.
+    expect(within(drawer).getByText("+91 •••• ••3210")).toBeTruthy();
     expect(within(drawer).getByRole("link", { name: "Open the call" }).getAttribute("href")).toBe(
       "/app/calls/c1",
     );
@@ -120,5 +145,16 @@ describe("AppointmentsBoard", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Book appointment" }));
     expect(await screen.findByText(/^Booked Consultation for Fri, 9 Oct, /)).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  }, 15_000);
+  it("scrolls the doctor columns inside the card and stacks the week on narrow screens", async () => {
+    renderBoard();
+    const schedule = await screen.findByLabelText("Day schedule");
+    expect(schedule.firstElementChild!.className).toContain("overflow-x-auto");
+    fireEvent.click(screen.getByRole("tab", { name: "Week" }));
+    const monday = await screen.findByRole("region", { name: "Mon, 5 Oct" });
+    const week = monday.parentElement!.className;
+    expect(week).toContain("grid-cols-1");
+    expect(week).toContain("sm:grid-cols-2");
+    expect(week).toContain("lg:grid-cols-7");
   });
 });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Patient } from "@muxaris/shared";
 
@@ -45,9 +45,17 @@ describe("PatientsView", () => {
       />,
     );
     expect(screen.getByText("2 patients")).toBeTruthy();
-    const row = screen.getByRole("link", { name: /Ananya Krishnan/ });
-    expect(row.getAttribute("href")).toBe("/app/patients/p1");
+    const link = screen.getByRole("link", { name: /Ananya Krishnan/ });
+    expect(link.getAttribute("href")).toBe("/app/patients/p1");
+    const row = link.closest('[role="row"]')!;
     expect(row.textContent).toBe("AKAnanya Krishnan+91 •••• ••3210Englisha@x.com8 Oct");
+    const table = screen.getByRole("table", { name: "Patients" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["Name", "Phone", "Language", "Email", "Added"]);
+    expect(within(row as HTMLElement).getAllByRole("cell")).toHaveLength(5);
     expect(screen.getByRole("link", { name: /Unnamed/ }).textContent).toContain("?");
   });
 
@@ -85,6 +93,19 @@ describe("PatientsView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add patient" }));
     expect(screen.getByRole("dialog", { name: "Add patient" })).toBeTruthy();
     expect(screen.getByLabelText("Phone")).toBeTruthy();
+  });
+  it("scrolls the patient table inside its card on narrow screens", () => {
+    render(
+      <PatientsView
+        initial={[patient("p1", "Ananya Krishnan")]}
+        initialTotal={1}
+        tz="Asia/Kolkata"
+      />,
+    );
+    const row = screen.getByRole("link", { name: /Ananya Krishnan/ });
+    const scroller = row.closest(".overflow-x-auto")!;
+    expect(scroller).toBeTruthy();
+    expect(scroller.firstElementChild!.className).toContain("min-w-[760px]");
   });
 });
 

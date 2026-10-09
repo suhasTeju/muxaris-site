@@ -1,11 +1,11 @@
 import { AppointmentsView } from "@/components/app/AppointmentsView";
+import { validDateKey } from "@/components/app/core/format";
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /**
  * ?id=<appointment> opens that appointment's panel (the Overview links here); ?date=YYYY-MM-DD
- * and ?view=week pick the calendar's starting point.
+ * and ?view=week pick the calendar's starting point. The board writes all three back as you move.
  */
 export default async function AppointmentsPage({
   searchParams,
@@ -17,7 +17,7 @@ export default async function AppointmentsPage({
   const id = one(q.id);
   return (
     <AppointmentsView
-      initialDate={date && DATE.test(date) ? date : undefined}
+      initialDate={validDateKey(date)}
       initialMode={one(q.view) === "week" ? "week" : "day"}
       initialId={id && /^[\w-]{1,64}$/.test(id) ? id : undefined}
     />

@@ -24,9 +24,9 @@ export function OutcomeEditor({ call, onSaved }: { call: Call; onSaved: (call: C
     if (value === (seen ?? "")) setValue(call.outcome ?? "");
     setSeen(call.outcome);
   }
-  // Saving the outcome already shown confirms it as staff-checked, as the design allows; the poll
-  // follow above keeps the select from holding a stale value.
-  const canSave = value !== "" && !busy;
+  // As before the redesign: Save needs a different outcome. Re-saving the shown one would flip its
+  // source to staff and pin an outcome the worker set.
+  const canSave = value !== "" && value !== call.outcome && !busy;
 
   async function save() {
     setBusy(true);

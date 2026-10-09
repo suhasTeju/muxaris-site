@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Call, CallTurn, Callback } from "@muxaris/shared";
 
@@ -128,5 +128,32 @@ describe("CallDetail", () => {
     expect(screen.getByRole("link", { name: /Open callback queue/ }).getAttribute("href")).toBe(
       "/app/callbacks",
     );
+  });
+  it("shrinks the title and stacks the summary under the transcript below 1024px", () => {
+    render(<CallDetail initialCall={call()} turns={turns} callbacks={[]} tz={TZ} />);
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1.className).toContain("text-[22px]");
+    expect(h1.className).toContain("lg:text-[26px]");
+    const grid = screen.getByRole("heading", { name: "Summary" }).closest(".grid")!;
+    expect(grid.className).toContain("lg:grid-cols-[minmax(0,1.5fr)_minmax(300px,1fr)]");
+    expect(grid.className).not.toMatch(/(^| )grid-cols-/);
+  });
+  it("keeps the caller's name after an outcome save returns the call without it", async () => {
+    // PATCH /v1/calls/:id answers with the bare row: no joined patientName.
+    api.mockResolvedValue({ call: call({ outcome: "handoff", outcomeSource: "staff" }) });
+    render(
+      <CallDetail
+        initialCall={call({ patientName: "Ananya" })}
+        turns={turns}
+        callbacks={[]}
+        tz={TZ}
+        patientName="Ananya"
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Outcome"), { target: { value: "handoff" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save outcome" }));
+    await waitFor(() => expect(screen.getByText("Edited by staff")).toBeTruthy());
+    const meta = screen.getByRole("heading", { level: 1 }).nextElementSibling!;
+    expect(meta.textContent).toContain("Ananya · +91 •••• ••3210");
   });
 });

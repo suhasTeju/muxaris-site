@@ -37,6 +37,7 @@ const SECTIONS: Array<{ title: string; links: Array<[label: string, href: string
       ["Patient, editing", "/dev/core/patients/p1?edit=1"],
       ["Unnamed patient", "/dev/core/patients/p10"],
       ["Patient without calls", "/dev/core/patients/p3"],
+      ["Failed message with Retry", "/dev/core/patients/p2"],
     ],
   },
   {

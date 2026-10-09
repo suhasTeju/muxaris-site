@@ -3,6 +3,7 @@ import { Calendar, CalendarCheck, Phone, PhoneIncoming, Timer } from "lucide-rea
 import type { Appointment, Call, Doctor, Service } from "@muxaris/shared";
 import { Badge, Card, KpiCard, PageHeader, SectionHeader, badgeFor } from "@/components/ui";
 import {
+  formatDuration,
   formatTime,
   languageLabel,
   localDateKey,
@@ -11,8 +12,9 @@ import {
   type Usage,
 } from "@/lib/dashboard";
 import { TodayAppointmentList } from "./overview/TodayAppointmentList";
-import { callIcon, callerOf, type PatientNames } from "./core/calls";
+import { callIcon, callerOf } from "./core/calls";
 import { formatDateLong, formatDur, relativeDay } from "./core/format";
+import { PAGE_TITLE_MOBILE } from "./core/layout";
 import { usageCard } from "./usage";
 
 export interface TodayAppointments {
@@ -48,8 +50,6 @@ export function OverviewView({
   usage,
   appointments,
   recentCalls,
-  urgentCallbacks = null,
-  patientNames,
   now = new Date(),
 }: {
   clinicName: string;
@@ -58,18 +58,17 @@ export function OverviewView({
   usage: Section<Usage>;
   appointments: Section<TodayAppointments>;
   recentCalls: Section<Call[]>;
-  /** Open callbacks marked urgent: the badge on the Open callbacks tile (hidden at 0 or unknown). */
-  urgentCallbacks?: number | null;
-  /** Names for the patients behind recent calls. */
-  patientNames?: PatientNames;
   now?: Date;
 }) {
   const todayKey = localDateKey(now, tz);
   const fail = stats.ok ? undefined : "Couldn't load";
   const card = usage.ok ? usageCard(usage.data) : null;
+  // The badge on the Open callbacks tile: hidden at 0, or when the stats did not load.
+  const urgent = stats.ok ? (stats.data.openUrgentCallbacks ?? 0) : 0;
   return (
     <div className="animate-mx-in flex flex-col gap-[22px]">
       <PageHeader
+        className={PAGE_TITLE_MOBILE}
         title="Overview"
         subtitle={clinicName}
         actions={
@@ -82,13 +81,13 @@ export function OverviewView({
 
       <section
         aria-label="Key numbers"
-        className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-[14px]"
+        className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(210px,1fr))]"
       >
         <KpiCard
           icon={Phone}
           label="Calls today"
           value={stats.ok ? String(stats.data.callsToday) : DASH}
-          hint={fail ?? `Average ${Math.round(stats.ok ? (stats.data.avgDurationS ?? 0) : 0)}s`}
+          hint={fail ?? `Average ${formatDuration(stats.ok ? stats.data.avgDurationS : null)}`}
         />
         <KpiCard
           icon={CalendarCheck}
@@ -104,10 +103,10 @@ export function OverviewView({
           hint={fail ?? "View the callback queue"}
           hintTone={fail ? "muted" : "link"}
           badge={
-            urgentCallbacks ? (
+            urgent ? (
               // Block-level, so the label row is exactly the badge's 20px as in the design.
               <Badge tone="bad" size={20} className="flex">
-                {urgentCallbacks} urgent
+                {urgent} urgent
               </Badge>
             ) : undefined
           }
@@ -158,7 +157,7 @@ export function OverviewView({
             <Quiet>No calls yet. Try your assistant to place a first test call.</Quiet>
           ) : (
             recentCalls.data.map((c) => {
-              const who = callerOf(c, patientNames);
+              const who = callerOf(c);
               const { icon: Icon, tile } = callIcon(c);
               const b = badgeFor("outcome", c.outcome);
               const meta = [

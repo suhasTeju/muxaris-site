@@ -109,6 +109,21 @@ d("stats routes", () => {
       phone: "+919876543210",
       reason: "r",
     });
+    await db.insert(schema.callbacks).values({
+      id: newId("cb"),
+      clinicId: a,
+      phone: "+919876543211",
+      reason: "pain",
+      priority: "urgent",
+    });
+    await db.insert(schema.callbacks).values({
+      id: newId("cb"),
+      clinicId: a,
+      phone: "+919876543212",
+      reason: "handled",
+      priority: "urgent",
+      status: "done",
+    });
   });
 
   it("uses the clinic timezone for the day window", async () => {
@@ -118,7 +133,8 @@ d("stats routes", () => {
       date: "2026-03-10",
       callsToday: 2,
       bookedToday: 1,
-      openCallbacks: 1,
+      openCallbacks: 2,
+      openUrgentCallbacks: 1,
       avgDurationS: 90,
       byOutcome: { booked: 1, info: 1 },
     });

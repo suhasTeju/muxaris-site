@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Call } from "@muxaris/shared";
 import { CallList } from "./CallList";
@@ -55,7 +55,13 @@ describe("CallList design", () => {
     status: "completed",
   };
   const calls = [
-    { ...base, id: "c9", startedAt: "2026-10-09T08:22:00Z", patientId: "p5" },
+    {
+      ...base,
+      id: "c9",
+      startedAt: "2026-10-09T08:22:00Z",
+      patientId: "p5",
+      patientName: "Priya Venkatesh",
+    },
     { ...base, id: "c8", startedAt: "2026-10-09T07:50:00Z", channel: "browser" },
     { ...base, id: "c1", startedAt: "2026-10-08T14:44:00Z", status: "failed" },
     { ...base, id: "c13", startedAt: "2026-10-07T14:18:00Z" },
@@ -69,16 +75,10 @@ describe("CallList design", () => {
   });
 
   it("names known patients over their masked number and labels test calls", () => {
-    render(
-      <CallList
-        calls={calls}
-        tz="Asia/Kolkata"
-        now={new Date("2026-10-09T08:40:00Z")}
-        names={{ p5: "Priya Venkatesh" }}
-      />,
-    );
-    const row = screen.getByText("Priya Venkatesh").closest("a")!;
-    expect(row.getAttribute("href")).toBe("/app/calls/c9");
+    render(<CallList calls={calls} tz="Asia/Kolkata" now={new Date("2026-10-09T08:40:00Z")} />);
+    const link = screen.getByRole("link", { name: /Priya Venkatesh/ });
+    expect(link.getAttribute("href")).toBe("/app/calls/c9");
+    const row = link.closest('[role="row"]')!;
     expect(row.textContent).toContain("+91 •••• ••0192");
     expect(row.textContent).toContain("1:52 pm");
     expect(row.textContent).toContain("0m 41s");
@@ -98,5 +98,32 @@ describe("CallList design", () => {
     expect(screen.getByRole("link", { name: "Place a test call" }).getAttribute("href")).toBe(
       "/app/assistant/try",
     );
+  });
+
+  it("scrolls the table sideways inside its card on narrow screens", () => {
+    render(<CallList calls={calls} tz="Asia/Kolkata" now={new Date("2026-10-09T08:40:00Z")} />);
+    const table = screen.getByRole("table", { name: "Calls" });
+    expect(table.className).toContain("min-w-[940px]");
+    expect(table.parentElement!.className).toContain("overflow-x-auto");
+  });
+
+  it("exposes table semantics: headers, a row per call and a link in each row", () => {
+    render(<CallList calls={calls} tz="Asia/Kolkata" now={new Date("2026-10-09T08:40:00Z")} />);
+    const table = screen.getByRole("table", { name: "Calls" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["When", "Caller", "Duration", "Language", "Outcome", "Status", ""]);
+    // Header + 3 day groups + 4 calls.
+    expect(within(table).getAllByRole("row")).toHaveLength(8);
+    const group = within(table).getByText("Today · Fri, 9 Oct 2026");
+    expect(group.getAttribute("role")).toBe("cell");
+    expect(group.getAttribute("aria-colspan")).toBe("7");
+    const row = within(table)
+      .getByRole("link", { name: /Test call/ })
+      .closest('[role="row"]')!;
+    expect(within(row as HTMLElement).getAllByRole("cell")).toHaveLength(7);
+    expect(within(table).getAllByRole("link")).toHaveLength(4);
   });
 });

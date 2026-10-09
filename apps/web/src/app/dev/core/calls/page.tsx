@@ -1,9 +1,8 @@
 import { DevAppFrame } from "@/components/dev/DevAppFrame";
-import { calls } from "@/components/dev/fixtures";
 import { CallsBrowser } from "@/components/app/CallsBrowser";
 import { CallsPageView } from "@/components/app/calls/CallsPageView";
 import { localDateKey } from "@/lib/dashboard";
-import { NOW, TZ, names, param } from "../_data";
+import { NOW, TZ, calls, param } from "../_data";
 
 /**
  * /dev/core/calls
@@ -50,7 +49,6 @@ export default async function CallsPreview({
             tz={TZ}
             filters={filters}
             now={NOW}
-            names={names}
           />
         }
       />

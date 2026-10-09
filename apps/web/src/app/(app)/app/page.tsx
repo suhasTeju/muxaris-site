@@ -1,16 +1,7 @@
-import type {
-  Appointment,
-  Call,
-  Callback,
-  Clinic,
-  Doctor,
-  Patient,
-  Service,
-} from "@muxaris/shared";
+import type { Appointment, Call, Clinic, Doctor, Service } from "@muxaris/shared";
 import { requireActiveClinic, serverApi } from "@/lib/api-server";
 import { dayRange, localDateKey, toSection, type OverviewStats, type Usage } from "@/lib/dashboard";
 import { OverviewView } from "@/components/app/OverviewView";
-import { patientNamesFrom } from "@/components/app/core/calls";
 
 export const dynamic = "force-dynamic";
 
@@ -22,21 +13,16 @@ export default async function AppHome() {
   const now = new Date();
   const today = localDateKey(now, tz);
   const { from, to } = dayRange(today, 1, tz);
-  const [appts, doctors, services, stats, recentCalls, usage, openCallbacks, patients] =
-    await Promise.allSettled([
-      serverApi<{ appointments: Appointment[] }>(
-        `/v1/appointments?${new URLSearchParams({ from, to })}`,
-      ),
-      serverApi<{ doctors: Doctor[] }>("/v1/doctors"),
-      serverApi<{ services: Service[] }>("/v1/services"),
-      serverApi<OverviewStats>(`/v1/stats/overview?${new URLSearchParams({ date: today })}`),
-      serverApi<{ calls: Call[] }>("/v1/calls?limit=5"),
-      serverApi<Usage>("/v1/usage"),
-      // The "N urgent" badge: the stats endpoint counts open callbacks but not their priority.
-      serverApi<{ callbacks: Callback[] }>("/v1/callbacks?status=open&limit=200"),
-      // Call rows carry only the patient id; names come from the latest patients.
-      serverApi<{ patients: Patient[] }>("/v1/patients?limit=200"),
-    ]);
+  const [appts, doctors, services, stats, recentCalls, usage] = await Promise.allSettled([
+    serverApi<{ appointments: Appointment[] }>(
+      `/v1/appointments?${new URLSearchParams({ from, to })}`,
+    ),
+    serverApi<{ doctors: Doctor[] }>("/v1/doctors"),
+    serverApi<{ services: Service[] }>("/v1/services"),
+    serverApi<OverviewStats>(`/v1/stats/overview?${new URLSearchParams({ date: today })}`),
+    serverApi<{ calls: Call[] }>("/v1/calls?limit=5"),
+    serverApi<Usage>("/v1/usage"),
+  ]);
 
   const appointments =
     appts.status === "fulfilled" &&
@@ -55,12 +41,6 @@ export default async function AppHome() {
     const s = toSection(r);
     return s.ok ? { ok: true as const, data: s.data.calls } : s;
   };
-  const urgent =
-    openCallbacks.status === "fulfilled"
-      ? openCallbacks.value.callbacks.filter((c) => c.priority === "urgent").length
-      : null;
-  const patientNames =
-    patients.status === "fulfilled" ? patientNamesFrom(patients.value.patients) : {};
 
   return (
     <OverviewView
@@ -71,8 +51,6 @@ export default async function AppHome() {
       recentCalls={callsOf(recentCalls)}
       usage={toSection(usage)}
       appointments={appointments}
-      urgentCallbacks={urgent}
-      patientNames={patientNames}
     />
   );
 }

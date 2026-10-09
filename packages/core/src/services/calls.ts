@@ -1,4 +1,16 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { schema, newId, type Db } from "@muxaris/db";
 import { maskPhone } from "@muxaris/shared";
 import { CoreError } from "./errors.js";
@@ -12,6 +24,8 @@ type CallChannel = (typeof schema.callChannelEnum.enumValues)[number];
 export type CallRow = typeof calls.$inferSelect;
 export type TurnRow = typeof callTurns.$inferSelect;
 export type CallbackRow = typeof callbacks.$inferSelect;
+/** A call with its linked patient's name: null when no patient is linked or the patient has no name. */
+export type CallWithPatient = CallRow & { patientName: string | null };
 
 async function assertCall(db: Db, clinicId: string, callId: string) {
   const [row] = await db
@@ -193,7 +207,7 @@ export async function listCalls(
   db: Db,
   clinicId: string,
   f: CallFilters,
-): Promise<{ calls: CallRow[]; total: number }> {
+): Promise<{ calls: CallWithPatient[]; total: number }> {
   const where = and(
     eq(calls.clinicId, clinicId),
     f.from ? gte(calls.startedAt, f.from) : undefined,
@@ -203,8 +217,12 @@ export async function listCalls(
     f.channel ? eq(calls.channel, f.channel) : undefined,
   );
   const rows = await db
-    .select()
+    .select({ ...getTableColumns(calls), patientName: patients.name })
     .from(calls)
+    .leftJoin(
+      patients,
+      and(eq(patients.id, calls.patientId), eq(patients.clinicId, calls.clinicId)),
+    )
     .where(where)
     .orderBy(desc(calls.startedAt), desc(calls.id))
     .limit(f.limit)
@@ -233,7 +251,14 @@ export function toCallbackView(row: CallbackRow): CallbackView {
 }
 
 export async function getCall(db: Db, clinicId: string, callId: string) {
-  const call = await loadCall(db, clinicId, callId);
+  const row = await loadCall(db, clinicId, callId);
+  const [patient] = row.patientId
+    ? await db
+        .select({ name: patients.name })
+        .from(patients)
+        .where(and(eq(patients.id, row.patientId), eq(patients.clinicId, clinicId)))
+    : [];
+  const call: CallWithPatient = { ...row, patientName: patient?.name ?? null };
   const turns = await db
     .select()
     .from(callTurns)
@@ -460,6 +485,8 @@ export async function getOverviewStats(
   callsToday: number;
   bookedToday: number;
   openCallbacks: number;
+  /** Open callbacks the assistant flagged urgent (a subset of `openCallbacks`). */
+  openUrgentCallbacks: number;
   avgDurationS: number | null;
   byOutcome: Record<string, number>;
 }> {
@@ -481,7 +508,10 @@ export async function getOverviewStats(
     .where(and(inWindow, sql`${calls.outcome} IS NOT NULL`))
     .groupBy(calls.outcome);
   const [cb] = await db
-    .select({ n: sql<number>`count(*)::int` })
+    .select({
+      n: sql<number>`count(*)::int`,
+      urgent: sql<number>`(count(*) FILTER (WHERE ${callbacks.priority} = 'urgent'))::int`,
+    })
     .from(callbacks)
     .where(and(eq(callbacks.clinicId, clinicId), eq(callbacks.status, "open")));
   const byOutcome: Record<string, number> = {};
@@ -490,6 +520,7 @@ export async function getOverviewStats(
     callsToday: agg?.n ?? 0,
     bookedToday: byOutcome["booked"] ?? 0,
     openCallbacks: cb?.n ?? 0,
+    openUrgentCallbacks: cb?.urgent ?? 0,
     avgDurationS: agg?.avg == null ? null : Math.round(Number(agg.avg)),
     byOutcome,
   };
