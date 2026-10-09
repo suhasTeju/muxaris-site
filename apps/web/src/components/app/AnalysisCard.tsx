@@ -1,21 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PhoneIncoming } from "lucide-react";
 import type { Call } from "@muxaris/shared";
-import { useApi } from "@/lib/api-client";
-import { Badge } from "./Badge";
+import { Card, cn } from "@/components/ui";
+import { useCoreApi } from "./core/api";
+import { StatusBadge } from "./core/StatusBadge";
 
 export const PURGED_NOTE = "This call's transcript and summary were deleted after 90 days.";
 
 const POLL_MS = 10_000;
 const POLL_MAX_MS = 120_000;
 const RECENT_MS = 5 * 60_000;
-
-const SENTIMENT: Record<NonNullable<Call["sentiment"]>, ["good" | "muted" | "bad", string]> = {
-  positive: ["good", "Positive"],
-  neutral: ["muted", "Neutral"],
-  negative: ["bad", "Negative"],
-};
 
 function entityRows(entities: Record<string, unknown> | undefined): Array<[string, string]> {
   return Object.entries(entities ?? {}).flatMap(([k, v]) => {
@@ -25,18 +21,24 @@ function entityRows(entities: Record<string, unknown> | undefined): Array<[strin
   });
 }
 
-/** Post-call summary. While the worker has not run yet, a recent call is polled for up to 2 min. */
+/**
+ * Post-call summary card from AppCallDetail.dc.html: sentiment, summary, the callback line and the
+ * extracted details. While the worker has not run yet, a recent call is polled for up to 2 min.
+ */
 export function AnalysisCard({
   call,
   callbackCount,
+  callbackReason,
   onCall,
 }: {
   call: Call;
   /** Callbacks linked to this call; a requested callback with none means no number was given. */
   callbackCount: number;
+  /** Reason on the linked callback, preferred over the analysis's own wording. */
+  callbackReason?: string | null;
   onCall: (call: Call) => void;
 }) {
-  const api = useApi();
+  const api = useCoreApi();
   const [mountedAt] = useState(() => Date.now());
   const [gaveUp, setGaveUp] = useState(false);
   const recent = call.endedAt !== null && mountedAt - Date.parse(call.endedAt) < RECENT_MS;
@@ -68,61 +70,61 @@ export function AnalysisCard({
     };
   }, [pending, api, call.id, onCall]);
 
-  const rows = entityRows(call.analysis?.entities);
-  let body: React.ReactNode;
-  if (purged) {
-    body = <p className="text-muted">{PURGED_NOTE}</p>;
-  } else if (call.summary) {
-    body = <p className="text-[15px]">{call.summary}</p>;
-  } else if (noSpeech || (call.analysedAt && call.analysis?.skipped === "no_turns")) {
+  let text: string;
+  if (purged) text = PURGED_NOTE;
+  else if (call.summary) text = call.summary;
+  else if (noSpeech || (call.analysedAt && call.analysis?.skipped === "no_turns")) {
     // The worker marked this call as having no caller speech: say so rather than guess.
-    body = <p className="text-muted">No caller speech to summarise.</p>;
-  } else if (pending) {
-    body = (
-      <p aria-live="polite" className="text-muted">
-        Summary pending
-      </p>
-    );
-  } else {
-    body = <p className="text-muted">No summary available</p>;
-  }
+    text = "No caller speech to summarise.";
+  } else if (pending) text = "Summary pending";
+  else text = "No summary available";
+  const real = !purged && !!call.summary;
+
+  const reason = callbackReason || call.analysis?.callbackReason;
+  const callbackLine =
+    call.analysis?.needsCallback && !purged
+      ? callbackCount === 0
+        ? "Caller asked for a callback but left no number."
+        : reason
+          ? `Callback requested: ${reason}`
+          : "Callback requested"
+      : null;
+
+  const rows = purged ? [] : entityRows(call.analysis?.entities);
 
   return (
-    <section
-      aria-labelledby="analysis-h"
-      className="border-line bg-surface rounded-card border p-5"
-    >
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 id="analysis-h" className="font-display text-lg">
+    <Card aria-labelledby="analysis-h" className="flex flex-col gap-[14px] p-[18px]">
+      <div className="flex items-center justify-between">
+        <h2 id="analysis-h" className="m-0 text-[15px] font-semibold">
           Summary
         </h2>
-        {call.sentiment ? (
-          <Badge tone={SENTIMENT[call.sentiment][0]}>{SENTIMENT[call.sentiment][1]}</Badge>
-        ) : null}
+        {call.sentiment ? <StatusBadge kind="sentiment" value={call.sentiment} /> : null}
       </div>
-      {body}
-      {call.analysis?.needsCallback && !purged ? (
-        callbackCount === 0 ? (
-          <p className="mt-3 text-sm">Caller asked for a callback but left no number.</p>
-        ) : (
-          <p className="mt-3 text-sm">
-            <span className="font-medium">Callback requested</span>
-            {call.analysis.callbackReason ? (
-              <span className="text-muted">: {call.analysis.callbackReason}</span>
-            ) : null}
-          </p>
-        )
+      <p
+        aria-live={pending && !real ? "polite" : undefined}
+        className={cn("m-0 text-[14.5px] leading-[1.6]", real ? "text-ink-2" : "text-muted italic")}
+      >
+        {text}
+      </p>
+      {callbackLine ? (
+        <div className="bg-amber-soft text-amber-deep flex gap-[10px] rounded-10 px-[12px] py-[10px] text-[13.5px] leading-[1.5]">
+          <PhoneIncoming size={14} aria-hidden className="mt-[2px] shrink-0" />
+          {callbackLine}
+        </div>
       ) : null}
       {rows.length > 0 ? (
-        <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+        <dl className="border-chip m-0 flex flex-col border-t">
           {rows.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt className="text-muted">{k}</dt>
-              <dd>{v}</dd>
+            <div
+              key={k}
+              className="border-line-soft grid grid-cols-[110px_minmax(0,1fr)] gap-[10px] border-b py-[9px]"
+            >
+              <dt className="text-muted text-[12.5px]">{k}</dt>
+              <dd className="m-0 text-[13.5px] font-medium">{v}</dd>
             </div>
           ))}
         </dl>
       ) : null}
-    </section>
+    </Card>
   );
 }

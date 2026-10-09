@@ -120,9 +120,18 @@ describe("AnalysisCard", () => {
       <AnalysisCard call={call(analysed)} callbackCount={0} onCall={vi.fn()} />,
     );
     expect(screen.getByText("Caller asked for a callback but left no number.")).toBeTruthy();
-    expect(screen.queryByText("Callback requested")).toBeNull();
+    expect(screen.queryByText(/Callback requested/)).toBeNull();
     rerender(<AnalysisCard call={call(analysed)} callbackCount={1} onCall={vi.fn()} />);
-    expect(screen.getByText("Callback requested")).toBeTruthy();
+    expect(screen.getByText("Callback requested: pain")).toBeTruthy();
+    rerender(
+      <AnalysisCard
+        call={call(analysed)}
+        callbackCount={1}
+        callbackReason="Severe pain since the morning."
+        onCall={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Callback requested: Severe pain since the morning.")).toBeTruthy();
   });
 
   it("treats a call with zero caller turns as no speech, without polling", async () => {

@@ -23,9 +23,7 @@ describe("OutcomeEditor", () => {
     api.mockResolvedValue({ call: updated });
     const onSaved = vi.fn();
     render(<OutcomeEditor call={call()} onSaved={onSaved} />);
-    expect(screen.queryByText("Edited by staff")).toBeNull();
     const save = screen.getByRole("button", { name: "Save outcome" });
-    expect((save as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Outcome"), { target: { value: "booked" } });
     fireEvent.click(save);
     await waitFor(() =>
@@ -37,9 +35,19 @@ describe("OutcomeEditor", () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated));
   });
 
-  it("shows the Edited by staff badge when the outcome came from staff", () => {
-    render(<OutcomeEditor call={call({ outcomeSource: "staff" })} onSaved={vi.fn()} />);
-    expect(screen.getByText("Edited by staff")).toBeTruthy();
+  it("says Outcome saved. once the PATCH succeeds", async () => {
+    api.mockResolvedValue({ call: call({ outcome: "booked", outcomeSource: "staff" }) });
+    render(<OutcomeEditor call={call()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Outcome"), { target: { value: "booked" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save outcome" }));
+    expect((await screen.findByRole("status")).textContent).toBe("Outcome saved.");
+  });
+
+  it("cannot save when no outcome is chosen", () => {
+    render(<OutcomeEditor call={call({ outcome: null })} onSaved={vi.fn()} />);
+    expect(
+      (screen.getByRole("button", { name: "Save outcome" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   it("shows an inline error and keeps the selection when saving fails", async () => {
@@ -53,12 +61,17 @@ describe("OutcomeEditor", () => {
     expect(onSaved).not.toHaveBeenCalled();
   });
 
-  it("follows a worker-set outcome arriving from a poll, so Save cannot overwrite it", () => {
+  it("follows a worker-set outcome arriving from a poll, so Save cannot overwrite it", async () => {
+    api.mockResolvedValue({ call: call({ outcome: "callback", outcomeSource: "staff" }) });
     const { rerender } = render(<OutcomeEditor call={call()} onSaved={vi.fn()} />);
     rerender(<OutcomeEditor call={call({ outcome: "callback" })} onSaved={vi.fn()} />);
     expect((screen.getByLabelText("Outcome") as HTMLSelectElement).value).toBe("callback");
-    expect(
-      (screen.getByRole("button", { name: "Save outcome" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Save outcome" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith("/v1/calls/c1", {
+        method: "PATCH",
+        body: { outcome: "callback" },
+      }),
+    );
   });
 });

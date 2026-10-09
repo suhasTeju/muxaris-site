@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { Call, CallTurn, Callback, Clinic } from "@muxaris/shared";
+import type { Call, CallTurn, Callback, Clinic, PatientDetail } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
 import { requireActiveClinic, serverApi } from "@/lib/api-server";
 import { CallDetail } from "@/components/app/CallDetail";
@@ -18,7 +18,14 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
-  const { clinic } = await serverApi<{ clinic: Clinic }>(`/v1/clinics/${active.clinicId}`);
+  const patientId = data.call.patientId;
+  const [{ clinic }, patient] = await Promise.all([
+    serverApi<{ clinic: Clinic }>(`/v1/clinics/${active.clinicId}`),
+    // The call row carries only the patient id; the name in the header is best effort.
+    patientId
+      ? serverApi<PatientDetail>(`/v1/patients/${encodeURIComponent(patientId)}`).catch(() => null)
+      : Promise.resolve(null),
+  ]);
   return (
     <CallDetail
       key={data.call.id}
@@ -26,6 +33,7 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
       turns={data.turns}
       callbacks={data.callbacks ?? []}
       tz={clinic.timezone}
+      patientName={patient?.patient.name ?? null}
     />
   );
 }
