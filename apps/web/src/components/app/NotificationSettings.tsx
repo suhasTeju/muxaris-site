@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import { clinicNotificationSettings, type Clinic } from "@muxaris/shared";
+import { Switch, useToast } from "@/components/ui";
 import { useApi } from "@/lib/api-client";
+import { OwnerOnlyNote, SectionError, SettingsSection } from "./settings/settings-ui";
 
 type Key = "confirmations" | "reminders";
 type Values = Record<Key, boolean>;
@@ -20,7 +23,10 @@ const ITEMS: Array<{ key: Key; label: string; help: string }> = [
   },
 ];
 
-/** Per-clinic notification switches. Owners can change them; everyone else sees the current state. */
+/** How long the header's "Saved" mark stays after a change. */
+const SAVED_MS = 2500;
+
+/** Settings → Notifications: per-clinic switches. Owners change them; everyone else reads them. */
 export function NotificationSettings({
   clinicId,
   initial,
@@ -31,22 +37,32 @@ export function NotificationSettings({
   isOwner: boolean;
 }) {
   const api = useApi();
+  const { toast } = useToast();
   const [values, setValues] = useState<Values>(initial);
   const [busy, setBusy] = useState<Key | null>(null);
-  const [saved, setSaved] = useState<Key | null>(null);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   async function toggle(key: Key) {
     setBusy(key);
     setError(null);
-    setSaved(null);
     try {
       const r = await api<{ clinic: Pick<Clinic, "settings"> }>(
         `/v1/clinics/${encodeURIComponent(clinicId)}`,
         { method: "PATCH", body: { settings: { notifications: { [key]: !values[key] } } } },
       );
       setValues(clinicNotificationSettings(r.clinic.settings));
-      setSaved(key);
+      setSaved(true);
+      toast("Saved");
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setSaved(false), SAVED_MS);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the setting");
     } finally {
@@ -54,58 +70,49 @@ export function NotificationSettings({
     }
   }
 
-  if (!isOwner) {
-    return (
-      <div className="text-[15px]">
-        {ITEMS.map((i) => (
-          <p key={i.key}>
-            <span className="text-muted">{i.label}: </span>
-            {values[i.key] ? "On" : "Off"}
-          </p>
-        ))}
-        <p className="text-muted text-sm">Only the clinic owner can change this.</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-4 text-[15px]">
+    <SettingsSection
+      id="set-notifications"
+      title="Notifications"
+      aside={
+        !isOwner ? (
+          <OwnerOnlyNote />
+        ) : saved ? (
+          <span role="status" className="text-green-ink flex items-center gap-[6px] text-[12.5px]">
+            <Check size={13} aria-hidden="true" />
+            Saved
+          </span>
+        ) : null
+      }
+    >
       {ITEMS.map((i) => {
         const on = values[i.key];
         return (
-          <div key={i.key}>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={on}
-                aria-labelledby={`ntf-set-${i.key}`}
-                disabled={busy !== null}
-                onClick={() => toggle(i.key)}
-                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] disabled:opacity-60 ${on ? "bg-[var(--color-accent)]" : "bg-[var(--color-line)]"}`}
-              >
-                <span
-                  className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${on ? "translate-x-6" : "translate-x-1"}`}
-                />
-              </button>
-              <span id={`ntf-set-${i.key}`} className="font-medium">
+          <div
+            key={i.key}
+            className="border-line-soft grid grid-cols-[minmax(0,1fr)_auto] items-center gap-[20px] border-t px-[20px] py-[16px]"
+          >
+            <div className="flex flex-col gap-[3px]">
+              <span id={`ntf-set-${i.key}`} className="text-[14.5px] font-semibold">
                 {i.label}
               </span>
-              {saved === i.key ? (
-                <span role="status" className="text-muted text-sm">
-                  Saved
-                </span>
-              ) : null}
+              <span className="text-muted text-[13px] leading-[1.5]">{i.help}</span>
             </div>
-            <p className="text-muted mt-1 text-sm">{i.help}</p>
+            {isOwner ? (
+              <Switch
+                size={28}
+                checked={on}
+                disabled={busy !== null}
+                onCheckedChange={() => void toggle(i.key)}
+                aria-labelledby={`ntf-set-${i.key}`}
+              />
+            ) : (
+              <span className="text-ink-2 text-[13.5px] font-medium">{on ? "On" : "Off"}</span>
+            )}
           </div>
         );
       })}
-      {error ? (
-        <p role="alert" className="text-danger text-sm">
-          {error}
-        </p>
-      ) : null}
-    </div>
+      {error ? <SectionError>{error}</SectionError> : null}
+    </SettingsSection>
   );
 }

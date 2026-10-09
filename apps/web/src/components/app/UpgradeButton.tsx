@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { UsageSummary } from "@muxaris/shared";
 import { ApiError } from "@/lib/api";
+import { useToast } from "@/components/ui";
 import { useApi } from "@/lib/api-client";
 import { PlanSettings } from "./PlanSettings";
 
@@ -35,7 +36,7 @@ function loadCheckout(): Promise<void> {
   return p;
 }
 
-/** Client wrapper: runs the Razorpay checkout for PlanSettings' Upgrade button. */
+/** Settings → Plan with the Razorpay checkout behind its Upgrade button. */
 export function UpgradeButton(props: {
   usage: UsageSummary | null;
   isOwner: boolean;
@@ -44,6 +45,7 @@ export function UpgradeButton(props: {
   subscriptionStatus?: string | undefined;
 }) {
   const api = useApi();
+  const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +68,10 @@ export function UpgradeButton(props: {
         subscription_id: r.providerSubscriptionId,
         name: "Muxaris",
         description: "Standard plan",
-        handler: () => setDone(true),
+        handler: () => {
+          setDone(true);
+          toast("Payment received. Your plan updates within a minute.");
+        },
       }).open();
     } catch (e) {
       setError(
@@ -83,18 +88,13 @@ export function UpgradeButton(props: {
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <PlanSettings {...props} onUpgrade={start} upgradeDisabled={busy || done} />
-      {done ? (
-        <p role="status" className="text-sm">
-          Payment received. Your plan updates within a minute.
-        </p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="text-danger text-sm">
-          {error}
-        </p>
-      ) : null}
-    </div>
+    <PlanSettings
+      {...props}
+      onUpgrade={start}
+      upgradeDisabled={busy || done}
+      busy={busy}
+      paid={done}
+      error={error}
+    />
   );
 }

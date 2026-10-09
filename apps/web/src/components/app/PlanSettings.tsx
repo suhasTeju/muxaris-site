@@ -1,6 +1,8 @@
 "use client";
+import { Sparkles } from "lucide-react";
 import type { UsageSummary } from "@muxaris/shared";
-import { primaryBtn } from "./Modal";
+import { Button, UsageMeter } from "@/components/ui";
+import { DefList, SettingsSection } from "./settings/settings-ui";
 
 /** Latest subscription states where a new checkout would conflict with the stuck one. */
 const PAYMENT_STUCK = ["halted", "pending", "authenticated"];
@@ -20,15 +22,9 @@ function formatDate(iso: string, tz: string): string {
   }).format(new Date(iso));
 }
 
-function Line({ k, children }: { k: string; children: React.ReactNode }) {
-  return (
-    <div className="flex justify-between gap-4 py-1">
-      <dt className="text-muted">{k}</dt>
-      <dd className="text-right">{children}</dd>
-    </div>
-  );
-}
+const n = (v: number) => v.toLocaleString("en-IN");
 
+/** Settings → Plan: plan, included minutes, pilot end, this month's meter, overage and upgrade. */
 export function PlanSettings({
   usage,
   isOwner,
@@ -37,6 +33,9 @@ export function PlanSettings({
   onUpgrade,
   upgradeDisabled,
   subscriptionStatus,
+  busy = false,
+  paid = false,
+  error,
 }: {
   usage: UsageSummary | null;
   isOwner: boolean;
@@ -46,75 +45,92 @@ export function PlanSettings({
   upgradeDisabled?: boolean;
   /** Status of the clinic's latest subscription, if any. */
   subscriptionStatus?: string | undefined;
+  /** Checkout is opening. */
+  busy?: boolean;
+  /** Razorpay reported the payment; the webhook updates the plan shortly. */
+  paid?: boolean;
+  error?: string | null | undefined;
 }) {
   if (!usage) {
     return (
-      <p role="alert" className="text-danger text-sm">
-        Couldn&apos;t load your plan. Refresh to try again.
-      </p>
+      <SettingsSection id="set-plan" title="Plan">
+        <p role="alert" className="text-rose m-0 p-[20px] text-[13.5px]">
+          Couldn&apos;t load your plan. Refresh to try again.
+        </p>
+      </SettingsSection>
     );
   }
   const used = Math.ceil(usage.callSeconds / 60);
-  const ratio = usage.includedCallMinutes ? Math.min(1, used / usage.includedCallMinutes) : 0;
-  const pct = Math.round(ratio * 100);
+  const included = usage.includedCallMinutes;
   const over = Math.ceil(usage.overageSeconds / 60);
+  const pilot = usage.plan === "pilot";
+  const stuck = PAYMENT_STUCK.includes(subscriptionStatus ?? "");
+  const canUpgrade = isOwner && pilot && billing.enabled && !stuck && !paid;
+  const footer = paid
+    ? "Payment received. Your plan updates within a minute."
+    : !isOwner
+      ? "Only the clinic owner can change the plan."
+      : !pilot
+        ? "You are on Standard. Cancel any time by writing to hello@muxaris.com."
+        : !billing.enabled
+          ? "Upgrading is handled by us for now. Write to hello@muxaris.com."
+          : stuck
+            ? "Payment pending or failed. Update your payment method in Razorpay or contact support."
+            : "";
   return (
-    <div className="flex flex-col gap-3 text-[15px]">
-      <dl>
-        <Line k="Plan">
+    <SettingsSection
+      id="set-plan"
+      title="Plan"
+      aside={
+        <span className="bg-teal-soft text-teal-ink inline-flex h-[24px] items-center rounded-7 px-[9px] text-[12.5px] font-semibold">
           {usage.planName}
-          {usage.priceInrMonthly
-            ? ` · ₹${usage.priceInrMonthly.toLocaleString("en-IN")} per month`
-            : " · ₹0"}
-        </Line>
-        <Line k="Included">{`${usage.includedCallMinutes.toLocaleString("en-IN")} minutes included`}</Line>
-        {usage.pilotEndsAt ? (
-          <Line k="Pilot ends">{`Pilot ends ${formatDate(usage.pilotEndsAt, tz)}`}</Line>
+        </span>
+      }
+    >
+      <DefList
+        rows={[
+          [
+            "Plan",
+            usage.priceInrMonthly
+              ? `${usage.planName} · ₹${n(usage.priceInrMonthly)} per month`
+              : `${usage.planName} · ₹0`,
+          ],
+          ["Included", `${n(included)} minutes included`],
+          ...(usage.pilotEndsAt
+            ? ([["Pilot ends", formatDate(usage.pilotEndsAt, tz)]] as Array<[string, string]>)
+            : []),
+          ["Used this month", `${n(used)} / ${n(included)} min`],
+        ]}
+      />
+      <div className="flex flex-col gap-[12px] px-[20px] py-[16px]">
+        <UsageMeter used={used} included={included} height={8} />
+        {over > 0 ? (
+          <span className="text-rose text-[13px]">
+            Overage: {over} min, billed at the per-minute rate agreed with you.
+          </span>
         ) : null}
-        <Line k="Used this month">{`${used} / ${usage.includedCallMinutes} min`}</Line>
-      </dl>
-      <div
-        role="meter"
-        aria-label="Minutes used"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={pct}
-        className="h-1.5 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-ink)_8%,white)]"
-      >
-        <div
-          className={`h-full rounded-full ${ratio >= 0.9 ? "bg-danger" : "bg-accent"}`}
-          style={{ width: `${pct}%` }}
-        />
+        <div className="border-chip flex items-center justify-between gap-[12px] border-t pt-[12px]">
+          <span role={paid || stuck ? "status" : undefined} className="text-ink-3 text-[13.5px]">
+            {footer}
+          </span>
+          {canUpgrade ? (
+            <Button
+              icon={Sparkles}
+              iconSize={14}
+              onClick={onUpgrade}
+              disabled={busy || (upgradeDisabled ?? false)}
+              className="text-[13.5px]"
+            >
+              {busy ? "Opening checkout…" : "Upgrade to Standard"}
+            </Button>
+          ) : null}
+        </div>
+        {error ? (
+          <p role="alert" className="text-rose m-0 text-[13px]">
+            {error}
+          </p>
+        ) : null}
       </div>
-      {over > 0 ? (
-        <p className="text-sm">
-          Overage: {over} min, billed at the per-minute rate agreed with you.
-        </p>
-      ) : null}
-      {!billing.enabled ? (
-        <p className="text-muted text-sm">
-          Upgrading is handled by us for now. Write to hello@muxaris.com.
-        </p>
-      ) : !isOwner ? (
-        <p className="text-muted text-sm">Only the clinic owner can change the plan.</p>
-      ) : usage.plan === "pilot" && PAYMENT_STUCK.includes(subscriptionStatus ?? "") ? (
-        <p role="status" className="text-sm">
-          Payment pending or failed. Update your payment method in Razorpay or contact support.
-        </p>
-      ) : usage.plan === "pilot" ? (
-        <button
-          type="button"
-          onClick={onUpgrade}
-          disabled={upgradeDisabled ?? false}
-          className={`${primaryBtn} self-start`}
-        >
-          Upgrade to Standard
-        </button>
-      ) : (
-        <p className="text-muted text-sm">
-          You are on Standard. Cancel any time by writing to hello@muxaris.com.
-        </p>
-      )}
-    </div>
+    </SettingsSection>
   );
 }

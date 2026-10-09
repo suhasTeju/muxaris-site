@@ -74,7 +74,7 @@ describe("UpgradeButton", () => {
     await waitFor(() => expect(btn.disabled).toBe(false));
   });
 
-  it("disables the button once payment is received", async () => {
+  it("removes the button once payment is received", async () => {
     api.mockResolvedValue({ providerSubscriptionId: "sub_1", keyId: "k" });
     window.Razorpay = class {
       constructor(private opts: Record<string, unknown>) {}
@@ -85,8 +85,10 @@ describe("UpgradeButton", () => {
     render(<UpgradeButton usage={usage} isOwner billing={{ enabled: true }} tz="Asia/Kolkata" />);
     const btn = screen.getByRole("button", { name: "Upgrade to Standard" }) as HTMLButtonElement;
     fireEvent.click(btn);
-    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
-    expect(btn.disabled).toBe(true);
+    await waitFor(() =>
+      expect(screen.getByText("Payment received. Your plan updates within a minute.")).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "Upgrade to Standard" })).toBeNull();
   });
 
   it("a failed script load shows an error, removes the tag and the next click retries", async () => {
