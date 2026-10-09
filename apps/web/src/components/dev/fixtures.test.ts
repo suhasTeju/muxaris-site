@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  FIXTURE_EMAIL,
   FIXTURE_NOW,
   appointments,
   callTurns,
@@ -8,6 +9,7 @@ import {
   doctors,
   notifications,
   openCallbacksCount,
+  patientPhones,
   patients,
   services,
   usagePilot,
@@ -17,6 +19,24 @@ import {
 const ids = <T extends { id: string }>(xs: T[]) => new Set(xs.map((x) => x.id));
 
 describe("dev fixtures", () => {
+  it("uses only fictitious people: example.com emails and +91 900000 mobiles", () => {
+    const all = JSON.stringify({
+      FIXTURE_EMAIL,
+      patientPhones,
+      patients,
+      calls,
+      callTurns,
+      callbacks,
+      notifications,
+      appointments,
+    });
+    const domains = new Set([...all.matchAll(/@([a-z0-9-]+(?:\.[a-z0-9-]+)+)/gi)].map((m) => m[1]));
+    expect([...domains]).toEqual(["example.com"]);
+    const mobiles = [...all.matchAll(/\+91\s?[6-9]\d{4}\s?\d{5}/g)].map((m) => m[0]);
+    expect(mobiles.length).toBeGreaterThanOrEqual(10);
+    for (const m of mobiles) expect(m.replace(/\s/g, "")).toMatch(/^\+91900000\d{4}$/);
+  });
+
   it("transcribes the prototype's counts", () => {
     expect(
       [doctors, services, patients, appointments, calls, callbacks, notifications].map(

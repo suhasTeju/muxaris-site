@@ -8,6 +8,8 @@
  * them for display the way the design does. Ids keep the prototype's (`p1`, `a7`, `c5`, `cb1`, `n3`)
  * so a fixture maps straight to its prototype route (`#calls/c5`, `#patients/p1`).
  *
+ * People are fictitious: emails are @example.com and mobiles are +91 900000 plus four digits.
+ *
  * Development only: nothing outside `app/dev` and `components/dev` may import this file.
  */
 import {
@@ -75,8 +77,8 @@ export const secondClinic: Clinic = {
 
 /** Signed-in user per role, as the shell header shows it. */
 export const FIXTURE_EMAIL: Record<Role, string> = {
-  owner: "owner@sunrisedental.in",
-  front_desk: "frontdesk@sunrisedental.in",
+  owner: "owner@example.com",
+  front_desk: "frontdesk@example.com",
 };
 export const FIXTURE_USER_ID = "usr_demo_owner";
 
@@ -192,18 +194,21 @@ export const assistantProfile: AssistantProfile = {
 // ---------------------------------------------------------------------------------------------
 // Patients
 
-/** Raw numbers from the prototype, keyed by patient id. Only for previews of the reveal-phone UI. */
+/**
+ * Raw numbers keyed by patient id, for previews of the reveal-phone UI. Deliberately fictitious:
+ * the prototype's last four digits (so masked numbers match the design) after +91 900000.
+ */
 export const patientPhones: Record<string, string> = {
-  p1: "+919845123210",
-  p2: "+919900041187",
-  p3: "+919741150923",
-  p4: "+919886077314",
-  p5: "+919008026655",
-  p6: "+919632088401",
-  p7: "+919986031742",
-  p8: "+919448060128",
-  p9: "+919880492036",
-  p10: "+919739014821",
+  p1: "+919000003210",
+  p2: "+919000001187",
+  p3: "+919000000923",
+  p4: "+919000007314",
+  p5: "+919000006655",
+  p6: "+919000008401",
+  p7: "+919000001742",
+  p8: "+919000000128",
+  p9: "+919000002036",
+  p10: "+919000004821",
 };
 
 const patient = (
@@ -236,12 +241,12 @@ export const patients: Patient[] = [
     "p1",
     "Ananya Krishnan",
     "en",
-    "ananya.k@gmail.com",
+    "ananya.k@example.com",
     "2026-10-08",
     "1994-03-12",
     "Prefers late-afternoon slots.",
   ),
-  patient("p2", "Rohan Mehta", "hi", "rohan.mehta@outlook.com", "2026-10-02", "1988-07-21", ""),
+  patient("p2", "Rohan Mehta", "hi", "rohan.mehta@example.com", "2026-10-02", "1988-07-21", ""),
   patient(
     "p3",
     "Lakshmi Narayan",
@@ -255,15 +260,15 @@ export const patients: Patient[] = [
     "p4",
     "Karthik Iyer",
     "ta",
-    "karthik.iyer@gmail.com",
+    "karthik.iyer@example.com",
     "2026-09-25",
     "2009-01-30",
     "Aligners, month 4.",
   ),
-  patient("p5", "Priya Venkatesh", "te", "priya.v@yahoo.in", "2026-09-21", "1991-05-17", ""),
-  patient("p6", "Sneha Reddy", "te", "sneha.reddy@gmail.com", "2026-09-18", "1996-09-09", ""),
+  patient("p5", "Priya Venkatesh", "te", "priya.v@example.com", "2026-09-21", "1991-05-17", ""),
+  patient("p6", "Sneha Reddy", "te", "sneha.reddy@example.com", "2026-09-18", "1996-09-09", ""),
   patient("p7", "Mohammed Faiz", "hi", "", "2026-09-15", "1979-12-24", ""),
-  patient("p8", "Deepa Gowda", "kn", "deepa.gowda@gmail.com", "2026-09-11", "1985-04-03", ""),
+  patient("p8", "Deepa Gowda", "kn", "deepa.gowda@example.com", "2026-09-11", "1985-04-03", ""),
   patient("p9", "Suresh Babu", "ta", "", "2026-09-06", "1972-08-15", ""),
   patient("p10", "", "kn", "", "2026-10-09", "", ""),
 ];
@@ -392,7 +397,7 @@ const call = (
 
 /** Newest first, as GET /v1/calls returns them. */
 export const calls: Call[] = [
-  call("c9", "2026-10-09", "13:52", 78, "+919008026655", "p5", "en", "info", "completed", {
+  call("c9", "2026-10-09", "13:52", 78, "+919000006655", "p5", "en", "info", "completed", {
     sentiment: "positive",
     summary:
       "Asked whether parking is available near the clinic. Muxaris shared the address and parking details.",
@@ -423,20 +428,20 @@ export const calls: Call[] = [
     summary:
       "Test call from the dashboard. Booked a consultation with Dr. Meera Rao for Mon, 12 Oct, 11:00 am.",
   }),
-  call("c7", "2026-10-09", "12:47", 135, "+919880492036", "p9", "ta", "rescheduled", "completed", {
+  call("c7", "2026-10-09", "12:47", 135, "+919000002036", "p9", "ta", "rescheduled", "completed", {
     sentiment: "neutral",
     summary:
       "Moved the orthodontic consultation with Dr. Arjun Shetty to today, 5:15 pm. Asked to speak to the doctor about aligner progress.",
     callbackId: "cb3",
     editedByStaff: true,
   }),
-  call("c6", "2026-10-09", "11:05", 41, "+919811140192", null, "hi", "callback", "completed", {
+  call("c6", "2026-10-09", "11:05", 41, "+919000000192", null, "hi", "callback", "completed", {
     sentiment: "neutral",
     summary:
       "Asked whether the clinic does dental implants and what they cost. Requested a callback.",
     callbackId: "cb2",
   }),
-  call("c5", "2026-10-09", "10:41", 182, "+919739014821", "p10", "en", "handoff", "completed", {
+  call("c5", "2026-10-09", "10:41", 182, "+919000004821", "p10", "en", "handoff", "completed", {
     sentiment: "negative",
     summary:
       "Caller reported severe pain on the lower left side since the morning. Transferred to staff; the transfer was not answered and a callback was queued.",
@@ -467,12 +472,12 @@ export const calls: Call[] = [
       { who: "caller", t: 58.1, text: "Okay, please ask them to call quickly." },
     ],
   }),
-  call("c4", "2026-10-09", "09:58", 12, "+919036026604", null, "te", "abandoned", "abandoned"),
-  call("c3", "2026-10-09", "08:31", 100, "+919632088401", "p6", "te", "booked", "completed", {
+  call("c4", "2026-10-09", "09:58", 12, "+919000006604", null, "te", "abandoned", "abandoned"),
+  call("c3", "2026-10-09", "08:31", 100, "+919000008401", "p6", "te", "booked", "completed", {
     sentiment: "positive",
     summary: "Booked a teeth cleaning with Dr. Meera Rao for Sat, 10 Oct, 10:30 am.",
   }),
-  call("c1", "2026-10-08", "20:14", 21, "+919845123210", "p1", "en", "booked", "completed", {
+  call("c1", "2026-10-08", "20:14", 21, "+919000003210", "p1", "en", "booked", "completed", {
     sentiment: "positive",
     summary:
       "Caller had a bad toothache since last night and asked to see the doctor tomorrow. Booked a consultation with Dr. Meera Rao for Fri, 9 Oct, 4:30 pm.",
@@ -485,20 +490,20 @@ export const calls: Call[] = [
       ["Reason", "Toothache since last night"],
     ],
   }),
-  call("c10", "2026-10-08", "18:30", 72, "+919900041187", "p2", "hi", "booked", "completed", {
+  call("c10", "2026-10-08", "18:30", 72, "+919000001187", "p2", "hi", "booked", "completed", {
     sentiment: "positive",
     summary: "Booked a consultation with Dr. Meera Rao for Sat, 10 Oct, 5:00 pm.",
   }),
-  call("c11", "2026-10-08", "16:02", 55, "+919945033018", null, "kn", "cancelled", "completed", {
+  call("c11", "2026-10-08", "16:02", 55, "+919000003018", null, "kn", "cancelled", "completed", {
     sentiment: "neutral",
     summary: "Cancelled an appointment; the slot went back into the calendar.",
   }),
   call("c12", "2026-10-08", "12:15", 150, "", null, "kn", "unknown", "failed"),
-  call("c13", "2026-10-07", "19:48", 90, "+919448060128", "p8", "kn", "booked", "completed", {
+  call("c13", "2026-10-07", "19:48", 90, "+919000000128", "p8", "kn", "booked", "completed", {
     sentiment: "positive",
     summary: "Booked a filling with Dr. Meera Rao for Fri, 9 Oct, 6:00 pm.",
   }),
-  call("c14", "2026-07-02", "11:20", 64, "+919845100000", null, "en", "info", "completed", {
+  call("c14", "2026-07-02", "11:20", 64, "+919000000000", null, "en", "info", "completed", {
     purged: true,
   }),
 ];
@@ -616,7 +621,7 @@ export const callbacks: Callback[] = [
     "cb1",
     "open",
     "urgent",
-    "+919739014821",
+    "+919000004821",
     "c5",
     "2026-10-09 10:44",
     "Severe pain on the lower left side since the morning. Transfer to staff was not answered.",
@@ -627,7 +632,7 @@ export const callbacks: Callback[] = [
     "cb3",
     "open",
     "high",
-    "+919880492036",
+    "+919000002036",
     "c7",
     "2026-10-09 12:50",
     "Wants to speak to Dr. Shetty about aligner progress.",
@@ -638,7 +643,7 @@ export const callbacks: Callback[] = [
     "cb2",
     "open",
     "normal",
-    "+919811140192",
+    "+919000000192",
     "c6",
     "2026-10-09 11:06",
     "Asked whether the clinic does dental implants and what they cost.",
@@ -649,7 +654,7 @@ export const callbacks: Callback[] = [
     "cb4",
     "done",
     "normal",
-    "+919945033018",
+    "+919000003018",
     "c11",
     "2026-10-08 16:05",
     "Needs a copy of the bill for an insurance claim.",
@@ -661,7 +666,7 @@ export const callbacks: Callback[] = [
     "cb5",
     "done",
     "high",
-    "+919448060128",
+    "+919000000128",
     "c13",
     "2026-10-07 19:50",
     "Asked if the filling can be done without anaesthetic.",

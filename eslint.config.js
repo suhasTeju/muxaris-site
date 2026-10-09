@@ -33,9 +33,18 @@ export default tseslint.config(
               group: [
                 "@/components/dev",
                 "@/components/dev/**",
+                "@/app/dev",
                 "@/app/dev/**",
                 "**/components/dev/**",
                 "**/app/dev/**",
+                // Relative imports (`../dev/fixtures`, `./dev/DevAppFrame`) and any fixtures file.
+                "./dev",
+                "./dev/**",
+                "**/dev",
+                "**/dev/**",
+                "**/fixtures",
+                "**/fixtures.*",
+                "**/fixture-*",
               ],
               message: "Dev preview code is development-only; pass data as props instead.",
             },

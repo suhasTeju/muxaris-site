@@ -27,7 +27,7 @@ describe("DevAppFrame", () => {
     const header = within(screen.getByRole("banner"));
     expect(header.getByText("Sunrise Dental Care")).toBeTruthy();
     expect(header.getByText("Owner")).toBeTruthy();
-    expect(header.getByText("owner@sunrisedental.in")).toBeTruthy();
+    expect(header.getByText("owner@example.com")).toBeTruthy();
     expect(screen.getByLabelText("3 open")).toBeTruthy();
     expect(screen.getByText("1,842")).toBeTruthy();
     expect(screen.getByText("/ 3,000 min")).toBeTruthy();
@@ -44,7 +44,7 @@ describe("DevAppFrame", () => {
     );
     const header = within(screen.getByRole("banner"));
     expect(header.getByText("Front desk")).toBeTruthy();
-    expect(header.getByText("frontdesk@sunrisedental.in")).toBeTruthy();
+    expect(header.getByText("frontdesk@example.com")).toBeTruthy();
     expect(header.getByRole("combobox", { name: "Switch clinic" })).toBeTruthy();
     expect(screen.getByText("462")).toBeTruthy();
     expect(screen.getByText("Pilot ends 25 Oct 2026")).toBeTruthy();
