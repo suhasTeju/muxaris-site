@@ -75,6 +75,54 @@ export async function createDoctor(db: Db, clinicId: string, input: DoctorInput)
   return row!;
 }
 
+export interface DoctorPatch {
+  name?: string;
+  title?: string | null;
+  specialties?: string[];
+  languages?: string[];
+  color?: string;
+  active?: boolean;
+}
+
+/** Edits a doctor in place (owner settings). Audited with the changed keys only. */
+export async function updateDoctor(
+  db: Db,
+  input: { clinicId: string; doctorId: string; actorUserId: string; patch: DoctorPatch },
+) {
+  const p = input.patch;
+  const set: Partial<typeof doctors.$inferInsert> = {};
+  if (p.name !== undefined) {
+    const name = p.name.trim();
+    if (!name) throw new CoreError("validation", "doctor name is required");
+    set.name = name;
+  }
+  if (p.title !== undefined) set.title = p.title?.trim() || null;
+  if (p.specialties !== undefined) set.specialties = p.specialties;
+  if (p.languages !== undefined) set.languages = p.languages;
+  if (p.color !== undefined) set.color = p.color;
+  if (p.active !== undefined) set.active = p.active;
+  const keys = Object.keys(set);
+  if (!keys.length) throw new CoreError("validation", "nothing to change");
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(doctors)
+      .set(set)
+      .where(and(eq(doctors.id, input.doctorId), eq(doctors.clinicId, input.clinicId)))
+      .returning();
+    if (!row) throw new CoreError("not_found", "doctor not found");
+    await tx.insert(auditLog).values({
+      id: newId("aud"),
+      clinicId: input.clinicId,
+      actorId: input.actorUserId,
+      action: "doctor.edit",
+      entity: "doctor",
+      entityId: row.id,
+      data: { keys },
+    });
+    return row;
+  });
+}
+
 export interface WorkingHoursInput {
   weekday: number;
   startTime: string;
@@ -181,6 +229,67 @@ export async function createService(db: Db, clinicId: string, input: ServiceInpu
     })
     .returning();
   return row!;
+}
+
+export interface ServicePatch {
+  name?: string;
+  description?: string | null;
+  durationMin?: number;
+  bufferMin?: number;
+  priceInr?: number | null;
+  bookableByAi?: boolean;
+  active?: boolean;
+}
+
+/**
+ * Edits a service in place (owner settings). Services are never deleted, because appointments
+ * reference them; `active: false` takes one off the menu. Audited with the changed keys only.
+ */
+export async function updateService(
+  db: Db,
+  input: { clinicId: string; serviceId: string; actorUserId: string; patch: ServicePatch },
+) {
+  const p = input.patch;
+  const set: Partial<typeof services.$inferInsert> = {};
+  if (p.name !== undefined) {
+    const name = p.name.trim();
+    if (!name) throw new CoreError("validation", "service name is required");
+    set.name = name;
+  }
+  if (p.description !== undefined) set.description = p.description?.trim() || null;
+  if (p.durationMin !== undefined) {
+    if (!Number.isInteger(p.durationMin) || p.durationMin <= 0)
+      throw new CoreError("validation", "durationMin must be a positive integer");
+    set.durationMin = p.durationMin;
+  }
+  if (p.bufferMin !== undefined) {
+    if (!Number.isInteger(p.bufferMin) || p.bufferMin < 0)
+      throw new CoreError("validation", "bufferMin must be an integer >= 0");
+    set.bufferMin = p.bufferMin;
+  }
+  if (p.priceInr !== undefined) set.priceInr = p.priceInr;
+  if (p.bookableByAi !== undefined) set.bookableByAi = p.bookableByAi;
+  if (p.active !== undefined) set.active = p.active;
+  const keys = Object.keys(set);
+  if (!keys.length) throw new CoreError("validation", "nothing to change");
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(services)
+      .set(set)
+      .where(and(eq(services.id, input.serviceId), eq(services.clinicId, input.clinicId)))
+      .returning();
+    if (!row) throw new CoreError("not_found", "service not found");
+    await tx.insert(auditLog).values({
+      id: newId("aud"),
+      clinicId: input.clinicId,
+      actorId: input.actorUserId,
+      action: "service.edit",
+      entity: "service",
+      entityId: row.id,
+      data: { keys },
+    });
+    return row;
+  });
 }
 
 // ---------- slot rules ----------
