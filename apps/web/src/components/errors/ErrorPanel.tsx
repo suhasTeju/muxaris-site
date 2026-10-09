@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { Button } from "@/components/ui/Button";
+import { cn } from "@/components/ui/cn";
 
 export interface ErrorBoundaryProps {
   error: Error & { digest?: string };
@@ -9,51 +11,73 @@ export interface ErrorBoundaryProps {
   retry?: () => void;
 }
 
-/** Branded recovery panel shared by every error boundary. No dead ends: retry, and optionally sign out. */
+const SECONDARY =
+  "text-muted hover:text-ink rounded-8 text-[14px] underline underline-offset-4 outline-none focus-visible:shadow-focus";
+
+/**
+ * Branded recovery panel shared by every error boundary, in the 404 page's type and colour. No
+ * dead ends: retry, and go home (public pages) or sign out (inside the app). `fullScreen` fills
+ * the viewport with the paper background and teal bloom, for boundaries that replace a whole page.
+ */
 export function ErrorPanel({
   error,
   reset,
   retry,
   signOut = false,
+  fullScreen = false,
   title = "Something went wrong",
   className = "",
-}: ErrorBoundaryProps & { signOut?: boolean; title?: string; className?: string }) {
-  return (
+}: ErrorBoundaryProps & {
+  signOut?: boolean;
+  fullScreen?: boolean;
+  title?: string;
+  className?: string;
+}) {
+  const panel = (
     <div
       role="alert"
-      className={`mx-auto flex max-w-lg flex-col items-start gap-4 px-6 py-16 ${className}`}
+      className={cn(
+        "relative mx-auto flex max-w-[460px] animate-[mxIn8_.3s_ease_both] flex-col items-center gap-[18px] px-[16px] py-[64px] text-center motion-reduce:animate-none",
+        fullScreen && "py-0",
+        className,
+      )}
     >
-      <p className="font-display text-accent-deep text-lg italic">Muxaris</p>
-      <h1 className="font-display text-3xl leading-tight">{title}</h1>
-      <p className="text-muted">
+      <span className="text-teal-ink font-mono text-[13px] tracking-[0.12em]">Muxaris</span>
+      <h1 className="m-0 text-[36px] leading-[1.05] font-semibold tracking-[-0.04em] sm:text-[48px]">
+        {title}
+      </h1>
+      <p className="text-muted m-0 text-[17px] leading-[1.6]">
         This is on our side, not yours. Try again in a moment; if it keeps happening, email
         hello@muxaris.com
         {error.digest ? ` and quote reference ${error.digest}` : ""}.
       </p>
-      <div className="flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          onClick={() => (retry ?? reset)()}
-          className="bg-accent hover:bg-accent-deep focus-visible:ring-accent-soft text-on-accent rounded-lg px-5 py-2.5 font-medium transition-colors outline-none focus-visible:ring-4"
-        >
+      <div className="mt-[8px] flex flex-wrap items-center justify-center gap-[20px]">
+        <Button size={52} onClick={() => (retry ?? reset)()} className="shadow-none">
           Try again
-        </button>
+        </Button>
         {signOut ? (
-          <Link
-            href="/sign-in?reason=signout"
-            className="text-muted hover:text-ink focus-visible:ring-accent-soft rounded text-sm underline underline-offset-4 outline-none focus-visible:ring-4"
-          >
+          <Link href="/sign-in?reason=signout" className={SECONDARY}>
             Sign out
           </Link>
         ) : (
-          <Link
-            href="/"
-            className="text-muted hover:text-ink focus-visible:ring-accent-soft rounded text-sm underline underline-offset-4 outline-none focus-visible:ring-4"
-          >
+          <Link href="/" className={SECONDARY}>
             Go to the home page
           </Link>
         )}
       </div>
     </div>
+  );
+  if (!fullScreen) return panel;
+  return (
+    <main className="bg-paper relative grid min-h-[100dvh] place-items-center overflow-hidden p-[32px]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: "radial-gradient(40% 50% at 50% 30%,rgba(14,154,150,0.14),transparent 70%)",
+        }}
+      />
+      {panel}
+    </main>
   );
 }

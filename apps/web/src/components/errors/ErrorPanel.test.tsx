@@ -30,4 +30,15 @@ describe("ErrorPanel", () => {
       "/sign-in?reason=signout",
     );
   });
+
+  it("goes home from public pages, and fills the page when it replaces one", () => {
+    const { container } = render(
+      <ErrorPanel error={new Error("x")} reset={() => undefined} fullScreen />,
+    );
+    expect(screen.getByRole("link", { name: "Go to the home page" }).getAttribute("href")).toBe(
+      "/",
+    );
+    expect(container.firstElementChild?.tagName).toBe("MAIN");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Something went wrong");
+  });
 });
