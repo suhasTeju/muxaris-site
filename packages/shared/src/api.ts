@@ -335,6 +335,11 @@ export interface Call {
   /** Always masked; the raw number never leaves the server on call routes. */
   callerPhoneMasked: string | null;
   patientId: string | null;
+  /**
+   * The linked patient's name, joined in by GET /v1/calls and GET /v1/calls/:id: null when no
+   * patient is linked or the patient has no name. Absent from other responses (e.g. PATCH).
+   */
+  patientName?: string | null;
   startedByUserId: string | null;
   languageDetected: string | null;
   startedAt: Iso;

@@ -83,7 +83,12 @@ d("call routes", () => {
       await db.insert(schema.calls).values({ id, clinicId, channel: "phone", ...v });
       ids[key] = id;
     };
+    const patientId = newId("pat");
+    await db
+      .insert(schema.patients)
+      .values({ id: patientId, clinicId: a, phone: "+919876500200", name: "Asha Rao" });
     await mk(a, "booked", {
+      patientId,
       callerPhone: "+919876500200",
       outcome: "booked",
       status: "completed",
@@ -121,6 +126,9 @@ d("call routes", () => {
     const withPhone = all.calls.find((x: J) => x.id === ids.booked);
     expect(withPhone.callerPhoneMasked).toBe("+91 •••• ••0200");
     for (const x of all.calls) expect(x).not.toHaveProperty("callerPhone");
+    // The linked patient's name rides on the row; unlinked calls carry null.
+    expect(withPhone.patientName).toBe("Asha Rao");
+    for (const x of all.calls) if (x.id !== ids.booked) expect(x.patientName).toBeNull();
     expect(JSON.stringify(all)).not.toContain("9876500200");
     const booked = await list("?outcome=booked");
     expect(booked.total).toBe(1);
@@ -144,6 +152,7 @@ d("call routes", () => {
     const body = (await res.json()) as J;
     expect(body.call.id).toBe(ids.booked);
     expect(body.call.callerPhoneMasked).toBe("+91 •••• ••0200");
+    expect(body.call.patientName).toBe("Asha Rao");
     expect(body.call).not.toHaveProperty("callerPhone");
     expect(JSON.stringify(body)).not.toContain("9876500200");
     expect(body.turns).toEqual([]);

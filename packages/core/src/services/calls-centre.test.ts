@@ -350,6 +350,19 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
         .set({ startedAt: new Date(Date.now() - 3 * 86400_000) })
         .where(eq(schema.calls.id, old));
       await createCallback(db, { clinicId: t.clinic.id, phone: "+919876543210", reason: "r" });
+      await createCallback(db, {
+        clinicId: t.clinic.id,
+        phone: "+919876543211",
+        reason: "pain",
+        priority: "urgent",
+      });
+      const done = await createCallback(db, {
+        clinicId: t.clinic.id,
+        phone: "+919876543212",
+        reason: "done",
+        priority: "urgent",
+      });
+      await updateCallback(db, { clinicId: t.clinic.id, callbackId: done.id, status: "done" });
       const s = await getOverviewStats(db, t.clinic.id, {
         dayStart: new Date(Date.now() - 3600_000),
         dayEnd: new Date(Date.now() + 3600_000),
@@ -358,7 +371,8 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
       expect(s).toEqual({
         callsToday: 2,
         bookedToday: 1,
-        openCallbacks: 1,
+        openCallbacks: 2,
+        openUrgentCallbacks: 1,
         avgDurationS: 60,
         byOutcome: { booked: 1, info: 1 },
       });
@@ -767,6 +781,40 @@ const analysis = (needsCallback = false) => ({ entities: {}, needsCallback, mode
     });
     const { call: got } = await getCall(db, a.clinic.id, call.id);
     expect(got.patientId).toBe(p.id);
+  });
+
+  it("listCalls and getCall carry the linked patient's name, null when unlinked", async () => {
+    const t = await makeTestClinic(db, "cc-names");
+    try {
+      const p = await createPatient(db, t.clinic.id, { phone: "+919876500021", name: "Asha Rao" });
+      const unnamed = await createPatient(db, t.clinic.id, { phone: "+919876500022" });
+      const linked = async (patientId?: string) => {
+        const c = await createCall(db, { clinicId: t.clinic.id, channel: "phone" });
+        await finishCall(db, {
+          callId: c.id,
+          clinicId: t.clinic.id,
+          status: "completed",
+          durationS: 10,
+          ...(patientId ? { patientId } : {}),
+        });
+        await new Promise((r) => setTimeout(r, 5));
+        return c.id;
+      };
+      const named = await linked(p.id);
+      const noName = await linked(unnamed.id);
+      const none = await linked();
+      const r = await listCalls(db, t.clinic.id, { limit: 10, offset: 0 });
+      expect(r.total).toBe(3);
+      expect(r.calls.map((c) => [c.id, c.patientName])).toEqual([
+        [none, null],
+        [noName, null],
+        [named, "Asha Rao"],
+      ]);
+      expect((await getCall(db, t.clinic.id, named)).call.patientName).toBe("Asha Rao");
+      expect((await getCall(db, t.clinic.id, none)).call.patientName).toBeNull();
+    } finally {
+      await t.cleanup();
+    }
   });
 
   it("finishCall refuses a patient from another clinic", async () => {
