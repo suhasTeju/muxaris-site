@@ -11,11 +11,14 @@ import { STEP_LABELS, WIZARD_STEPS, type OnboardingStep } from "@/lib/onboarding
 export function Progress({
   step,
   maxStep = 0,
+  locked = false,
   onGo,
 }: {
   step: OnboardingStep | null;
   /** Index of the furthest step reached. */
   maxStep?: number;
+  /** While the current step saves or a jump is in flight, every step button is disabled. */
+  locked?: boolean;
   onGo?: (step: OnboardingStep) => void;
 }) {
   const current = step ? Math.max(0, WIZARD_STEPS.indexOf(step)) : -1;
@@ -47,10 +50,10 @@ export function Progress({
             <li key={s}>
               <button
                 type="button"
-                disabled={!reachable}
+                disabled={!reachable || (locked && !cur)}
                 aria-current={cur ? "step" : undefined}
                 onClick={() => {
-                  if (!cur && reachable) onGo?.(s);
+                  if (!cur && reachable && !locked) onGo?.(s);
                 }}
                 className={cn(
                   "flex w-full items-center gap-[12px] rounded-12 border px-[12px] py-[10px] text-left transition-all duration-200",

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AudioLines, ListChecks, Stethoscope, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui";
 import { STEP_LABELS, type OnboardingStep } from "@/lib/onboarding";
-import { StepFooter, StepShell, errMsg, type Call } from "./ui";
+import { StepFooter, StepShell, errMsg, useStepBusy, type Call } from "./ui";
 
 interface Summary {
   doctors: Array<{ name: string }>;
@@ -27,7 +27,7 @@ export function StepReview({
 }) {
   const [sum, setSum] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useStepBusy(false);
 
   useEffect(() => {
     let live = true;

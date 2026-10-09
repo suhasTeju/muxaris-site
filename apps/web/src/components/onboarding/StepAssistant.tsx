@@ -13,7 +13,16 @@ import { getAccessToken } from "@/lib/api-client";
 import { DEFAULT_SPEAKER, fillGreeting } from "@/lib/onboarding";
 import { Play, Plus, Square, WandSparkles } from "lucide-react";
 import { Button, Input, Select, Textarea, cn } from "@/components/ui";
-import { Field, StepFooter, StepShell, StepSubheading, TextField, errMsg, type Call } from "./ui";
+import {
+  Field,
+  StepFooter,
+  StepShell,
+  StepSubheading,
+  TextField,
+  errMsg,
+  useStepBusy,
+  type Call,
+} from "./ui";
 
 /** Fetches the spoken greeting as audio. The wizard's previews inject their own. */
 export type VoicePreview = (
@@ -75,7 +84,7 @@ export function StepAssistant({
   const [faq, setFaq] = useState<Faq[]>([{ q: "", a: "" }]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useStepBusy(false);
   const [previewing, setPreviewing] = useState<LanguageCode | null>(null);
   const [previewErr, setPreviewErr] = useState<Partial<Record<LanguageCode, string>>>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);

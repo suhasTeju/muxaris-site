@@ -13,6 +13,7 @@ import {
   StepSubheading,
   TextField,
   errMsg,
+  useStepBusy,
   type Call,
 } from "./ui";
 
@@ -54,7 +55,7 @@ export function StepServices({
   const [rowErr, setRowErr] = useState<Record<number, true>>({});
   const [ruleErr, setRuleErr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useStepBusy(false);
 
   useEffect(() => {
     let live = true;

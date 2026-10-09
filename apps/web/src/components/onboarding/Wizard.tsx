@@ -21,7 +21,7 @@ import { StepBasics, SUNRISE_BASICS, type ClinicInfo } from "./StepBasics";
 import { StepDoctors } from "./StepDoctors";
 import { StepReview } from "./StepReview";
 import { StepServices } from "./StepServices";
-import { NavErrorContext, StepError, errMsg } from "./ui";
+import { NavBusyContext, NavErrorContext, StepBusyContext, StepError, errMsg } from "./ui";
 
 interface ClinicRow {
   id: string;
@@ -73,6 +73,14 @@ export function Wizard({
   const clinicId = clinic?.id;
   const resumed = useRef(false);
   const navBusy = useRef(false);
+  const [navigating, setNavigating] = useState(false);
+  // A step is saving (Continue, Finish, create, demo): the rail must not jump under it.
+  const stepBusy = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const reportBusy = useCallback((busy: boolean) => {
+    stepBusy.current = busy;
+    setSaving(busy);
+  }, []);
   const root = useRef<HTMLElement | null>(null);
   const firstStep = useRef(true);
   const [navError, setNavError] = useState<string | null>(null);
@@ -136,8 +144,9 @@ export function Wizard({
   const advance = (from: OnboardingStep) => () => go(nextStep(from));
   // Navigation outside a form submit: surface failures inline and ignore concurrent clicks.
   const nav = (fn: () => Promise<void>) => async () => {
-    if (navBusy.current) return;
+    if (navBusy.current || stepBusy.current) return;
     navBusy.current = true;
+    setNavigating(true);
     setNavError(null);
     try {
       await fn();
@@ -145,6 +154,7 @@ export function Wizard({
       setNavError(errMsg(e));
     } finally {
       navBusy.current = false;
+      setNavigating(false);
     }
   };
   const back = (from: OnboardingStep) => nav(() => go(prevStep(from)));
@@ -211,52 +221,67 @@ export function Wizard({
   return (
     <WizardLayout
       mainRef={root}
-      rail={<Progress step={step} maxStep={maxStep} onGo={(s) => nav(() => go(s))()} />}
+      rail={
+        <Progress
+          step={step}
+          maxStep={maxStep}
+          locked={saving || navigating}
+          onGo={(s) => nav(() => go(s))()}
+        />
+      }
     >
-      <NavErrorContext.Provider value={navError}>
-        {step === "basics" ? (
-          <StepBasics
-            clinic={clinic}
-            call={call}
-            onCreated={onCreated}
-            onContinue={advance("basics")}
-            onDemo={onDemo}
-            demoFailed={demoFailed}
-            onRetryDemo={() => loadDemo(clinic!.id)}
-          />
-        ) : null}
-        {step === "doctors" && clinic ? (
-          <StepDoctors
-            call={call}
-            clinicLanguages={langs}
-            onBack={back("doctors")}
-            onContinue={advance("doctors")}
-          />
-        ) : null}
-        {step === "services" && clinic ? (
-          <StepServices call={call} onBack={back("services")} onContinue={advance("services")} />
-        ) : null}
-        {step === "assistant" && clinic ? (
-          <StepAssistant
-            call={call}
-            clinicId={clinic.id}
-            clinicName={clinic.name}
-            languages={langs}
-            onBack={back("assistant")}
-            onContinue={advance("assistant")}
-            {...(voicePreview ? { voicePreview } : {})}
-          />
-        ) : null}
-        {step === "review" && clinic ? (
-          <StepReview
-            call={call}
-            clinicName={clinic.name}
-            onEdit={(s) => nav(() => go(s))()}
-            onBack={back("review")}
-            onFinish={onFinish}
-          />
-        ) : null}
-      </NavErrorContext.Provider>
+      <StepBusyContext.Provider value={reportBusy}>
+        <NavBusyContext.Provider value={navigating}>
+          <NavErrorContext.Provider value={navError}>
+            {step === "basics" ? (
+              <StepBasics
+                clinic={clinic}
+                call={call}
+                onCreated={onCreated}
+                onContinue={advance("basics")}
+                onDemo={onDemo}
+                demoFailed={demoFailed}
+                onRetryDemo={() => loadDemo(clinic!.id)}
+              />
+            ) : null}
+            {step === "doctors" && clinic ? (
+              <StepDoctors
+                call={call}
+                clinicLanguages={langs}
+                onBack={back("doctors")}
+                onContinue={advance("doctors")}
+              />
+            ) : null}
+            {step === "services" && clinic ? (
+              <StepServices
+                call={call}
+                onBack={back("services")}
+                onContinue={advance("services")}
+              />
+            ) : null}
+            {step === "assistant" && clinic ? (
+              <StepAssistant
+                call={call}
+                clinicId={clinic.id}
+                clinicName={clinic.name}
+                languages={langs}
+                onBack={back("assistant")}
+                onContinue={advance("assistant")}
+                {...(voicePreview ? { voicePreview } : {})}
+              />
+            ) : null}
+            {step === "review" && clinic ? (
+              <StepReview
+                call={call}
+                clinicName={clinic.name}
+                onEdit={(s) => nav(() => go(s))()}
+                onBack={back("review")}
+                onFinish={onFinish}
+              />
+            ) : null}
+          </NavErrorContext.Provider>
+        </NavBusyContext.Provider>
+      </StepBusyContext.Provider>
     </WizardLayout>
   );
 }
