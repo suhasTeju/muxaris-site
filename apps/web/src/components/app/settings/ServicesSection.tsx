@@ -49,7 +49,11 @@ function parseRow(r: Row) {
     return { error: `${r.name.trim()}: duration must be 5 to 480 minutes.` };
   if (!(bufferMin >= 0 && bufferMin <= 120))
     return { error: `${r.name.trim()}: buffer must be 0 to 120 minutes.` };
-  if (priceInr !== null && !(priceInr >= 0 && priceInr <= 1_000_000))
+  // A new service needs a price: a blank one would read as unset, never as free.
+  if (
+    (priceInr === null && !r.id) ||
+    (priceInr !== null && !(priceInr >= 0 && priceInr <= 1_000_000))
+  )
     return { error: `${r.name.trim()}: enter a price in whole rupees.` };
   return {
     value: {
@@ -264,7 +268,7 @@ export function ServicesSection({
                   name: "",
                   durationMin: "30",
                   bufferMin: "5",
-                  priceInr: "0",
+                  priceInr: "",
                   bookableByAi: true,
                 },
               ])

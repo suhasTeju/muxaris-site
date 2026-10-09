@@ -190,6 +190,15 @@ describe("SettingsView", () => {
     fireEvent.click(within(table).getByRole("button", { name: "Add a service" }));
     const names = within(table).getAllByLabelText("Service");
     fireEvent.change(names[names.length - 1]!, { target: { value: "Braces review" } });
+    // A new row starts without a price, and Save asks for one rather than saving it as free.
+    const newPrice = within(table).getAllByLabelText("Price (₹)").at(-1)! as HTMLInputElement;
+    expect(newPrice.value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Save services" }));
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Braces review: enter a price in whole rupees.",
+    );
+    expect(api).not.toHaveBeenCalled();
+    fireEvent.change(newPrice, { target: { value: "1500" } });
     fireEvent.click(screen.getByRole("button", { name: "Save services" }));
     await waitFor(() => expect(api).toHaveBeenCalledTimes(3));
     expect(api).toHaveBeenNthCalledWith(1, "/v1/services/s4", {
@@ -206,7 +215,7 @@ describe("SettingsView", () => {
         name: "Braces review",
         durationMin: 30,
         bufferMin: 5,
-        priceInr: 0,
+        priceInr: 1500,
         bookableByAi: true,
       },
     });
