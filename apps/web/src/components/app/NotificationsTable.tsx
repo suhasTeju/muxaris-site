@@ -169,7 +169,7 @@ export function NotificationsTable({
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
-        <div role="table" aria-label="Messages" className="min-w-[1100px]">
+        <div role="table" aria-label="Messages" className="min-w-[1000px] max-lg:min-w-[1100px]">
           <div role="rowgroup">
             <div
               role="row"
