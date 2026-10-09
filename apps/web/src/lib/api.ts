@@ -94,6 +94,8 @@ export interface MeResponse {
       name: string;
       slug: string;
       city: string | null;
+      /** IANA zone; optional while an older API without it may still answer. */
+      timezone?: string;
       onboardingStep: string | null;
     };
   }>;

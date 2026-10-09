@@ -40,6 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     id: m.clinicId,
     name: m.clinic.name,
     role: m.role,
+    timezone: m.clinic.timezone,
   }));
   const usage = loadForShell<unknown>("/v1/usage", active.clinicId, token).then(
     (u): UsageSummary | null => (isUsageSummary(u) ? u : null),

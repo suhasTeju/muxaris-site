@@ -50,6 +50,7 @@ export function DevAppFrame({
     id: c.id,
     name: c.name,
     role,
+    timezone: c.timezone,
   }));
   return (
     <ClinicProvider clinics={clinics} activeId={clinic.id} cookieStale={false}>

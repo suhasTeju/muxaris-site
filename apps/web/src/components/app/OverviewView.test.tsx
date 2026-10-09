@@ -71,6 +71,23 @@ describe("OverviewView", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
+  it("dates the pilot end in the clinic's timezone", () => {
+    // 05:00 UTC on 25 Oct is 10:30 am in India but still 24 Oct in Los Angeles.
+    const ends = { ...usage, pilotEndsAt: "2026-10-25T05:00:00.000Z" };
+    const props = {
+      ...base,
+      stats: { ok: false as const },
+      usage: { ok: true as const, data: ends },
+      appointments: { ok: false as const },
+      recentCalls: { ok: false as const },
+    };
+    const { unmount } = render(<OverviewView {...props} />);
+    expect(screen.getByText("Pilot ends 25 Oct 2026")).toBeTruthy();
+    unmount();
+    render(<OverviewView {...props} tz="America/Los_Angeles" />);
+    expect(screen.getByText("Pilot ends 24 Oct 2026")).toBeTruthy();
+  });
+
   it("shows the KPIs from the stats endpoint, the urgent count, and links open callbacks to the queue", () => {
     render(
       <OverviewView

@@ -22,6 +22,7 @@ import { ButtonLink } from "@/components/ui/Button";
 import { UsageMeter, usageColors, usagePct } from "@/components/ui/UsageMeter";
 import { Wordmark } from "@/components/ui/Wordmark";
 import { cn } from "@/components/ui/cn";
+import { useOptionalClinic } from "./clinic-context";
 import { isUsageSummary, usageCard } from "./usage";
 
 export const NAV: ReadonlyArray<{
@@ -121,6 +122,8 @@ export function Sidebar({
 }) {
   const pathname = usePathname() ?? "";
   const api = useApi();
+  // The pilot end date is the clinic's calendar day (Asia/Kolkata while the zone is unknown).
+  const tz = useOptionalClinic()?.activeClinic.timezone;
   const asideRef = useRef<HTMLElement>(null);
 
   // Values refetched here. New server values (router.refresh, clinic switch) replace them.
@@ -237,9 +240,9 @@ export function Sidebar({
         })}
       </nav>
       <div className="flex-1" />
-      <Suspense fallback={<UsageCard usage={undefined} onNavigate={onNavigate} />}>
+      <Suspense fallback={<UsageCard usage={undefined} tz={tz} onNavigate={onNavigate} />}>
         <Resolve value={shownUsage}>
-          {(u) => <UsageCard usage={u} onNavigate={onNavigate} />}
+          {(u) => <UsageCard usage={u} tz={tz} onNavigate={onNavigate} />}
         </Resolve>
       </Suspense>
     </aside>
@@ -261,12 +264,14 @@ function OpenBadge({ count }: { count: number }) {
 /** `usage` undefined while the layout's value is still on its way, null when it failed. */
 function UsageCard({
   usage,
+  tz,
   onNavigate,
 }: {
   usage: UsageSummary | null | undefined;
+  tz: string | undefined;
   onNavigate: () => void;
 }) {
-  const card = usage ? usageCard(usage) : null;
+  const card = usage ? usageCard(usage, tz) : null;
   const pct = card ? usagePct(card.used, card.included) : 0;
   const colors = usageColors(pct);
   return (

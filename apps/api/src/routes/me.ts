@@ -31,6 +31,7 @@ export function meRoutes(db: Db) {
           name: clinic.name,
           slug: clinic.slug,
           city: clinic.city,
+          timezone: clinic.timezone,
           onboardingStep: clinic.onboardingStep,
         },
       })),

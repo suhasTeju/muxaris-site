@@ -6,8 +6,12 @@ import type { UsageSummary } from "@muxaris/shared";
 const api = vi.hoisted(() => vi.fn());
 const nav = vi.hoisted(() => ({ pathname: "/app/callbacks" }));
 vi.mock("@/lib/api-client", () => ({ useApi: () => api }));
-vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname }));
+vi.mock("next/navigation", () => ({
+  usePathname: () => nav.pathname,
+  useRouter: () => ({ refresh: () => undefined }),
+}));
 
+import { ClinicProvider } from "./clinic-context";
 import { Sidebar } from "./Sidebar";
 
 afterEach(() => {
@@ -143,6 +147,27 @@ describe("Sidebar", () => {
     expect(hint.style.color).toBe("rgb(180, 35, 74)");
     const fill = screen.getByRole("meter").firstElementChild as HTMLElement;
     expect(fill.style.background).toBe("rgb(224, 72, 112)");
+  });
+
+  it("dates the pilot end in the active clinic's timezone", () => {
+    // 05:00 UTC on 25 Oct is 10:30 am in India but still 24 Oct in Los Angeles.
+    const pilot = usage({ plan: "pilot", planName: "Pilot", pilotEndsAt: "2026-10-25T05:00:00Z" });
+    const inClinic = (timezone?: string) => (
+      <ClinicProvider
+        clinics={[{ id: "cl_1", name: "Smile", role: "owner", timezone }]}
+        activeId="cl_1"
+        cookieStale={false}
+      >
+        {sidebar({ usage: pilot })}
+      </ClinicProvider>
+    );
+    const { rerender } = render(inClinic("America/Los_Angeles"));
+    expect(screen.getByText("Pilot ends 24 Oct 2026")).toBeTruthy();
+    rerender(inClinic("Asia/Kolkata"));
+    expect(screen.getByText("Pilot ends 25 Oct 2026")).toBeTruthy();
+    // An API without the field, or no clinic context: India.
+    rerender(inClinic(undefined));
+    expect(screen.getByText("Pilot ends 25 Oct 2026")).toBeTruthy();
   });
 
   it("renders the streamed values once the layout's promises resolve", async () => {

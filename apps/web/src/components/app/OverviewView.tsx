@@ -36,9 +36,9 @@ function Quiet({ children }: { children: React.ReactNode }) {
   return <p className="text-muted m-0 p-[18px] text-[14px] italic">{children}</p>;
 }
 
-function usageHint(u: Usage): string {
+function usageHint(u: Usage, tz: string): string {
   const over = Math.ceil(u.overageSeconds / 60);
-  return usageCard(u).hint + (over > 0 ? ` · ${over} min over` : "");
+  return usageCard(u, tz).hint + (over > 0 ? ` · ${over} min over` : "");
 }
 
 /** Overview from AppOverview.dc.html: four KPI tiles, today's appointments by doctor, recent calls. */
@@ -61,7 +61,7 @@ export function OverviewView({
 }) {
   const todayKey = localDateKey(now, tz);
   const fail = stats.ok ? undefined : "Couldn't load";
-  const card = usage.ok ? usageCard(usage.data) : null;
+  const card = usage.ok ? usageCard(usage.data, tz) : null;
   // The badge on the Open callbacks tile: hidden at 0, or when the stats did not load.
   const urgent = stats.ok ? (stats.data.openUrgentCallbacks ?? 0) : 0;
   return (
@@ -117,7 +117,7 @@ export function OverviewView({
             value={card.usedLabel}
             unit={`/ ${card.includedLabel}`}
             meter={{ used: card.used, included: card.included }}
-            hint={usageHint(usage.data)}
+            hint={usageHint(usage.data, tz)}
           />
         ) : (
           <KpiCard icon={Timer} label="Minutes used this month" value={DASH} hint="Couldn't load" />

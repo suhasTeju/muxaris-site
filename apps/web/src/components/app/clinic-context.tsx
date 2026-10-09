@@ -7,6 +7,8 @@ export interface ClinicSummary {
   id: string;
   name: string;
   role: string;
+  /** The clinic's IANA timezone, for dates the shell prints (the pilot end); Asia/Kolkata if unknown. */
+  timezone?: string;
 }
 
 interface ClinicCtx {

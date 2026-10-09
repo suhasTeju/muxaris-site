@@ -121,6 +121,8 @@ afterAll(async () => {
     clinicIds.push(ownClinic);
     const me = (await (await call("GET", "/me", { token: tokA })).json()) as J;
     expect(me.memberships[0].clinicId).toBe(ownClinic);
+    // The app shell dates the pilot end in the clinic's timezone.
+    expect(me.memberships[0].clinic.timezone).toBe("Asia/Kolkata");
     expect((await call("GET", `/clinics/${ownClinic}`, { token: tokA })).status).toBe(200);
     expect((await call("GET", `/clinics/${ownClinic}`, { token: tokB })).status).toBe(403);
   });
