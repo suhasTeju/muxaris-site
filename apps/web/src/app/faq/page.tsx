@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Faq } from "@/components/marketing/Faq";
 import { FinalCta } from "@/components/marketing/FinalCta";
+import { Eyebrow, PAGE_H1, SECTION_X } from "@/components/marketing/SectionHeader";
 import { Shell } from "@/components/marketing/Shell";
 import { FAQS } from "@/lib/content";
 
@@ -28,11 +29,21 @@ export default function FaqPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
       />
-      <div className="mx-auto max-w-3xl px-4 pt-16 sm:px-6 lg:pt-24">
-        <h1 className="font-display text-5xl leading-[1.02] font-medium tracking-[-0.035em] sm:text-6xl">
-          Frequently asked <span className="text-muted italic">questions.</span>
-        </h1>
-      </div>
+      <section className={`relative overflow-hidden pt-[120px] lg:pt-[168px] ${SECTION_X}`}>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: "radial-gradient(40% 70% at 20% 0%,rgba(14,154,150,0.12),transparent 70%)",
+          }}
+        />
+        <div className="relative mx-auto flex max-w-[1200px] flex-col gap-[18px]">
+          <Eyebrow>FAQ</Eyebrow>
+          <h1 className={PAGE_H1}>
+            Frequently asked <span className="text-muted-2">questions.</span>
+          </h1>
+        </div>
+      </section>
       <Faq heading={false} />
       <FinalCta />
     </Shell>

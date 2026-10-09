@@ -1,68 +1,113 @@
-import Link from "next/link";
+import { Check } from "lucide-react";
+import { buttonClass } from "@/components/ui/Button";
+import { cn } from "@/components/ui/cn";
 import { PLANS, PRICING_NOTE } from "@/lib/content";
-import { Reveal } from "./Reveal";
-import { SectionHeader } from "./SectionHeader";
+import { ANCHOR, SECTION_X, SectionHeader } from "./SectionHeader";
+import { SiteLink } from "./SiteLink";
 
+/**
+ * The two plans. On the home page it carries its own heading; on /pricing it sits under the page
+ * H1, so the plan names step up from h3 to h2.
+ */
 export function Pricing({ heading = true }: { heading?: boolean }) {
-  // On /pricing the page H1 is followed directly by the plans, so they are h2s there.
   const PlanTitle = heading ? "h3" : "h2";
   return (
-    <section id="pricing" className="bg-surface border-line scroll-mt-16 border-y">
-      <div className="mx-container mx-section">
+    <section
+      id="pricing"
+      className={cn(
+        SECTION_X,
+        ANCHOR,
+        heading
+          ? "border-line border-t py-[80px] lg:py-[128px]"
+          : "pt-[48px] pb-[96px] lg:pt-[56px] lg:pb-[120px]",
+      )}
+    >
+      <div className="mx-auto flex max-w-[1000px] flex-col gap-[40px] lg:gap-[56px]">
         {heading && (
-          <SectionHeader eyebrow="Pricing" aside="Start free.">
+          <SectionHeader
+            eyebrow="Pricing"
+            aside="Start free."
+            asideTone="teal"
+            className="items-center text-center"
+          >
             One honest price.
           </SectionHeader>
         )}
-        <div className={`grid gap-5 md:grid-cols-2 ${heading ? "mt-12" : ""}`}>
-          {PLANS.map((p, i) => (
-            <Reveal key={p.id} delay={i * 50}>
+        <div className="grid items-stretch gap-[20px] md:grid-cols-2">
+          {PLANS.map((p) => {
+            const hi = p.highlight;
+            return (
               <article
+                key={p.id}
                 data-plan={p.id}
-                className={`flex h-full flex-col p-7 sm:p-9 ${
-                  p.highlight
-                    ? "mx-dark rounded-card shadow-card mx-card-ring border"
-                    : "mx-card bg-paper"
-                }`}
+                className={cn(
+                  "relative flex flex-col gap-[28px] rounded-[28px] p-[28px] sm:p-[34px]",
+                  hi
+                    ? "border-teal border-[1.5px] bg-[linear-gradient(180deg,#f0faf9_0%,#ffffff_46%)] shadow-[0_0_0_6px_rgba(14,154,150,0.08),0_40px_80px_-40px_rgba(14,154,150,0.45)]"
+                    : "border-line bg-surface shadow-rest border",
+                )}
               >
-                <PlanTitle className="font-display text-2xl tracking-tight">{p.name}</PlanTitle>
-                <p className="mt-6 flex items-baseline gap-2">
-                  <span className="font-display text-6xl tracking-[-0.04em]">{p.price}</span>
-                  <span className={p.highlight ? "text-dark-muted" : "text-muted"}>
-                    {p.cadence}
-                  </span>
-                </p>
-                <p className={`mt-4 ${p.highlight ? "text-dark-muted" : "text-muted"}`}>
-                  {p.blurb}
-                </p>
-                <ul className="mt-8 flex-1 space-y-3">
+                <div className="flex flex-col gap-[16px]">
+                  <PlanTitle
+                    className={cn(
+                      "m-0 font-mono text-[12px] leading-[1.5] font-normal tracking-[0.12em] uppercase",
+                      hi ? "text-teal-ink" : "text-muted",
+                    )}
+                  >
+                    {p.name}
+                  </PlanTitle>
+                  <p className="m-0 flex items-baseline gap-[10px]">
+                    <span className="text-[60px] leading-none font-semibold tracking-[-0.045em]">
+                      {p.price}
+                    </span>
+                    <span className="text-muted text-[16px]">{p.cadence}</span>
+                  </p>
+                  <p className="text-ink-3 m-0 text-[15.5px] leading-[1.55]">{p.blurb}</p>
+                </div>
+                <ul
+                  className={cn(
+                    "m-0 flex flex-1 list-none flex-col gap-[12px] border-t p-0 pt-[24px]",
+                    hi ? "border-teal-line" : "border-line",
+                  )}
+                >
                   {p.features.map((f) => (
-                    <li key={f} className="flex gap-3 text-[0.95rem]">
+                    <li key={f} className="text-ink-2 flex items-center gap-[12px] text-[15px]">
                       <span
                         aria-hidden="true"
-                        className={`mt-0.5 ${p.highlight ? "text-accent-bright" : "text-accent-ink"}`}
+                        className={cn(
+                          "rounded-6 grid size-[20px] flex-none place-items-center",
+                          hi ? "bg-teal text-white" : "bg-chip text-ink-2",
+                        )}
                       >
-                        ✓
+                        <Check size={12} />
                       </span>
                       {f}
                     </li>
                   ))}
                 </ul>
-                <Link
+                <SiteLink
                   href="/#demo"
-                  className={`mx-btn mt-9 ${
-                    p.highlight
-                      ? "mx-btn-primary hover:!bg-accent-bright hover:!text-ink"
-                      : "mx-btn-secondary"
-                  }`}
+                  stay
+                  className={
+                    hi
+                      ? buttonClass({ size: 52, block: true, className: "shadow-cta" })
+                      : buttonClass({
+                          variant: "secondary",
+                          size: 52,
+                          block: true,
+                          className: "font-semibold",
+                        })
+                  }
                 >
                   {p.cta}
-                </Link>
+                </SiteLink>
               </article>
-            </Reveal>
-          ))}
+            );
+          })}
         </div>
-        <p className="font-display text-muted mt-8 max-w-2xl text-sm italic">{PRICING_NOTE}</p>
+        <p className="text-muted m-0 mx-auto max-w-[720px] text-center text-[14px] leading-[1.6] text-pretty">
+          {PRICING_NOTE}
+        </p>
       </div>
     </section>
   );
