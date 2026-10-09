@@ -24,9 +24,9 @@ export function TranscriptPane({ lines, idle }: { lines: TranscriptLine[]; idle:
           Conversation
         </h2>
       </div>
-      <div className="flex min-h-[440px] flex-col gap-[14px] px-[18px] py-[20px]">
+      <div className="flex min-h-[440px] flex-col gap-[14px] px-[18px] py-[20px] max-lg:min-h-[240px]">
         {lines.length === 0 ? (
-          <div className="text-muted-2 grid min-h-[380px] flex-1 place-items-center text-center text-[15px] italic">
+          <div className="text-muted-2 grid min-h-[380px] flex-1 place-items-center max-lg:min-h-[180px] text-center text-[15px] italic">
             {idle ? "Say hello. The conversation appears here." : "The conversation appears here."}
           </div>
         ) : (
