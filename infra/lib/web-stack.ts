@@ -109,8 +109,12 @@ export class WebStack extends Stack {
     });
 
     // ---- ALB: origin certificate and the host rule, gated on the CloudFront header
+    // The default behaviour forwards the viewer's Host header (muxaris.com), and CloudFront then
+    // requires the origin's certificate to cover that name too, not only the origin domain
+    // (otherwise every request is a 502). The ALB still picks this certificate by SNI.
     const originCert = new acm.Certificate(this, "OriginCert", {
       domainName: WEB_ORIGIN_HOST,
+      subjectAlternativeNames: [WEB_HOST, WWW_HOST],
       validation: acm.CertificateValidation.fromDns(props.dns.zone),
     });
     // Built here, not through listener.addCertificates / addTargetGroups: those would place the

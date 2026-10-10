@@ -104,8 +104,11 @@ describe("WebStack", () => {
       ]),
     });
     t.hasResourceProperties("AWS::ElasticLoadBalancingV2::ListenerCertificate", {});
+    // CloudFront forwards the viewer Host header, so the origin certificate must cover the public
+    // hosts as well as the origin name.
     t.hasResourceProperties("AWS::CertificateManager::Certificate", {
       DomainName: "web-origin.muxaris.com",
+      SubjectAlternativeNames: ["muxaris.com", "www.muxaris.com"],
       ValidationMethod: "DNS",
     });
   });
