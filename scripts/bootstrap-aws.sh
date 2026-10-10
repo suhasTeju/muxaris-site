@@ -88,7 +88,7 @@ CLIENT=$(jq -r '.MuxarisAuth.UserPoolClientId' "$OUT")
 DOMAIN=$(jq -r '.MuxarisAuth.UserPoolDomain' "$OUT")
 cat <<EOT
 
-Add these to .env and to Netlify environment variables:
+Add these to .env and to the GitHub repository variables:
 NEXT_PUBLIC_COGNITO_USER_POOL_ID=$POOL
 NEXT_PUBLIC_COGNITO_CLIENT_ID=$CLIENT
 NEXT_PUBLIC_COGNITO_DOMAIN=$DOMAIN

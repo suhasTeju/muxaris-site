@@ -200,7 +200,7 @@ deploy the web app and move the domain.
 After that, every successful CI run on `main` runs `.github/workflows/deploy-aws.yml` through
 GitHub OIDC with no stored AWS keys. Its `changes` job decides what to deploy: the backend job
 (images, CDK deploy of Data, Workers and Migrate, migrations, then Services, Observability and Dns,
-smoke test) runs when anything outside `apps/web`, docs, Markdown and `netlify.toml` changed, and
+smoke test) runs when anything outside `apps/web`, docs and Markdown changed, and
 the `web` job (build and push `muxaris-web`, deploy `MuxarisEdgeCert` and `MuxarisWeb`, run
 `scripts/smoke-web.sh`) runs when `apps/web`, `packages/shared`, `packages/voice-sdk`, `infra`,
 `scripts/smoke-web.sh` or `package-lock.json` changed. A web-only push deploys only `MuxarisWeb`
@@ -256,8 +256,7 @@ redeploy. The `web` job in `.github/workflows/deploy-aws.yml` does this on every
 | `NEXT_PUBLIC_GOOGLE_ENABLED`       | `1` to show Google sign-in, otherwise unset                    |
 
 Locally, `scripts/push-images.sh` reads these from `.env` (`NEXT_PUBLIC_COGNITO_DOMAIN` is required).
-If the Cognito variables are unset, every `/app` request redirects to sign-in. `netlify.toml` stays
-in the repository only until the cutover is verified; the Netlify site can then be deleted by hand.
+If the Cognito variables are unset, every `/app` request redirects to sign-in.
 
 ## Scripts
 

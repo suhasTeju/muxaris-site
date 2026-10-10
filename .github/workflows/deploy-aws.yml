@@ -87,8 +87,8 @@ jobs:
           else
             files="$(git diff --name-only "$api" "$HEAD_SHA")"
             echo "changed since deployed API $api:"; echo "$files"
-            # Anything outside web, docs, Markdown and netlify.toml needs a backend deploy.
-            if grep -qvE '^(apps/web/|docs/|netlify\.toml$)|\.md$' <<<"$files"; then
+            # Anything outside web, docs and Markdown needs a backend deploy.
+            if grep -qvE '^(apps/web/|docs/)|\.md$' <<<"$files"; then
               echo "deploy=true" >> "$GITHUB_OUTPUT"
             else
               echo "only web or docs changed since the deployed API: no backend deploy"
