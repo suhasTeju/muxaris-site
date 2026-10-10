@@ -1,8 +1,8 @@
 # AWS services
 
 Everything runs in one account (secondary account `005533348545`, region `ap-south-1`, Mumbai) and
-is defined as CDK stacks under `infra/lib`. The website is on Netlify and DNS is at GoDaddy; neither
-is AWS.
+is defined as CDK stacks under `infra/lib`. The two exceptions are CloudFront's certificate, which
+lives in `us-east-1` (stack `MuxarisEdgeCert`), and the registrar, which stays GoDaddy.
 
 ## Services in use
 
@@ -10,7 +10,7 @@ is AWS.
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Amazon Cognito                         | Sign-in for clinic staff (user pool and app client, optional Google federation). The API and the voice gateway verify its access tokens. Stack `MuxarisAuth`.                                                 | Managed auth with no password handling in our code; verified tokens work on both HTTP and the first WebSocket frame.                                      |
 | ECS on Fargate (ARM64)                 | Runs the API (port 4000) and the voice gateway (port 4100) as two services in the `muxaris` cluster, plus (in its own stack, `MuxarisMigrate`, deployed first) the one-off `muxaris-migrate` task. Stack `MuxarisServices`.                                         | The gateway holds long WebSocket calls, so it needs a long-running process, not Lambda. Fargate has no servers to patch and Graviton is cheaper per vCPU. |
-| Amazon ECR                             | Two repositories, `muxaris-api` and `muxaris-voice-gateway`, immutable tags, scan on push, last 10 images kept. Stack `MuxarisData`.                                                                          | Native to ECS, so no pull credentials to manage; immutable tags make a rollback a known image.                                                            |
+| Amazon ECR                             | Three repositories, `muxaris-api`, `muxaris-voice-gateway` and `muxaris-web`, immutable tags, scan on push, last 10 images kept. Stack `MuxarisData`.                                                                          | Native to ECS, so no pull credentials to manage; immutable tags make a rollback a known image.                                                            |
 | Application Load Balancer              | One internet-facing ALB. `voice.muxaris.com` and the paths `/v1/session*` and `/v1/telephony/*` go to the gateway, everything else to the API. Idle timeout 3600 s. HTTPS once an ACM certificate is attached. | Host and path routing on one address, WebSocket support, health checks and an `HTTPCode_Target_5XX` metric for alarms.                                    |
 | VPC, subnets and one NAT gateway       | `10.42.0.0/16`, 2 AZs: public subnets (ALB and Fargate tasks), private subnets with egress through one NAT (Lambdas), isolated subnets (RDS). Stack `MuxarisNetwork`.                                          | RDS has no route to the internet. Lambdas in a VPC need a NAT to reach Bedrock, Secrets Manager and SES. Fargate in public subnets avoids a second NAT.   |
 | Amazon RDS for PostgreSQL 16           | The system of record: `db.t4g.micro`, single AZ, 20 GB gp3 (autoscaling to 50 GB), `storageEncrypted: true`, 7-day backups, deletion protection, retained on stack deletion. Stack `MuxarisData`.             | The schema is relational (clinics, slots, appointments, usage ledger) and uses transactions and `FOR UPDATE SKIP LOCKED`; Postgres is the fit.            |
@@ -22,10 +22,13 @@ is AWS.
 | Amazon SES                             | Appointment confirmation, reschedule, cancellation and reminder email from `appointments@muxaris.com`. The domain identity (DKIM, custom MAIL FROM) is in stack `MuxarisNotify`.                              | Email is the live notification channel for India, and SES is the cheapest sender with DKIM on our own domain.                                             |
 | Amazon SNS                             | (1) The `muxaris-alarms` topic that carries every CloudWatch alarm to email. (2) SMS to patients, **implemented but flagged off** (`SMS_ENABLED`): Indian SMS needs TRAI DLT registration.                      | Alarms need a fan-out that CloudWatch can call natively. SMS stays behind a flag until DLT is done.                                                       |
 | AWS Secrets Manager                    | `muxaris/db` (RDS-generated credentials) and `muxaris/app` (Sarvam, Razorpay and WhatsApp values, plus the telephony values when enabled). Processes read them at start. Optional `muxaris/google-oauth`.     | Keeps secrets out of images, task definitions and CloudFormation templates; the task and Lambda roles are granted read on exactly these two secrets.      |
-| Amazon CloudWatch                      | Log groups `/muxaris/api`, `/muxaris/voice-gateway`, `/muxaris/migrate`; metric filters on the gateway's JSON logs; the `muxaris` dashboard; alarms to the SNS topic (see the runbook). `MuxarisObservability`.  | Zero setup next to ECS and Lambda; log-derived metrics give per-turn latency without a metrics SDK.                                                       |
-| IAM, with the GitHub OIDC provider     | The role `MuxarisGithubDeploy` is assumed by GitHub Actions on `main` only. No long-lived AWS keys exist in GitHub. Task roles are least-privilege per process. Stack `MuxarisCicd`.                          | OIDC removes stored credentials; the role is limited to ECR push, CDK's own bootstrap roles and the migrate task.                                         |
-| AWS Certificate Manager                | One DNS-validated certificate for `api.muxaris.com` and `voice.muxaris.com`, attached to the ALB HTTPS listener. Requested by `scripts/request-cert.sh`.                                                       | Free public certificates that renew themselves once the validation CNAMEs stay in DNS.                                                                    |
-| AWS CDK and CloudFormation             | All of the above as TypeScript stacks: Auth, Storage, Notify, Network, Data, Workers, Services, Observability, Cicd. The CDK bootstrap stack provides the asset bucket and deploy roles.                       | Reviewable, repeatable infrastructure; the same code deploys from a laptop and from CI.                                                                   |
+| Amazon CloudWatch                      | Log groups `/muxaris/api`, `/muxaris/voice-gateway`, `/muxaris/web`, `/muxaris/migrate`; metric filters on the gateway's JSON logs; the `muxaris` dashboard; alarms to the SNS topic (see the runbook). `MuxarisObservability`.  | Zero setup next to ECS and Lambda; log-derived metrics give per-turn latency without a metrics SDK.                                                       |
+| IAM, with the GitHub OIDC provider     | The role `MuxarisGithubDeploy` is assumed by GitHub Actions on `main` only. No long-lived AWS keys exist in GitHub. Task roles are least-privilege per process. Stack `MuxarisCicd`.                          | OIDC removes stored credentials; the role is limited to ECR push (including `muxaris-web`), CDK's own bootstrap roles (also the `us-east-1` ones) and the migrate task.                                         |
+| AWS Certificate Manager                | One DNS-validated certificate for `api.muxaris.com` and `voice.muxaris.com`, attached to the ALB HTTPS listener (requested by `scripts/request-cert.sh`); one for `web-origin.muxaris.com` in `ap-south-1`, attached as an additional SNI certificate (`MuxarisWeb`); and one for `muxaris.com` and `www` in `us-east-1` for CloudFront (`MuxarisEdgeCert`).                                                       | Free public certificates that renew themselves once the validation CNAMEs stay in Route 53. CloudFront accepts certificates only from `us-east-1`.                                                                    |
+| Web app on ECS Fargate (ARM64) | The Next 16 standalone image `muxaris-web`: one 0.5 vCPU / 1 GB task on port 3000 in the `muxaris` cluster, autoscaling 1 to 3 on CPU, log group `/muxaris/web`, health check `/healthz`. The ALB sends `muxaris.com`, `www.muxaris.com` and `web-origin.muxaris.com` to it at listener priority 5, only with the `x-origin-verify` header (secret `muxaris/web-origin-verify`). Stack `MuxarisWeb`. | Reuses the cluster and ALB the backend already pays for, so the website needs no new load balancer; the header check keeps the task reachable only through CloudFront. |
+| Amazon CloudFront | Distribution for `muxaris.com` and `www.muxaris.com` with origin `web-origin.muxaris.com` over HTTPS. Uncached by default (`CachingDisabled`, `AllViewer`); `/_next/static/*` immutable; `/_next/image*`, `/audio/*`, `/brand/*`, `/img/*` and `/favicon.ico` cached one hour. HTTP/2 and 3, TLS 1.2 (2021), price class 200, a Function that 301s www to the apex, and a response headers policy with the security headers. Stack `MuxarisWeb`. | Terminates TLS for the apex, caches static assets close to users (price class 200 includes India) and is the only way in to the web task. |
+| Amazon Route 53 | The `muxaris.com` public hosted zone and every record in it: apex and www (Netlify or CloudFront, by `WEB_TARGET`), `api`, `voice` and `web-origin` aliases to the ALB, ACM validation CNAMEs, the GoDaddy mailbox records and the SES DKIM, MAIL FROM records. Stack `MuxarisDns`; outputs `HostedZoneId` and `NameServers`. | Aliases to the ALB and the distribution work at the apex, and DNS-validated certificates in two regions validate against one zone. Records are code, so a cutover or rollback is a redeploy. |
+| AWS CDK and CloudFormation             | All of the above as TypeScript stacks: Auth, Storage, Notify, Network, Data, Workers, Services, Observability, Dns, EdgeCert, Web, Cicd. The CDK bootstrap stack provides the asset bucket and deploy roles.                       | Reviewable, repeatable infrastructure; the same code deploys from a laptop and from CI.                                                                   |
 
 ## Monthly cost estimate
 
@@ -34,15 +37,18 @@ US dollars at ap-south-1 list prices, before model and speech usage.
 | Item                                                                | Approx. US$ / month |
 | ------------------------------------------------------------------- | ------------------: |
 | RDS `db.t4g.micro`, single AZ, 20 GB                                |                  16 |
-| Two Fargate ARM tasks, 0.5 vCPU / 1 GB each                         |                  23 |
+| Two Fargate ARM tasks (API, gateway), 0.5 vCPU / 1 GB each         |                  23 |
+| One Fargate ARM task for the web app, 0.5 vCPU / 1 GB               |                  12 |
+| CloudFront (free tier at current traffic; about 1 to 3 beyond it)   |              0 to 3 |
+| Route 53 hosted zone (plus query charges)                           |                 0.5 |
 | Application Load Balancer (plus LCU charges)                        |                  20 |
 | One NAT gateway (plus data processing)                              |                  33 |
 | Secrets Manager, CloudWatch, S3, SQS, Lambda, ECR, Cognito          |                   8 |
-| **Total**                                                           |       **100 to 115** |
+| **Total**                                                           |       **113 to 130** |
 
 Container Insights and public IPv4 address charges add a few dollars. Bedrock (Nova) tokens and Sarvam speech-to-text and text-to-speech are billed by use and are not in
 this total. The API service can scale from one to two tasks on CPU, so a busy month can add one more
-0.5 vCPU / 1 GB task. The gateway never scales out (see the runbook).
+0.5 vCPU / 1 GB task, and the web service can scale from one to three. Netlify is no longer needed. The gateway never scales out (see the runbook).
 
 ## Cheaper alternatives considered
 
@@ -53,6 +59,7 @@ this total. The API service can scale from one to two tasks on CPU, so a busy mo
 - **RDS Proxy.** Not needed at this scale: two small services and four Lambdas open few connections.
 - **CloudFront in front of the ALB** for a temporary HTTPS URL before the domain is ready.
   Rejected: WebSocket configuration and extra cost for a state that lasts only until the
-  certificate is issued. The ALB's own hostname serves plain HTTP until then.
+  certificate is issued. The ALB's own hostname serves plain HTTP until then. (CloudFront is now in
+  front of the web app only; the API and voice gateway still go straight to the ALB.)
 - **Fargate Spot** for the gateway. Rejected: Spot tasks can be reclaimed with two minutes' notice,
   which would drop live calls.

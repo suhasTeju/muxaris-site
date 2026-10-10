@@ -31,18 +31,25 @@ dashboard seeks with `turn - call.startedAt - recorderT0Ms`.
 
 ## Deployed topology
 
-One AWS account (`005533348545`), one region (`ap-south-1`), nine CDK stacks. The web app is on
-Netlify; DNS is at GoDaddy. See [AWS-SERVICES.md](AWS-SERVICES.md) for the service inventory and
+One AWS account (`005533348545`), nine CDK stacks in `ap-south-1` plus `MuxarisDns`, `MuxarisWeb`
+and `MuxarisEdgeCert`; the last one is in `us-east-1` because CloudFront only accepts certificates
+from there. The web app runs on Fargate behind CloudFront and DNS is Route 53 (the registrar is
+GoDaddy). See [AWS-SERVICES.md](AWS-SERVICES.md) for the service inventory and
 [RUNBOOK.md](RUNBOOK.md) for operations.
 
 ```
- browser / Twilio
-      |  https://api.muxaris.com   wss://voice.muxaris.com
+ browser: https://muxaris.com (www redirects to the apex)
       v
+ CloudFront (adds x-origin-verify) --- https://web-origin.muxaris.com ---.
+                                                                         |
+ browser / Twilio: https://api.muxaris.com   wss://voice.muxaris.com     |
+      v                                                                  v
  ALB (public subnets, idle timeout 3600 s, 443 once CERT_ARN is set; 80 redirects)
+   |- Host muxaris.com, www, web-origin + x-origin-verify header     -> web target group :3000
    |- Host voice.muxaris.com, or path /v1/session*, /v1/telephony/*  -> gateway target group :4100
    '- everything else                                                  -> API target group :4000
  Fargate ARM64, public subnets with public IPs (no NAT on this path)
+   |- web service     0.5 vCPU / 1 GB, 1 to 3 tasks (CPU)
    |- api service     0.5 vCPU / 1 GB, 1 to 2 tasks (CPU 70%), stopTimeout 30 s
    '- gateway service 0.5 vCPU / 1 GB, exactly 1 task, stopTimeout 90 s
  Lambdas (private subnets, egress through one NAT): post-call, sweep, deliver, reminders
@@ -51,9 +58,33 @@ Netlify; DNS is at GoDaddy. See [AWS-SERVICES.md](AWS-SERVICES.md) for the servi
 
 - **Network.** VPC `10.42.0.0/16` over two AZs with public, private-with-egress and isolated
   subnets and one NAT gateway. Security groups: the ALB admits 80 and 443 from anywhere; the
-  services admit 4000 and 4100 from the ALB only; RDS admits 5432 from the services and the Lambdas
+  services admit 3000, 4000 and 4100 from the ALB only; RDS admits 5432 from the services and the Lambdas
   only. Both services run in public subnets with public IPs so that they reach Sarvam, Bedrock, S3
   and Secrets Manager without a second NAT.
+- **Web app and CloudFront.** Stack `MuxarisWeb` holds the `muxaris-web` service (Next 16 standalone,
+  port 3000, `/healthz`, log group `/muxaris/web`, autoscaling 1 to 3 on CPU) and the CloudFront
+  distribution. The ALB rule at listener priority 5 matches the hosts `muxaris.com`,
+  `www.muxaris.com` and `web-origin.muxaris.com` only when the request carries `x-origin-verify`
+  with the value of the secret `muxaris/web-origin-verify`; CloudFront adds that header, so the task
+  is reachable only through it. The origin is `web-origin.muxaris.com` over HTTPS, using its own ACM
+  certificate attached to the listener as an additional SNI certificate. The default behaviour is
+  uncached with every viewer header, cookie and query string forwarded (`CachingDisabled` plus
+  `AllViewer`); `/_next/static/*` is cached as immutable, and `/_next/image*`, `/audio/*`, `/brand/*`,
+  `/img/*` and `/favicon.ico` are cached for one hour by full URL. HTTP/2 and HTTP/3, TLS 1.2 (2021)
+  minimum, price class 200 (includes India). A CloudFront Function redirects `www` to the apex with a
+  301, and a response headers policy sets the security headers (X-Frame-Options DENY, nosniff,
+  Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy microphone=(self), HSTS for a
+  year); `next.config.ts` sets the same ones. The viewer certificate lives in `MuxarisEdgeCert`
+  (us-east-1, DNS-validated against the Route 53 zone) and reaches `MuxarisWeb` through CDK
+  cross-region references.
+- **DNS.** `MuxarisDns` creates the `muxaris.com` public hosted zone and owns every record: the apex
+  and www (Netlify's A `75.2.60.5` and CNAME `luxury-sunflower-1cb07b.netlify.app` while
+  `WEB_TARGET=netlify`, A and AAAA aliases to the distribution when `WEB_TARGET=cloudfront` and
+  `CLOUDFRONT_DOMAIN` is set), `api`, `voice` and `web-origin` as aliases to the ALB, the ALB
+  certificate's two ACM validation CNAMEs, the GoDaddy mailbox records (apex MX, SPF, `_dmarc`,
+  `email` CNAME, `_autodiscover._tcp` SRV) and the SES records (three DKIM CNAMEs, `mail.muxaris.com`
+  MX and SPF TXT). The registrar stays GoDaddy, with its nameservers set to the four Route 53 ones
+  (output `NameServers`).
 - **ALB and health checks.** Target groups are IP targets with `/healthz` health checks every 30 s.
   The gateway's deregistration delay is 90 s to match its `stopTimeout`. The gateway rules are
   priority 10 (host `voice.muxaris.com`) and 20 (the two path patterns); the API is the default.
@@ -90,6 +121,9 @@ Netlify; DNS is at GoDaddy. See [AWS-SERVICES.md](AWS-SERVICES.md) for the servi
     needs. A deploy also drops calls still running after the 90 s `stopTimeout`.
   - The Lambdas reach the internet (Bedrock, Secrets Manager, SES) through the single NAT gateway,
     in one AZ.
+  - The web task runs in the public subnets like the other services. The origin-verify secret is
+    visible in the CloudFormation template; it only gates direct ALB access to the web app. CloudFront
+    serves the apex over IPv6, but the ALB origin is IPv4.
   - Indian SMS needs TRAI DLT registration, so SMS is implemented but off; email is the live
     channel.
   - Browser calls are capped at `MAX_CALL_SECONDS`, 1200 s (20 minutes).

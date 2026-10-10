@@ -8,9 +8,9 @@ run these commands with the primary profile. For what each service does, see
 of [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Stable names used below: ECS cluster `muxaris`, migrate task family `muxaris-migrate`, log groups
-`/muxaris/api`, `/muxaris/voice-gateway` and `/muxaris/migrate`, SNS topic `muxaris-alarms`,
-secrets `muxaris/db` and `muxaris/app`, ECR repositories `muxaris-api` and
-`muxaris-voice-gateway`, deploy role `MuxarisGithubDeploy`, dashboard `muxaris`.
+`/muxaris/api`, `/muxaris/voice-gateway`, `/muxaris/web` and `/muxaris/migrate`, SNS topic `muxaris-alarms`,
+secrets `muxaris/db`, `muxaris/app` and `muxaris/web-origin-verify`, ECR repositories `muxaris-api`,
+`muxaris-voice-gateway` and `muxaris-web`, deploy role `MuxarisGithubDeploy`, dashboard `muxaris`.
 
 **Every command below assumes this preamble, run from the repo root in the same shell.** It exports
 `AWS_PROFILE=aws-secondary-account` and `AWS_REGION=ap-south-1` and aborts unless the account is
@@ -49,7 +49,7 @@ build `linux/arm64` (on an Intel host that means QEMU emulation, which is slow).
    `npm run cdk -w @muxaris/infra -- deploy MuxarisNetwork MuxarisData --require-approval never`
    (or `npm run deploy:network -w @muxaris/infra`, then `deploy:data`). This creates the VPC, the
    RDS instance, both secrets (`muxaris/db` filled by RDS, `muxaris/app` holding a generated
-   placeholder until step 3) and the two ECR repositories.
+   placeholder until step 3) and the three ECR repositories (`muxaris-web` is the third).
 3. **Secrets.** Fill the Sarvam key (and the Razorpay and WhatsApp values, if used) in `.env`, then
    run `scripts/bootstrap-aws.sh --secrets`. It merges the non-empty ones from this fixed list into
    `muxaris/app` and prints the key names only: `SARVAM_TTS_API_KEY`, `RAZORPAY_KEY_ID`,
@@ -73,7 +73,8 @@ build `linux/arm64` (on an Intel host that means QEMU emulation, which is slow).
    deploy); they clear on the next scheduled run. Set `ALARM_EMAIL` before
    the observability deploy if alarms should reach an inbox, and confirm the subscription email AWS
    sends. Email delivery also needs the SES identity from `deploy:notify` (`MuxarisNotify`), whose
-   DKIM and MAIL FROM records you add at GoDaddy by hand; it is not part of this sequence.
+   DKIM and MAIL FROM records are created by `MuxarisDns` (see "Web app on CloudFront"); `deploy:notify`
+   is not part of this sequence.
 7. **Migrate.** `scripts/migrate.sh` (after `deploy:migrate`, before `deploy:services`) runs the
    `muxaris-migrate` Fargate task in the public subnets, waits for it, prints the last 50 lines of
    `/muxaris/migrate` and exits non-zero if the task did. It reads the subnets and security group
@@ -84,20 +85,22 @@ build `linux/arm64` (on an Intel host that means QEMU emulation, which is slow).
 9. **Certificate.** `scripts/request-cert.sh` requests (or reuses) the ACM certificate for
    `api.muxaris.com` with `voice.muxaris.com` as a second name, and prints the two validation CNAMEs
    and a `CERT_ARN=` line.
-10. **DNS, validation.** At GoDaddy add the two validation CNAMEs exactly as printed (GoDaddy
-    usually wants the host part without `.muxaris.com`). Keep them there: ACM renews through them.
-    Re-run `scripts/request-cert.sh` until it prints `Status: ISSUED`.
+10. **DNS, validation.** Deploy `MuxarisDns` (`npm run deploy:dns -w @muxaris/infra`) and point the
+    domain's nameservers at Route 53 (steps 2 and 3 of "Web app on CloudFront"). The two ACM
+    validation CNAMEs are already records in the zone: keep them, ACM renews through them. Re-run
+    `scripts/request-cert.sh` until it prints `Status: ISSUED`.
 11. **HTTPS.** Add `CERT_ARN=<arn>` to `.env`, remove `ALLOW_HTTP_ONLY`, and redeploy `MuxarisServices`
     (`npm run deploy:services -w @muxaris/infra`). The ALB gains the 443 listener and port 80
     becomes a permanent redirect to HTTPS.
-12. **DNS, traffic.** At GoDaddy add CNAMEs `api.muxaris.com` and `voice.muxaris.com`, both pointing
-    at the ALB DNS name.
+12. **DNS, traffic.** `api.muxaris.com` and `voice.muxaris.com` are alias records to the ALB in the
+    Route 53 zone, created by `MuxarisDns`.
 13. **Smoke over HTTPS.** `scripts/smoke.sh https://api.muxaris.com`. With `SMOKE_TOKEN` set to a
     real access token it also checks that `/v1/me` returns 200; the token is only ever sent over
     https.
-14. **Netlify.** Set `NEXT_PUBLIC_API_URL=https://api.muxaris.com` and
-    `NEXT_PUBLIC_VOICE_WS_URL=wss://voice.muxaris.com` (plus the three Cognito values) and redeploy
-    the site: these are inlined at build time.
+14. **Web app.** Build and deploy it as described in "Web app on CloudFront" below; the image is
+    built with `NEXT_PUBLIC_API_URL=https://api.muxaris.com` and
+    `NEXT_PUBLIC_VOICE_WS_URL=wss://voice.muxaris.com` (plus the Cognito values), which Next inlines
+    at build time.
 15. **CI.** Set the repository variables listed under "Deploy a change". The deploy role ARN is
     `DEPLOY_ROLE_ARN` in `scripts/bootstrap-aws.sh --outputs`.
 
@@ -105,20 +108,30 @@ build `linux/arm64` (on an Intel host that means QEMU emulation, which is slow).
 
 Push to `main`. When the `ci` workflow finishes green for that push, `.github/workflows/deploy-aws.yml`
 (triggered by `workflow_run`, so a red CI never deploys) checks out the tested commit and, unless
-the push only changed `apps/web`, `docs`, Markdown or `netlify.toml` (then it exits early, so a
-web-only push does not replace the gateway), builds both arm64 images tagged with the first 7
+the push only changed `apps/web`, `docs`, Markdown or `netlify.toml` (the `deploy` output of its
+`changes` job is then false, so the backend job is skipped and a web-only push does not replace the
+gateway), builds both arm64 images tagged with the first 7
 characters of the commit SHA (`git rev-parse --short HEAD` may print more, so use the same 7 for a
 manual deploy; an image that already exists is not rebuilt, so "Re-run jobs" works), pushes them to
 ECR, then deploys `MuxarisData`, `MuxarisWorkers` and `MuxarisMigrate`, runs `scripts/migrate.sh`
 (migrations run before the services update, so new code never meets the old schema), deploys
 `MuxarisServices` and `MuxarisObservability`, and smoke-tests: `https://api.muxaris.com` when the
-`CERT_ARN` variable is set, otherwise `http://<AlbDnsName>`. It does not
-deploy `MuxarisNetwork`, `MuxarisCicd`, `MuxarisAuth` or `MuxarisNotify`; deploy those by hand when
-they change. The workflow has not yet run on a real push, so expect to debug its first run.
+`CERT_ARN` variable is set, otherwise `http://<AlbDnsName>`. It also deploys `MuxarisDns` after
+Services and Observability. It does not deploy `MuxarisNetwork`, `MuxarisCicd`, `MuxarisAuth` or
+`MuxarisNotify`; deploy those by hand when they change.
+
+The `changes` job has a second output, `web`, true when `apps/web`, `packages/shared`,
+`packages/voice-sdk`, `infra`, `scripts/smoke-web.sh` or `package-lock.json` changed since the commit
+the web service runs. Then the `web` job builds and pushes `muxaris-web` (build arguments
+`NEXT_PUBLIC_API_URL=https://api.muxaris.com`, `NEXT_PUBLIC_VOICE_WS_URL=wss://voice.muxaris.com`, the
+Cognito ids from the existing variables, `NEXT_PUBLIC_COGNITO_DOMAIN` and
+`NEXT_PUBLIC_GOOGLE_ENABLED`), deploys `MuxarisEdgeCert` and `MuxarisWeb`, and smoke-tests with
+`scripts/smoke-web.sh`. A web-only push therefore deploys only `MuxarisWeb`, never the gateway. The workflow has not yet run on a real push, so expect to debug its first run.
 
 The repository variables the workflow reads (`AWS_DEPLOY_ROLE_ARN`, `COGNITO_USER_POOL_ID`,
 `COGNITO_CLIENT_ID`, `CERT_ARN`, `NOTIFY_FROM_EMAIL`, `ALARM_EMAIL`, `BILLING_ENABLED`,
-`TELEPHONY_PROVIDER`) are listed in
+`TELEPHONY_PROVIDER`, and for the web app `WEB_TARGET`, `CLOUDFRONT_DOMAIN`,
+`NEXT_PUBLIC_COGNITO_DOMAIN`, `NEXT_PUBLIC_GOOGLE_ENABLED`) are listed in
 the [README table](../README.md#deploy-quick-start).
 
 The workflow does not pass `SMS_ENABLED`, `MAX_SESSIONS` or `MAX_CALL_SECONDS`, so a CI deploy
@@ -189,7 +202,8 @@ npm run deploy:services -w @muxaris/infra
 ```
 
 Set the tag in `.env`; an `IMAGE_TAG=... npm run` prefix does not work because `.env` wins. Put
-`IMAGE_TAG` back to the newest sha afterwards.
+`IMAGE_TAG` back to the newest sha afterwards. The web service takes the same tag, so
+`npm run deploy:web -w @muxaris/infra` with the earlier tag rolls the web app back.
 
 The deploy reads `CERT_ARN` and the Cognito ids from `.env`. An empty `CERT_ARN` is refused (set
 `ALLOW_HTTP_ONLY=1` only if you really want the HTTP-only listener).
@@ -294,12 +308,64 @@ heartbeats would work. The API's public demo-request rate limit is likewise coun
 If one task is not enough, raise the task size first (`cpu` and `memoryLimitMiB` in
 `infra/lib/services-stack.ts`) and keep `MAX_SESSIONS` under 20.
 
+## Web app on CloudFront
+
+The web app runs as the `muxaris-web` service in the `muxaris` cluster (stack `MuxarisWeb`: one ARM
+0.5 vCPU / 1 GB task on port 3000, 1 to 3 on CPU, log group `/muxaris/web`, health check `/healthz`).
+The ALB routes `muxaris.com`, `www.muxaris.com` and `web-origin.muxaris.com` to it at listener
+priority 5, only when the request carries the `x-origin-verify` header whose value is in Secrets
+Manager `muxaris/web-origin-verify`. CloudFront adds that header, so the task is reachable only
+through CloudFront. The distribution (also in `MuxarisWeb`) uses the ACM certificate from
+`MuxarisEdgeCert` in us-east-1, the only stack outside `ap-south-1` (CDK is bootstrapped there too).
+`MuxarisDns` owns the `muxaris.com` hosted zone; the registrar stays GoDaddy.
+
+`MuxarisEdgeCert` and `MuxarisWeb` (whose origin certificate also validates through the zone) cannot
+finish deploying until the zone is authoritative, that is, until step 3 is done. Cutover, in order:
+
+1. **Prepare the backend.** `npm run deploy:data -w @muxaris/infra` (new `muxaris-web` ECR
+   repository), `deploy:network` (security group ingress on port 3000), `deploy:services` (exposes
+   the listener) and `deploy:cicd` (the deploy role may push `muxaris-web` and assume the us-east-1
+   CDK roles).
+2. **Create the zone.** `npm run deploy:dns -w @muxaris/infra` with `WEB_TARGET=netlify` (the
+   default), so apex and www still point at Netlify (A `75.2.60.5`, CNAME
+   `luxury-sunflower-1cb07b.netlify.app`). Print the four `NameServers` output values. The zone also
+   carries the `api`, `voice` and `web-origin` aliases, the ACM validation CNAMEs, the GoDaddy
+   mailbox records (apex MX `smtp`/`mailstore1.secureserver.net`, SPF
+   `v=spf1 include:secureserver.net -all`, `_dmarc` TXT, `email` CNAME, `_autodiscover._tcp` SRV)
+   and the SES records that were never added at GoDaddy (three DKIM CNAMEs, `mail.muxaris.com` MX
+   and SPF TXT).
+3. **Switch the nameservers.** At GoDaddy, under the domain's Nameservers, change from the GoDaddy
+   nameservers to the four printed ones. Verify with `dig NS muxaris.com` (the four Route 53
+   servers) and `dig A muxaris.com` (still Netlify's IP), and check that mail still works.
+4. **Build and deploy.** `scripts/push-images.sh <sha>` builds and pushes `muxaris-web` along with
+   the other images (it needs `NEXT_PUBLIC_COGNITO_DOMAIN` in `.env` or CI), then
+   `npm run deploy:edge-cert -w @muxaris/infra` and `deploy:web`. Note `DistributionDomainName` from
+   the `MuxarisWeb` outputs.
+5. **Smoke before cutover.** `scripts/smoke-web.sh https://muxaris.com <DistributionDomainName>`
+   tests the distribution while the apex still points at Netlify.
+6. **Cut over.** Set `WEB_TARGET=cloudfront` and `CLOUDFRONT_DOMAIN=<DistributionDomainName>` in
+   `.env` and as GitHub repository variables, then `npm run deploy:dns -w @muxaris/infra`. Apex and
+   www become A and AAAA aliases to the distribution, an in-place update with no gap.
+7. **Smoke after.** `scripts/smoke-web.sh https://muxaris.com` (it also checks that www redirects to
+   the apex).
+8. **Clean up.** Remove `netlify.toml`. The Netlify site can be deleted later by hand.
+
+To roll the cutover back, set `WEB_TARGET=netlify` (in `.env` and the repository variable) and
+redeploy `MuxarisDns`; apex and www point at Netlify again. To roll the web app itself back, redeploy
+`MuxarisWeb` with an earlier image tag as under "Roll back".
+
+Known limits: the web task runs in the public subnets like the other services; the origin-verify
+secret is visible in the CloudFormation template (low value, it only gates direct ALB access to the
+web app); CloudFront serves the apex over IPv6 but the ALB origin is IPv4.
+
 ## Domain and certificate
 
-DNS is at GoDaddy; nothing in AWS manages it. Records in play: the two ACM validation CNAMEs (keep
-them), `api.muxaris.com` and `voice.muxaris.com` as CNAMEs to the ALB DNS name, and the SES DKIM and
-MAIL FROM records from `MuxarisNotify`. If the ALB is ever replaced its DNS name changes; update
-both CNAMEs. Until the certificate is issued and `CERT_ARN` is set (deploying meanwhile needs `ALLOW_HTTP_ONLY=1`), the ALB serves HTTP only, which
+DNS is Route 53, managed by `MuxarisDns`; the registrar is GoDaddy and only holds the nameserver
+setting. Change records in `infra/lib/dns-stack.ts` and redeploy the stack rather than editing the
+zone by hand. Records in play: the apex and www (Netlify or CloudFront, by `WEB_TARGET`),
+`api.muxaris.com`, `voice.muxaris.com` and `web-origin.muxaris.com` as aliases to the ALB (they
+follow the ALB if it is replaced, after a `MuxarisDns` redeploy), the ACM validation CNAMEs (keep
+them), the GoDaddy mailbox records and the SES DKIM and MAIL FROM records. Until the certificate is issued and `CERT_ARN` is set (deploying meanwhile needs `ALLOW_HTTP_ONLY=1`), the ALB serves HTTP only, which
 a browser on https://muxaris.com cannot call (mixed content).
 
 ## Twilio go-live

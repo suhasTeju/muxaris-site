@@ -91,7 +91,9 @@ with no `NOTIFY_FROM_EMAIL`, or `console`) logs counts only, never recipients.
 To send real email with SES (secondary AWS account only):
 
 1. Deploy the `MuxarisNotify` stack, which creates the `muxaris.com` identity.
-2. Add the three DKIM CNAME records it outputs at GoDaddy and wait for the identity to verify.
+2. Deploy `MuxarisDns`, which already holds the three DKIM CNAMEs, the MAIL FROM records and the
+   rest of the zone (the domain's nameservers must point at Route 53), and wait for the identity to
+   verify.
 3. Request SES production access, then set `NOTIFY_FROM_EMAIL`. The provider then defaults to
    `aws`; `NOTIFY_PROVIDER=aws` (or its alias `ses`) makes it explicit.
 
@@ -160,7 +162,12 @@ subnets; the gateway is exactly one task. RDS Postgres 16 sits in isolated subne
 gateway, driven by SQS (with a dead-letter queue) and EventBridge. Call recordings go to S3, models
 are Amazon Nova on Bedrock, email goes through SES, and secrets (`muxaris/db`, `muxaris/app`) are
 read from Secrets Manager at process start. Alarms go to SNS and a CloudWatch dashboard shows
-latency and call counts. The web app stays on Netlify and DNS stays at GoDaddy. Details:
+latency and call counts. The web app is a Next.js standalone image on a third Fargate service
+(`MuxarisWeb`, one 0.5 vCPU / 1 GB ARM task, 1 to 3 on CPU), reached only through a CloudFront
+distribution for `muxaris.com` and `www.muxaris.com` (www redirects to the apex). CloudFront talks to
+the same ALB on `web-origin.muxaris.com` and adds a secret `x-origin-verify` header that the ALB
+requires, so the task is not reachable directly. DNS is Route 53 (`MuxarisDns` owns the hosted zone
+and every record); the registrar stays GoDaddy, which only holds the nameserver setting. Details:
 [Architecture](docs/ARCHITECTURE.md), [AWS services and cost](docs/AWS-SERVICES.md).
 
 ### Deploy quick-start
@@ -186,13 +193,18 @@ a missing certificate cannot silently remove HTTPS. `infra/scripts/cdk.sh` sourc
 set these in `.env`, not as a command prefix.
 
 Then add `CERT_ARN` to `.env` (and remove `ALLOW_HTTP_ONLY`), redeploy `MuxarisServices`, point `api.muxaris.com` and
-`voice.muxaris.com` at the ALB at GoDaddy, run `scripts/smoke.sh https://api.muxaris.com`, and set
-the Netlify variables below.
+`voice.muxaris.com` at the ALB (`MuxarisDns` creates those records in Route 53), run
+`scripts/smoke.sh https://api.muxaris.com`, and follow "Web app on CloudFront" in the Runbook to
+deploy the web app and move the domain.
 
-After that, every successful CI run on `main` that touches more than web or docs runs
-`.github/workflows/deploy-aws.yml` (images, CDK deploy of Data, Workers and Migrate, migrations,
-then Services and Observability, smoke test) through GitHub OIDC with no stored AWS keys. It reads these repository
-variables (Settings, Secrets and variables, Actions, Variables):
+After that, every successful CI run on `main` runs `.github/workflows/deploy-aws.yml` through
+GitHub OIDC with no stored AWS keys. Its `changes` job decides what to deploy: the backend job
+(images, CDK deploy of Data, Workers and Migrate, migrations, then Services, Observability and Dns,
+smoke test) runs when anything outside `apps/web`, docs, Markdown and `netlify.toml` changed, and
+the `web` job (build and push `muxaris-web`, deploy `MuxarisEdgeCert` and `MuxarisWeb`, run
+`scripts/smoke-web.sh`) runs when `apps/web`, `packages/shared`, `packages/voice-sdk`, `infra`,
+`scripts/smoke-web.sh` or `package-lock.json` changed. A web-only push deploys only `MuxarisWeb`
+and never touches the gateway. It reads these repository variables (Settings, Secrets and variables, Actions, Variables):
 
 | Variable               | Value                                                     |
 | ---------------------- | --------------------------------------------------------- |
@@ -204,6 +216,10 @@ variables (Settings, Secrets and variables, Actions, Variables):
 | `ALARM_EMAIL`          | alarm notification recipient                              |
 | `BILLING_ENABLED`      | `1` to enable billing, anything else for off              |
 | `TELEPHONY_PROVIDER`   | `twilio` to turn phone calls on, empty for off            |
+| `WEB_TARGET`           | `netlify` (default) or `cloudfront`: where the apex and www records point |
+| `CLOUDFRONT_DOMAIN`    | output `DistributionDomainName` of `MuxarisWeb`; needed with `WEB_TARGET=cloudfront` |
+| `NEXT_PUBLIC_COGNITO_DOMAIN` | Cognito hosted UI domain (`muxaris-auth.auth.ap-south-1.amazoncognito.com`), baked into the web image |
+| `NEXT_PUBLIC_GOOGLE_ENABLED` | `1` to show Google sign-in in the web image, otherwise unset |
 
 The workflow has not yet run on a real push to `main`.
 
@@ -217,30 +233,31 @@ The workflow has not yet run on a real push to `main`.
 - Indian SMS needs TRAI DLT registration, so email is the live notification channel.
 - Browser calls are capped at 20 minutes (`MAX_CALL_SECONDS`, 1200 s).
 - Phone calls need a Twilio number and KYC; see [Telephony](docs/TELEPHONY.md).
+- The web task runs in the public subnets like the other services.
+- The origin-verify secret (`muxaris/web-origin-verify`) is visible in the CloudFormation template.
+  It only gates direct access to the web app on the ALB, so its value is low.
+- CloudFront serves the apex over IPv6 as well, but the ALB origin is IPv4 only.
 
-## Deploy (Netlify)
+## Deploy (web app)
 
-The web app deploys from the repo root with `netlify.toml` (build command
-`npm run build:packages && npm run build -w @muxaris/web`, publish `apps/web/.next`, Node 22,
-`@netlify/plugin-nextjs`). Leave the Netlify base directory empty (the repository root): the web
-app imports `@muxaris/shared` and `@muxaris/voice-sdk`, which must be built first, so a base of
-`apps/web` will not build.
-
-Set these environment variables in the Netlify site settings (they are inlined at build time, so
-redeploy after changing them):
+The web app ships as the Docker image `apps/web/Dockerfile` (Next 16 `output: "standalone"`, port
+3000, health check `/healthz`). `scripts/push-images.sh` builds it with the public values below as
+build arguments, because Next inlines `NEXT_PUBLIC_*` at build time: change one and you rebuild and
+redeploy. The `web` job in `.github/workflows/deploy-aws.yml` does this on every web change; see
+"Web app on CloudFront" in the [Runbook](docs/RUNBOOK.md) for the first deploy and the DNS cutover.
 
 | Variable                           | Value                                                          |
 | ---------------------------------- | -------------------------------------------------------------- |
 | `NEXT_PUBLIC_COGNITO_USER_POOL_ID` | Cognito user pool id (from `scripts/bootstrap-aws.sh`)         |
 | `NEXT_PUBLIC_COGNITO_CLIENT_ID`    | Cognito app client id                                          |
 | `NEXT_PUBLIC_COGNITO_DOMAIN`       | Cognito hosted UI domain                                       |
-| `NEXT_PUBLIC_API_URL`              | Public https URL of the API                                    |
-| `NEXT_PUBLIC_VOICE_WS_URL`         | Public `wss://` URL of the voice gateway (`ws://` is rejected) |
-| `NEXT_PUBLIC_GOOGLE_ENABLED`       | `1` to show Google sign-in, otherwise unset               |
+| `NEXT_PUBLIC_API_URL`              | `https://api.muxaris.com` (set by the build scripts and CI)    |
+| `NEXT_PUBLIC_VOICE_WS_URL`         | `wss://voice.muxaris.com` (`ws://` is rejected)                |
+| `NEXT_PUBLIC_GOOGLE_ENABLED`       | `1` to show Google sign-in, otherwise unset                    |
 
-If the Cognito variables are unset, every `/app` request redirects to sign-in. The API and voice
-gateway are deployed to AWS, not by Netlify: `NEXT_PUBLIC_API_URL` is `https://api.muxaris.com` and
-`NEXT_PUBLIC_VOICE_WS_URL` is `wss://voice.muxaris.com` once the ALB is behind those names.
+Locally, `scripts/push-images.sh` reads these from `.env` (`NEXT_PUBLIC_COGNITO_DOMAIN` is required).
+If the Cognito variables are unset, every `/app` request redirects to sign-in. `netlify.toml` stays
+in the repository only until the cutover is verified; the Netlify site can then be deleted by hand.
 
 ## Scripts
 
