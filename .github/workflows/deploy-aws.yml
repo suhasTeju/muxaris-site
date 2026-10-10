@@ -282,12 +282,15 @@ jobs:
             NEXT_PUBLIC_COGNITO_DOMAIN=${{ vars.NEXT_PUBLIC_COGNITO_DOMAIN }}
             NEXT_PUBLIC_GOOGLE_ENABLED=${{ vars.NEXT_PUBLIC_GOOGLE_ENABLED }}
           tags: ${{ steps.ecr.outputs.registry }}/muxaris-web:${{ steps.tag.outputs.value }}
+      # --exclusively: IMAGE_TAG here is the web image's tag. Without it CDK would also redeploy
+      # MuxarisServices (a dependency) and point the API and gateway at a tag that only exists
+      # for muxaris-web when the backend job was skipped.
       - name: CDK deploy EdgeCert, Web
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.value }}
         run: >-
           npm run cdk -w @muxaris/infra -- deploy
-          MuxarisEdgeCert MuxarisWeb
+          MuxarisEdgeCert MuxarisWeb --exclusively
           --require-approval never
       - name: Smoke test the web app
         run: |

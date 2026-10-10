@@ -17,8 +17,8 @@
     "deploy:services": "bash scripts/cdk.sh deploy MuxarisServices --require-approval never",
     "deploy:observability": "bash scripts/cdk.sh deploy MuxarisObservability --require-approval never",
     "deploy:dns": "bash scripts/cdk.sh deploy MuxarisDns --require-approval never",
-    "deploy:edge-cert": "bash scripts/cdk.sh deploy MuxarisEdgeCert --require-approval never",
-    "deploy:web": "bash scripts/cdk.sh deploy MuxarisWeb --require-approval never",
+    "deploy:edge-cert": "bash scripts/cdk.sh deploy MuxarisEdgeCert --exclusively --require-approval never",
+    "deploy:web": "bash scripts/cdk.sh deploy MuxarisEdgeCert MuxarisWeb --exclusively --require-approval never",
     "deploy:cicd": "bash scripts/cdk.sh deploy MuxarisCicd --require-approval never",
     "deploy:all": "bash scripts/cdk.sh deploy MuxarisNetwork MuxarisData MuxarisWorkers MuxarisMigrate MuxarisServices MuxarisObservability MuxarisDns MuxarisWeb MuxarisCicd --require-approval never",
     "cdk": "bash scripts/cdk.sh"
