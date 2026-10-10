@@ -284,13 +284,21 @@ jobs:
           tags: ${{ steps.ecr.outputs.registry }}/muxaris-web:${{ steps.tag.outputs.value }}
       # --exclusively: IMAGE_TAG here is the web image's tag. Without it CDK would also redeploy
       # MuxarisServices (a dependency) and point the API and gateway at a tag that only exists
-      # for muxaris-web when the backend job was skipped.
-      - name: CDK deploy EdgeCert, Web
+      # for muxaris-web when the backend job was skipped. The two stacks are deployed one at a
+      # time: a single command for both (one in us-east-1) stalled before publishing assets.
+      - name: CDK deploy EdgeCert (us-east-1)
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.value }}
         run: >-
           npm run cdk -w @muxaris/infra -- deploy
-          MuxarisEdgeCert MuxarisWeb --exclusively
+          MuxarisEdgeCert --exclusively
+          --require-approval never
+      - name: CDK deploy Web
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.value }}
+        run: >-
+          npm run cdk -w @muxaris/infra -- deploy
+          MuxarisWeb --exclusively
           --require-approval never
       - name: Smoke test the web app
         run: |
