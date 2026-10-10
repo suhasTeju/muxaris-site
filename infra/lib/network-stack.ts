@@ -38,6 +38,7 @@ export class NetworkStack extends Stack {
     });
     this.serviceSg.addIngressRule(this.albSg, ec2.Port.tcp(4000));
     this.serviceSg.addIngressRule(this.albSg, ec2.Port.tcp(4100));
+    this.serviceSg.addIngressRule(this.albSg, ec2.Port.tcp(3000));
     this.lambdaSg = new ec2.SecurityGroup(this, "LambdaSg", {
       vpc: this.vpc,
       description: "Workers (Lambda)",

@@ -45,6 +45,10 @@ export class ServicesStack extends Stack {
   readonly gatewayLogGroup: logs.ILogGroup;
   readonly gatewayTargetGroup: elbv2.ApplicationTargetGroup;
   readonly apiTargetGroup: elbv2.ApplicationTargetGroup;
+  /** The listener MuxarisWeb adds its host rule and origin certificate to (443, or 80 without a cert). */
+  readonly webListener: elbv2.ApplicationListener;
+  /** True when the listener above is HTTPS; MuxarisWeb refuses an HTTP-only ALB. */
+  readonly https: boolean;
 
   constructor(scope: Construct, id: string, props: ServicesStackProps) {
     super(scope, id, props);
@@ -243,6 +247,8 @@ export class ServicesStack extends Stack {
         defaultTargetGroups: [apiTg],
       });
       routed(https);
+      this.webListener = https;
+      this.https = true;
       this.alb.addListener("Http", {
         port: 80,
         open: false,
@@ -259,6 +265,8 @@ export class ServicesStack extends Stack {
         defaultTargetGroups: [apiTg],
       });
       routed(http);
+      this.webListener = http;
+      this.https = false;
     }
 
     new CfnOutput(this, "AlbDnsName", { value: this.alb.loadBalancerDnsName });

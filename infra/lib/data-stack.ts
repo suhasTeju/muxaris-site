@@ -18,6 +18,7 @@ export class DataStack extends Stack {
   readonly appSecret: secretsmanager.ISecret;
   readonly apiRepo: ecr.Repository;
   readonly gatewayRepo: ecr.Repository;
+  readonly webRepo: ecr.Repository;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -62,10 +63,12 @@ export class DataStack extends Stack {
       });
     this.apiRepo = repo("ApiRepo", "muxaris-api");
     this.gatewayRepo = repo("GatewayRepo", "muxaris-voice-gateway");
+    this.webRepo = repo("WebRepo", "muxaris-web");
     new CfnOutput(this, "DbEndpoint", { value: this.db.dbInstanceEndpointAddress });
     new CfnOutput(this, "DbSecretArn", { value: this.dbSecret.secretArn });
     new CfnOutput(this, "AppSecretArn", { value: this.appSecret.secretArn });
     new CfnOutput(this, "ApiRepoUri", { value: this.apiRepo.repositoryUri });
     new CfnOutput(this, "GatewayRepoUri", { value: this.gatewayRepo.repositoryUri });
+    new CfnOutput(this, "WebRepoUri", { value: this.webRepo.repositoryUri });
   }
 }

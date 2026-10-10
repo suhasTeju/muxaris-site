@@ -10,6 +10,19 @@ export const WEB_ORIGINS = [
 ];
 export const API_HOST = "api.muxaris.com";
 export const VOICE_HOST = "voice.muxaris.com";
+/** The web app's public hosts (CloudFront aliases). */
+export const WEB_HOST = DOMAIN;
+export const WWW_HOST = `www.${DOMAIN}`;
+/**
+ * The hostname CloudFront connects to on the ALB. CloudFront validates the ALB's certificate against
+ * this name, so it has its own ACM certificate and a Route 53 alias to the ALB.
+ */
+export const WEB_ORIGIN_HOST = `web-origin.${DOMAIN}`;
+/** CloudFront only accepts certificates from us-east-1. */
+export const EDGE_ENV = { account: ACCOUNT, region: "us-east-1" } as const;
+/** Where the apex and www records point until the CloudFront cutover. */
+export const NETLIFY_APEX_IP = "75.2.60.5";
+export const NETLIFY_SITE_HOST = "luxury-sunflower-1cb07b.netlify.app";
 /** The API's public URL, derived (never read from the environment, which may hold a local value). */
 export const PUBLIC_API_URL = `https://${API_HOST}`;
 
@@ -22,6 +35,10 @@ export interface ConfigProblems {
   migrate: string[];
   /** Reasons MuxarisCicd must not be synthesized. */
   cicd: string[];
+  /** Reasons MuxarisWeb must not be synthesized. */
+  web: string[];
+  /** Reasons MuxarisDns must not be synthesized. */
+  dns: string[];
 }
 
 /**
@@ -51,5 +68,15 @@ export function validateConfig(env: Env): ConfigProblems {
   if (provider !== "" && provider !== "twilio" && provider !== "exotel") {
     services.push(`TELEPHONY_PROVIDER must be "twilio", "exotel" or empty, got "${provider}".`);
   }
-  return { services, migrate: imageTag, cicd: cognito };
+  const dns: string[] = [];
+  const target = env.WEB_TARGET ?? "netlify";
+  if (target !== "netlify" && target !== "cloudfront") {
+    dns.push(`WEB_TARGET must be "netlify" or "cloudfront", got "${target}".`);
+  }
+  if (target === "cloudfront" && !env.CLOUDFRONT_DOMAIN) {
+    dns.push(
+      "CLOUDFRONT_DOMAIN is empty: with WEB_TARGET=cloudfront the apex and www records alias the distribution (output DistributionDomainName of MuxarisWeb).",
+    );
+  }
+  return { services, migrate: imageTag, cicd: cognito, web: imageTag, dns };
 }

@@ -10,7 +10,7 @@ const ok = {
 
 describe("validateConfig", () => {
   it("accepts a complete config", () => {
-    expect(validateConfig(ok)).toEqual({ services: [], migrate: [], cicd: [] });
+    expect(validateConfig(ok)).toEqual({ services: [], migrate: [], cicd: [], web: [], dns: [] });
   });
 
   it("derives the public API URL from API_HOST", () => {

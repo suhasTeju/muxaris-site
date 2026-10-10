@@ -4,12 +4,14 @@
 # workflow has not run anywhere and is unverified. Expect to debug it on its first real run.
 #
 # Triggered by the `ci` workflow completing on main (a red CI never deploys), or by hand. The
-# `changes` job diffs the tested commit against the commit currently running on the API service (its
-# image tag) and skips the deploy when only web, docs or Markdown changed, so a site-only push does
-# not replace the gateway. (`paths-ignore` cannot apply to `workflow_run`.)
+# `changes` job diffs the tested commit against the commits currently running on the API service and
+# the web service (their image tags) and decides two things: whether the backend needs a deploy
+# (anything outside web, docs or Markdown changed, so a site-only push never replaces the gateway)
+# and whether the web app needs one (apps/web, the packages it bundles, or infra changed).
+# (`paths-ignore` cannot apply to `workflow_run`.)
 #
-# Order: Data, Workers, Migrate, scripts/migrate.sh, then Services and Observability, so new code
-# never meets the old schema.
+# Order: Data, Workers, Migrate, scripts/migrate.sh, then Services, Observability and Dns, so new
+# code never meets the old schema; the web job (image + MuxarisEdgeCert + MuxarisWeb) runs after.
 #
 # Repository variables (Settings > Secrets and variables > Actions > Variables):
 #   AWS_DEPLOY_ROLE_ARN   output DeployRoleArn of the MuxarisCicd stack
@@ -21,6 +23,10 @@
 #   ALARM_EMAIL           alarm notification recipient
 #   BILLING_ENABLED       "1" to enable billing, anything else for off
 #   TELEPHONY_PROVIDER    "twilio" to turn phone calls on, empty for off
+#   WEB_TARGET            "netlify" until the CloudFront cutover, then "cloudfront" (MuxarisDns)
+#   CLOUDFRONT_DOMAIN     output DistributionDomainName of MuxarisWeb (needed for "cloudfront")
+#   NEXT_PUBLIC_COGNITO_DOMAIN  Cognito hosted UI domain, inlined into the web image
+#   NEXT_PUBLIC_GOOGLE_ENABLED  "1" to show Google sign-in, inlined into the web image
 # No repository secrets are needed: AWS access is through GitHub OIDC (id-token: write).
 name: deploy-aws
 # workflow_run runs with this repo's OIDC identity, so the first job only accepts a green push CI run
@@ -47,6 +53,7 @@ jobs:
       contents: read
     outputs:
       deploy: ${{ steps.diff.outputs.deploy }}
+      web: ${{ steps.diff.outputs.web }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -60,23 +67,48 @@ jobs:
         env:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if [[ -z "$HEAD_SHA" ]]; then echo "deploy=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          svc="$(aws ecs list-services --cluster muxaris --query 'serviceArns' --output text | tr '\t' '\n' | grep ApiService || true)"
-          td="$(aws ecs describe-services --cluster muxaris --services "$svc" --query 'services[0].taskDefinition' --output text 2>/dev/null || true)"
-          image="$(aws ecs describe-task-definition --task-definition "$td" --query 'taskDefinition.containerDefinitions[0].image' --output text 2>/dev/null || true)"
-          deployed="${image##*:}"
-          if [[ -z "$deployed" || "$deployed" == "None" ]] || ! git cat-file -e "$deployed^{commit}" 2>/dev/null; then
-            echo "deployed commit unknown ($deployed): deploying"
-            echo "deploy=true" >> "$GITHUB_OUTPUT"; exit 0
+          if [[ -z "$HEAD_SHA" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"; echo "web=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          files="$(git diff --name-only "$deployed" "$HEAD_SHA")"
-          echo "changed since deployed $deployed:"; echo "$files"
-          # Anything outside web, docs, Markdown and netlify.toml needs a deploy.
-          if grep -qvE '^(apps/web/|docs/|netlify\.toml$)|\.md$' <<<"$files"; then
+          # The commit a service runs, from its task definition's image tag ("" when unknown).
+          deployed_commit() {
+            local svc td image tag
+            svc="$(aws ecs list-services --cluster muxaris --query 'serviceArns' --output text | tr '\t' '\n' | grep "$1" || true)"
+            [[ -n "$svc" ]] || return 0
+            td="$(aws ecs describe-services --cluster muxaris --services "$svc" --query 'services[0].taskDefinition' --output text 2>/dev/null || true)"
+            image="$(aws ecs describe-task-definition --task-definition "$td" --query 'taskDefinition.containerDefinitions[0].image' --output text 2>/dev/null || true)"
+            tag="${image##*:}"
+            if [[ -n "$tag" && "$tag" != "None" ]] && git cat-file -e "$tag^{commit}" 2>/dev/null; then echo "$tag"; fi
+          }
+          api="$(deployed_commit ApiService)"
+          if [[ -z "$api" ]]; then
+            echo "deployed API commit unknown: deploying the backend"
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           else
-            echo "only web or docs changed since the deployed commit: nothing to deploy"
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            files="$(git diff --name-only "$api" "$HEAD_SHA")"
+            echo "changed since deployed API $api:"; echo "$files"
+            # Anything outside web, docs, Markdown and netlify.toml needs a backend deploy.
+            if grep -qvE '^(apps/web/|docs/|netlify\.toml$)|\.md$' <<<"$files"; then
+              echo "deploy=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "only web or docs changed since the deployed API: no backend deploy"
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          web="$(deployed_commit WebService)"
+          if [[ -z "$web" ]]; then
+            echo "deployed web commit unknown: deploying the web app"
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          else
+            files="$(git diff --name-only "$web" "$HEAD_SHA")"
+            echo "changed since deployed web $web:"; echo "$files"
+            # The web image bundles apps/web, shared and the voice SDK; infra changes its stack.
+            if grep -qE '^(apps/web/|packages/shared/|packages/voice-sdk/|infra/|scripts/smoke-web\.sh$|package-lock\.json$)' <<<"$files"; then
+              echo "web=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "nothing the web app bundles changed since the deployed web: no web deploy"
+              echo "web=false" >> "$GITHUB_OUTPUT"
+            fi
           fi
   deploy:
     needs: changes
@@ -98,6 +130,8 @@ jobs:
       ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
       BILLING_ENABLED: ${{ vars.BILLING_ENABLED }}
       TELEPHONY_PROVIDER: ${{ vars.TELEPHONY_PROVIDER }}
+      WEB_TARGET: ${{ vars.WEB_TARGET }}
+      CLOUDFRONT_DOMAIN: ${{ vars.CLOUDFRONT_DOMAIN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -160,12 +194,12 @@ jobs:
           --require-approval never
       - name: Run migrations
         run: bash scripts/migrate.sh
-      - name: CDK deploy Services, Observability
+      - name: CDK deploy Services, Observability, Dns
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.value }}
         run: >-
           npm run cdk -w @muxaris/infra -- deploy
-          MuxarisServices MuxarisObservability
+          MuxarisServices MuxarisObservability MuxarisDns
           --require-approval never
       - name: Smoke test
         run: |
@@ -178,3 +212,91 @@ jobs:
               --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" --output text)"
           fi
           bash scripts/smoke.sh "$BASE"
+  web:
+    # Runs after the backend deploy when there was one (the web stack reads the ALB listener and
+    # the hosted zone from those stacks), or on its own for a web-only push.
+    needs: [changes, deploy]
+    if: always() && needs.changes.result == 'success' && needs.changes.outputs.web == 'true' && needs.deploy.result != 'failure' && needs.deploy.result != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ap-south-1
+      CDK_DEFAULT_ACCOUNT: "005533348545"
+      CDK_DEFAULT_REGION: ap-south-1
+      COGNITO_USER_POOL_ID: ${{ vars.COGNITO_USER_POOL_ID }}
+      COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+      CERT_ARN: ${{ vars.CERT_ARN }}
+      ALLOW_HTTP_ONLY: ${{ vars.CERT_ARN == '' && '1' || '' }}
+      NOTIFY_FROM_EMAIL: ${{ vars.NOTIFY_FROM_EMAIL }}
+      ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
+      BILLING_ENABLED: ${{ vars.BILLING_ENABLED }}
+      TELEPHONY_PROVIDER: ${{ vars.TELEPHONY_PROVIDER }}
+      WEB_TARGET: ${{ vars.WEB_TARGET }}
+      CLOUDFRONT_DOMAIN: ${{ vars.CLOUDFRONT_DOMAIN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npm run build:packages
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+      - id: tag
+        run: |
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "value=${sha::7}" >> "$GITHUB_OUTPUT"
+      - id: exists
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          if aws ecr describe-images --repository-name muxaris-web --image-ids "imageTag=$TAG" >/dev/null 2>&1; then
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "web=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build and push web image
+        if: steps.exists.outputs.web != 'true'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/arm64
+          push: true
+          # NEXT_PUBLIC_* values are inlined at build time, so they are build arguments.
+          build-args: |
+            GIT_SHA=${{ steps.tag.outputs.value }}
+            NEXT_PUBLIC_API_URL=https://api.muxaris.com
+            NEXT_PUBLIC_VOICE_WS_URL=wss://voice.muxaris.com
+            NEXT_PUBLIC_COGNITO_USER_POOL_ID=${{ vars.COGNITO_USER_POOL_ID }}
+            NEXT_PUBLIC_COGNITO_CLIENT_ID=${{ vars.COGNITO_CLIENT_ID }}
+            NEXT_PUBLIC_COGNITO_DOMAIN=${{ vars.NEXT_PUBLIC_COGNITO_DOMAIN }}
+            NEXT_PUBLIC_GOOGLE_ENABLED=${{ vars.NEXT_PUBLIC_GOOGLE_ENABLED }}
+          tags: ${{ steps.ecr.outputs.registry }}/muxaris-web:${{ steps.tag.outputs.value }}
+      - name: CDK deploy EdgeCert, Web
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.value }}
+        run: >-
+          npm run cdk -w @muxaris/infra -- deploy
+          MuxarisEdgeCert MuxarisWeb
+          --require-approval never
+      - name: Smoke test the web app
+        run: |
+          # Before the cutover DNS still points at Netlify, so connect to the distribution directly
+          # while presenting the real hostname (the ALB rule and the CloudFront alias need it).
+          if [[ "${WEB_TARGET}" == "cloudfront" ]]; then
+            bash scripts/smoke-web.sh https://muxaris.com
+          else
+            cf="$(aws cloudformation describe-stacks --stack-name MuxarisWeb \
+              --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue" --output text)"
+            bash scripts/smoke-web.sh https://muxaris.com "$cf"
+          fi

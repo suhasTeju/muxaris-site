@@ -1,6 +1,8 @@
 import { Annotations, App, type Stack } from "aws-cdk-lib";
 import { AuthStack } from "../lib/auth-stack.js";
 import { DataStack } from "../lib/data-stack.js";
+import { DnsStack } from "../lib/dns-stack.js";
+import { EdgeCertStack } from "../lib/edge-cert-stack.js";
 import { CicdStack } from "../lib/cicd-stack.js";
 import { MigrateStack } from "../lib/migrate-stack.js";
 import { NetworkStack } from "../lib/network-stack.js";
@@ -8,8 +10,16 @@ import { NotifyStack } from "../lib/notify-stack.js";
 import { ObservabilityStack } from "../lib/observability-stack.js";
 import { StorageStack } from "../lib/storage-stack.js";
 import { ServicesStack } from "../lib/services-stack.js";
+import { WebStack } from "../lib/web-stack.js";
 import { WorkersStack } from "../lib/workers-stack.js";
-import { ACCOUNT, ENV, PUBLIC_API_URL, WEB_ORIGINS, validateConfig } from "../lib/config.js";
+import {
+  ACCOUNT,
+  EDGE_ENV,
+  ENV,
+  PUBLIC_API_URL,
+  WEB_ORIGINS,
+  validateConfig,
+} from "../lib/config.js";
 
 if (process.env.CDK_DEFAULT_ACCOUNT !== ACCOUNT) {
   throw new Error(
@@ -28,7 +38,7 @@ const storage = new StorageStack(app, "MuxarisStorage", {
   env: ENV,
   description: "Muxaris call recordings bucket and post-call queue",
 });
-new NotifyStack(app, "MuxarisNotify", {
+const notify = new NotifyStack(app, "MuxarisNotify", {
   env: ENV,
   description: "Muxaris: SES domain identity for appointment email",
 });
@@ -86,6 +96,44 @@ const services = new ServicesStack(app, "MuxarisServices", {
   description: "Muxaris ALB, ECS cluster, API and voice gateway services",
 });
 refuse(services, problems.services);
+// The ALB certificate's validation CNAMEs, as they stood at GoDaddy (renewal needs them).
+const ALB_CERT_VALIDATION = [
+  [
+    "_19235f4cd571a280b6c5cf3f0ebe2c34.api.muxaris.com",
+    "_cee6bff133ec7374ead45caea2bf2adc.wzccmgtwzk.acm-validations.aws",
+  ],
+  [
+    "_4f8ca59969c9b5732de9d0d6a42d9bf0.voice.muxaris.com",
+    "_99ff50b95d57add975173611876ae600.wzccmgtwzk.acm-validations.aws",
+  ],
+] as const;
+const webTarget = process.env.WEB_TARGET === "cloudfront" ? "cloudfront" : "netlify";
+const dns = new DnsStack(app, "MuxarisDns", {
+  env: ENV,
+  services,
+  notify,
+  webTarget,
+  cloudfrontDomain: process.env.CLOUDFRONT_DOMAIN || undefined,
+  albCertValidation: ALB_CERT_VALIDATION,
+  description: "Muxaris: the muxaris.com hosted zone and every record in it",
+});
+refuse(dns, problems.dns);
+const edgeCert = new EdgeCertStack(app, "MuxarisEdgeCert", {
+  env: EDGE_ENV,
+  hostedZoneId: dns.zone.hostedZoneId,
+  description: "Muxaris: CloudFront certificate for muxaris.com (us-east-1)",
+});
+const web = new WebStack(app, "MuxarisWeb", {
+  env: ENV,
+  network,
+  data,
+  services,
+  dns,
+  edgeCert,
+  imageTag,
+  description: "Muxaris web app: Fargate service, ALB origin and the CloudFront distribution",
+});
+refuse(web, problems.web);
 new ObservabilityStack(app, "MuxarisObservability", {
   env: ENV,
   data,

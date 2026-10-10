@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/push-images.sh — build and push both service images to ECR. Usage: scripts/push-images.sh [tag]
+# scripts/push-images.sh — build and push the three images to ECR. Usage: scripts/push-images.sh [tag]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/lib/aws-guard.sh"
@@ -14,7 +14,7 @@ bash "$ROOT/scripts/build-images.sh" "$TAG"
 
 # Tags are immutable and never retagged: a repo that already has this tag is skipped, so a failed
 # deploy can be re-run with the same tag.
-for repo in muxaris-api muxaris-voice-gateway; do
+for repo in muxaris-api muxaris-voice-gateway muxaris-web; do
   if aws ecr describe-images --repository-name "$repo" --image-ids "imageTag=$TAG" >/dev/null 2>&1; then
     echo "→ skip $repo:$TAG (already in ECR; tags are immutable)"
     continue

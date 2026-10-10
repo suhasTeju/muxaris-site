@@ -79,9 +79,10 @@ describe("CicdStack", () => {
     expect(
       JSON.stringify(statements(t).filter((s) => [s.Action].flat().includes("ecr:PutImage"))),
     ).toContain("Repo");
-    expect(withAction(t, "sts:AssumeRole")[0]?.Resource).toBe(
+    expect(withAction(t, "sts:AssumeRole")[0]?.Resource).toEqual([
       "arn:aws:iam::005533348545:role/cdk-hnb659fds-*-005533348545-ap-south-1",
-    );
+      "arn:aws:iam::005533348545:role/cdk-hnb659fds-*-005533348545-us-east-1",
+    ]);
     const run = withAction(t, "ecs:RunTask")[0];
     expect(run?.Resource).toBe(
       "arn:aws:ecs:ap-south-1:005533348545:task-definition/muxaris-migrate:*",

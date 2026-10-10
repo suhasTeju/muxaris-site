@@ -39,13 +39,18 @@ export class CicdStack extends Stack {
     );
     data.apiRepo.grantPullPush(role);
     data.gatewayRepo.grantPullPush(role);
+    data.webRepo.grantPullPush(role);
 
     // CDK deploys through the bootstrap roles (default qualifier hnb659fds).
     // CDK deploys through the bootstrap roles (default qualifier hnb659fds).
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ["sts:AssumeRole"],
-        resources: [`arn:aws:iam::${ACCOUNT}:role/cdk-hnb659fds-*-${ACCOUNT}-${REGION}`],
+        // MuxarisEdgeCert lives in us-east-1 (CloudFront certificates must), so both regions' roles.
+        resources: [
+          `arn:aws:iam::${ACCOUNT}:role/cdk-hnb659fds-*-${ACCOUNT}-${REGION}`,
+          `arn:aws:iam::${ACCOUNT}:role/cdk-hnb659fds-*-${ACCOUNT}-us-east-1`,
+        ],
       }),
     );
     // Everything below is scoped by stable names (family, cluster, role and log group names set in

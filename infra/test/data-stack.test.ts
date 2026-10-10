@@ -27,7 +27,7 @@ describe("DataStack", () => {
     t.hasResourceProperties("AWS::SecretsManager::Secret", { Name: "muxaris/app" });
   });
   it("two immutable ECR repositories with scan-on-push and a 10-image lifecycle", () => {
-    t.resourceCountIs("AWS::ECR::Repository", 2);
+    t.resourceCountIs("AWS::ECR::Repository", 3);
     t.hasResourceProperties("AWS::ECR::Repository", {
       RepositoryName: "muxaris-api",
       ImageTagMutability: "IMMUTABLE",
