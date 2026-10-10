@@ -126,5 +126,11 @@ describe("DnsStack", () => {
       (r) => r.Properties.Type === "CNAME" && typeof r.Properties.Name !== "string",
     );
     expect(dkim).toHaveLength(3);
+    // The exported name already ends in the domain: the zone name must not be appended again.
+    for (const r of dkim) {
+      const name = JSON.stringify(r.Properties.Name);
+      expect(name).toContain('"."]');
+      expect(name).not.toContain("muxaris.com.");
+    }
   });
 });

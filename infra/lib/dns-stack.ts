@@ -129,9 +129,11 @@ export class DnsStack extends Stack {
       ttl,
     });
     props.notify.identity.dkimRecords.forEach((r, i) => {
+      // r.name is already fully qualified (<token>._domainkey.muxaris.com). It is a token, so
+      // CDK cannot see that and would append the zone name again; a trailing dot stops it.
       new route53.CnameRecord(this, `SesDkim${i + 1}`, {
         zone,
-        recordName: r.name,
+        recordName: `${r.name}.`,
         domainName: r.value,
         ttl,
       });
