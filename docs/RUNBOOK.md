@@ -339,8 +339,9 @@ finish deploying until the zone is authoritative, that is, until step 3 is done.
    servers) and `dig A muxaris.com` (still Netlify's IP), and check that mail still works.
 4. **Build and deploy.** `scripts/push-images.sh <sha>` builds and pushes `muxaris-web` along with
    the other images (it needs `NEXT_PUBLIC_COGNITO_DOMAIN` in `.env` or CI), then
-   `npm run deploy:edge-cert -w @muxaris/infra` and `deploy:web`. Note `DistributionDomainName` from
-   the `MuxarisWeb` outputs.
+   `npm run deploy:web -w @muxaris/infra`, which deploys `MuxarisEdgeCert` and `MuxarisWeb` with
+   `--exclusively` so the web image tag never reaches `MuxarisServices`. Note
+   `DistributionDomainName` from the `MuxarisWeb` outputs.
 5. **Smoke before cutover.** `scripts/smoke-web.sh https://muxaris.com <DistributionDomainName>`
    tests the distribution while the apex still points at Netlify.
 6. **Cut over.** Set `WEB_TARGET=cloudfront` and `CLOUDFRONT_DOMAIN=<DistributionDomainName>` in
