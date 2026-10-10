@@ -57,9 +57,13 @@ describe("DnsStack", () => {
   it("before the cutover, the apex and www point at Netlify", () => {
     const { t } = build();
     expect(record(t, "muxaris.com.", "A")).toMatchObject({ ResourceRecords: ["75.2.60.5"] });
-    expect(record(t, "www.muxaris.com.", "CNAME")).toMatchObject({
-      ResourceRecords: ["luxury-sunflower-1cb07b.netlify.app"],
-    });
+    // www is an A record too: Route 53 would refuse the CloudFront alias next to a CNAME.
+    expect(record(t, "www.muxaris.com.", "A")).toMatchObject({ ResourceRecords: ["75.2.60.5"] });
+    expect(
+      t.findResources("AWS::Route53::RecordSet", {
+        Properties: { Type: "CNAME", Name: "www.muxaris.com." },
+      }),
+    ).toEqual({});
   });
 
   it("after the cutover, the apex and www alias the distribution (A and AAAA)", () => {

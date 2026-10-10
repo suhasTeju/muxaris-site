@@ -7,7 +7,6 @@ import {
   API_HOST,
   DOMAIN,
   NETLIFY_APEX_IP,
-  NETLIFY_SITE_HOST,
   VOICE_HOST,
   WEB_ORIGIN_HOST,
   WWW_HOST,
@@ -77,10 +76,13 @@ export class DnsStack extends Stack {
         target: route53.RecordTarget.fromIpAddresses(NETLIFY_APEX_IP),
         ttl: short,
       });
-      new route53.CnameRecord(this, "WwwCname", {
+      // An A record, not Netlify's suggested CNAME: Route 53 refuses an alias A next to a CNAME,
+      // so a CNAME here would block the switch to CloudFront (and back) in one deploy. Netlify's
+      // load balancer serves www from the same address as the apex.
+      new route53.ARecord(this, "WwwA", {
         zone,
         recordName: WWW_HOST,
-        domainName: NETLIFY_SITE_HOST,
+        target: route53.RecordTarget.fromIpAddresses(NETLIFY_APEX_IP),
         ttl: short,
       });
     }

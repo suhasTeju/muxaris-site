@@ -22,7 +22,6 @@ export const WEB_ORIGIN_HOST = `web-origin.${DOMAIN}`;
 export const EDGE_ENV = { account: ACCOUNT, region: "us-east-1" } as const;
 /** Where the apex and www records point until the CloudFront cutover. */
 export const NETLIFY_APEX_IP = "75.2.60.5";
-export const NETLIFY_SITE_HOST = "luxury-sunflower-1cb07b.netlify.app";
 /** The API's public URL, derived (never read from the environment, which may hold a local value). */
 export const PUBLIC_API_URL = `https://${API_HOST}`;
 
